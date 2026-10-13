@@ -1,0 +1,25 @@
+# deps / builds
+node_modules/
+.pnpm-store/
+dist/
+.next/
+out/
+*.tsbuildinfo
+coverage/
+
+# rust / anchor
+target/
+.anchor/
+test-ledger/
+**/*.rs.bk
+
+# env & keys
+.env
+.env.*
+!.env.example
+*.keypair.json
+keys/
+
+# misc
+.DS_Store
+*.log

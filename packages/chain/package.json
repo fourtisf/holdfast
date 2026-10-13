@@ -1,0 +1,40 @@
+{
+  "name": "@holdfast/chain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Solana glue: program ids, PDAs, pump.fun / PumpSwap decoders and instruction builders, Holdfast vault client.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "idl"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "idl:sync": "cp ../../target/idl/holdfast_vault.json idl/holdfast_vault.json"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.31.1",
+    "@holdfast/core": "workspace:*",
+    "@pump-fun/pump-sdk": "4.1.0",
+    "@pump-fun/pump-swap-sdk": "2.1.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.2",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

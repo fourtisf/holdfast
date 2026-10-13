@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+onlyBuiltDependencies:
+  - esbuild
+  - bufferutil
+  - utf-8-validate
+  - "@tailwindcss/oxide"
+  - sharp

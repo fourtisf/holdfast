@@ -1,0 +1,25 @@
+[toolchain]
+anchor_version = "0.32.1"
+solana_version = "2.3.13"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+holdfast_vault = "8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM"
+mock_pump = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+mock_pump_amm = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
+
+[programs.devnet]
+holdfast_vault = "8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test -p holdfast-vault-tests"
