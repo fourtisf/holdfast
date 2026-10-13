@@ -1,0 +1,157 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { LaunchResponse, LaunchStatus } from "@holdfast/core";
+import { getLaunch, isExcluded, updateLaunchStatus, type Db } from "@holdfast/db";
+import { deriveDepositKeypair, parseMasterSecret } from "@holdfast/chain";
+import { hkdfDepositAllocator, lamportsToSolString, parseLaunchRequest, sniffImage, solanaPayUrl, tokensToRaw } from "../src/index.js";
+import { freshDb, makeApi, NOW, resetDb, type TestApi } from "./helpers.js";
+
+let db: Db;
+let api: TestApi;
+
+beforeAll(async () => {
+  db = await freshDb();
+  api = await makeApi(db);
+});
+beforeEach(async () => {
+  await resetDb(db);
+});
+afterAll(async () => {
+  await api.app.close();
+  await db.close();
+});
+
+const valid = { name: "Dog Coin", ticker: "DOG", triggerBps: 2500 };
+
+describe("POST /launch", () => {
+  it("creates a launch with a deposit address and a solana: pay URL", async () => {
+    const res = await api.app.inject({
+      method: "POST",
+      url: "/launch",
+      payload: { ...valid, description: "woof", devBuySol: 0.5, socials: { x: "@dogcoin", telegram: "https://t.me/dogcoin", website: "https://dog.example" } },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const body = res.json<LaunchResponse>();
+    expect(body).toMatchObject({ requiredLamports: "515000000", requiredSol: 0.515, expiresAt: NOW + 30 * 60_000 });
+    expect(body.solanaPayUrl).toBe(`solana:${body.depositAddress}?amount=0.515&label=Holdfast&message=Launch%20%24DOG`);
+    expect(await isExcluded(db, body.depositAddress)).toBe(true);
+
+    const row = await getLaunch(db, body.launchId);
+    expect(row).toMatchObject({ status: "awaiting_deposit", devBuyLamports: 500_000_000n, requiredLamports: 515_000_000n });
+    expect(row?.form.socials).toEqual({ x: "https://x.com/dogcoin", telegram: "https://t.me/dogcoin", website: "https://dog.example" });
+
+    const status = await api.app.inject({ method: "GET", url: `/launch/${body.launchId}` });
+    expect(status.json<LaunchStatus>()).toEqual({
+      launchId: body.launchId,
+      status: "awaiting_deposit",
+      depositAddress: body.depositAddress,
+      requiredLamports: "515000000",
+      receivedLamports: "0",
+      sender: null,
+      mint: null,
+      refundSig: null,
+      error: null,
+      updatedAt: expect.any(Number),
+    });
+    await updateLaunchStatus(db, body.launchId, "deposit_received", { receivedLamports: 600_000_000n, sender: "Sender1" });
+    expect((await api.app.inject({ method: "GET", url: `/launch/${body.launchId}` })).json()).toMatchObject({ status: "deposit_received", receivedLamports: "600000000", sender: "Sender1" });
+    expect((await api.app.inject({ method: "GET", url: "/launch/6f1c5c34-8a32-4bb1-9d0e-6a7a0f8b2a11" })).statusCode).toBe(404);
+  });
+
+  it.each([
+    [{ ...valid, name: "x".repeat(33) }, "name"],
+    [{ ...valid, ticker: "TOOLONGTICKER" }, "ticker"],
+    [{ ...valid, ticker: "DO-G" }, "ticker"],
+    [{ ...valid, triggerBps: 2000 }, "triggerBps"],
+    [{ ...valid, devBuySol: 11 }, "devBuySol"],
+    [{ ...valid, devBuySol: -1 }, "devBuySol"],
+    [{ ...valid, description: "d".repeat(501) }, "description"],
+    [{ ...valid, socials: { x: "not a handle!" } }, "socials.x"],
+    [{ ...valid, socials: { website: "javascript:alert(1)" } }, "socials.website"],
+    [{ ...valid, imageUrl: "ftp://x" }, "imageUrl"],
+    [{ ...valid, extra: true }, ""],
+  ])("rejects %j", async (payload, field) => {
+    const res = await api.app.inject({ method: "POST", url: "/launch", payload });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toContain(field);
+  });
+
+  it("normalizes the request", () => {
+    expect(parseLaunchRequest({ name: " Dog ", ticker: "$dog", triggerBps: 1500, description: "", socials: { x: "", telegram: "@dogs_tg" } })).toEqual({
+      name: "Dog",
+      ticker: "DOG",
+      triggerBps: 1500,
+      socials: { telegram: "https://t.me/dogs_tg" },
+    });
+  });
+});
+
+describe("POST /uploads/image", () => {
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("rest-of-png")]);
+
+  function multipart(content: Buffer, filename = "a.png", type = "image/png", field = "file") {
+    const boundary = "----holdfast";
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${field}"; filename="${filename}"\r\nContent-Type: ${type}\r\n\r\n`),
+      content,
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    return { payload: body, headers: { "content-type": `multipart/form-data; boundary=${boundary}` } };
+  }
+
+  it("stores by content hash and serves it under /metadata", async () => {
+    const res = await api.app.inject({ method: "POST", url: "/uploads/image", ...multipart(PNG) });
+    expect(res.statusCode, res.body).toBe(200);
+    const { imageUrl } = res.json<{ imageUrl: string }>();
+    expect(imageUrl).toMatch(/^http:\/\/localhost:4000\/metadata\/[0-9a-f]{64}\.png$/);
+    const name = imageUrl.split("/").pop()!;
+    expect(readFileSync(join(api.config.metadataDir, name))).toEqual(PNG);
+    const again = await api.app.inject({ method: "POST", url: "/uploads/image", ...multipart(PNG, "b.jpg", "image/jpeg") });
+    expect(again.json()).toEqual({ imageUrl });
+    const served = await api.app.inject({ method: "GET", url: `/metadata/${name}` });
+    expect(served.statusCode).toBe(200);
+    expect(served.headers["content-type"]).toBe("image/png");
+    expect(served.rawPayload).toEqual(PNG);
+  });
+
+  it("rejects non-images, oversize files and wrong fields", async () => {
+    const text = await api.app.inject({ method: "POST", url: "/uploads/image", ...multipart(Buffer.from("<svg/>"), "x.svg", "image/svg+xml") });
+    expect(text.statusCode).toBe(415);
+    expect(text.json()).toHaveProperty("error");
+    const big = await api.app.inject({ method: "POST", url: "/uploads/image", ...multipart(Buffer.concat([PNG, Buffer.alloc(5 * 1024 * 1024)])) });
+    expect(big.statusCode).toBe(413);
+    expect(big.json<{ error: string }>().error).toBeTruthy();
+    const field = await api.app.inject({ method: "POST", url: "/uploads/image", ...multipart(PNG, "a.png", "image/png", "image") });
+    expect(field.statusCode).toBe(400);
+    const json = await api.app.inject({ method: "POST", url: "/uploads/image", payload: { file: "x" } });
+    expect(json.statusCode).toBe(415);
+    expect(existsSync(api.config.metadataDir)).toBe(true);
+  });
+
+  it("sniffs magic bytes", () => {
+    expect(sniffImage(PNG)?.ext).toBe("png");
+    expect(sniffImage(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))?.ext).toBe("jpg");
+    expect(sniffImage(Buffer.from("GIF89a....."))?.ext).toBe("gif");
+    expect(sniffImage(Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBPVP8 ")]))?.ext).toBe("webp");
+    expect(sniffImage(Buffer.from("hello"))).toBeNull();
+  });
+});
+
+describe("helpers", () => {
+  it("deposit addresses use the shared HKDF derivation (launcher can re-derive the key)", async () => {
+    const hex = "11".repeat(32);
+    const allocate = hkdfDepositAllocator(hex);
+    expect(await allocate(7n)).toBe(deriveDepositKeypair(parseMasterSecret(hex), 7n).publicKey.toBase58());
+    expect(await allocate(7n)).not.toBe(await allocate(8n));
+    expect(() => hkdfDepositAllocator("abcd")).toThrow();
+  });
+
+  it("formats amounts", () => {
+    expect(lamportsToSolString(15_000_000n)).toBe("0.015");
+    expect(lamportsToSolString(2_000_000_000n)).toBe("2");
+    expect(tokensToRaw(1.5, 6)).toBe(1_500_000n);
+    expect(tokensToRaw(1_000_000, 6)).toBe(1_000_000_000_000n);
+    expect(solanaPayUrl("Addr", 15_000_000n, "A B")).toBe("solana:Addr?amount=0.015&label=Holdfast&message=Launch%20%24A%20B");
+  });
+});

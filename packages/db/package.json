@@ -1,0 +1,37 @@
+{
+  "name": "@holdfast/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Postgres access for Holdfast: Db abstraction (pg / PGlite), migrations and typed repositories.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "migrate": "tsx src/cli/migrate.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.3.16",
+    "@holdfast/core": "workspace:*",
+    "@scure/base": "^1.2.6",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
