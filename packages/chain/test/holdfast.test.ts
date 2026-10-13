@@ -110,7 +110,7 @@ describe("holdfast client", () => {
   });
 
   it("ignores events of other programs", () => {
-    const line = encodeHoldfastEventLog("FeesCollected", { mint, amount: new BN(1), floor: zero, holder: zero, burn: zero, unwrapped_wsol: zero, ts: zero });
+    const line = encodeHoldfastEventLog("FeesCollected", { mint, amount: new BN(1), floor: zero, holder: zero, burn: zero, unwrapped_wsol: zero, tokens: zero, ts: zero });
     const other = Keypair.generate().publicKey.toBase58();
     expect(parseHoldfastEvents([`Program ${other} invoke [1]`, line, `Program ${other} success`])).toEqual([]);
   });

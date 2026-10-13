@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::Token;
-use anchor_spl::token_interface::{Mint, TokenAccount};
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use crate::constants::*;
 use crate::errors::HoldfastError;
@@ -12,7 +12,7 @@ use crate::treasury::{spendable_lamports, treasury_seeds, unwrap_wsol, WsolAccou
 
 /// Permissionless. Books every lamport that reached the treasury since the last call (pump.fun creator
 /// fees claimed by the keeper's `collect_creator_fee_v2` / PumpSwap `collect_coin_creator_fee`, or any
-/// donation) into the 60/30/10 buckets.
+/// donation) into the 60/30/10 buckets, and adds coin tokens sent to the treasury to the holder pool.
 #[derive(Accounts)]
 pub struct CollectFees<'info> {
     #[account(mut, seeds = [VAULT_SEED, vault.mint.as_ref()], bump = vault.bump)]
@@ -26,6 +26,16 @@ pub struct CollectFees<'info> {
         associated_token::token_program = wsol_token_program,
     )]
     pub treasury_wsol_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(address = vault.mint)]
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(
+        associated_token::mint = mint,
+        associated_token::authority = treasury,
+        associated_token::token_program = token_program,
+    )]
+    pub treasury_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(address = vault.token_program)]
+    pub token_program: Interface<'info, TokenInterface>,
     #[account(address = WSOL_MINT)]
     pub wsol_mint: Box<InterfaceAccount<'info, Mint>>,
     pub wsol_token_program: Program<'info, Token>,
@@ -60,11 +70,17 @@ pub fn collect_fees(ctx: Context<CollectFees>) -> Result<()> {
     }
 
     let vault = &mut ctx.accounts.vault;
+    // Coin tokens that reached the treasury other than through a buyback (e.g. a donation) join the holder pool.
+    let token_balance = ctx.accounts.treasury_token_account.amount;
+    require!(token_balance >= vault.holder_tokens, HoldfastError::InvariantViolation);
+    let tokens = token_balance - vault.holder_tokens;
+    vault.holder_tokens = token_balance;
+
     let available = spendable_lamports(&ctx.accounts.treasury.to_account_info())?;
     let accounted = vault.accounted_lamports()?;
     require!(available >= accounted, HoldfastError::InvariantViolation);
     let amount = available - accounted;
-    if amount == 0 {
+    if amount == 0 && tokens == 0 {
         return Ok(());
     }
 
@@ -74,6 +90,6 @@ pub fn collect_fees(ctx: Context<CollectFees>) -> Result<()> {
     vault.burn_sol = vault.burn_sol.checked_add(burn).ok_or(HoldfastError::MathOverflow)?;
     vault.total_fees = vault.total_fees.saturating_add(amount);
 
-    emit!(FeesCollected { mint, amount, floor, holder, burn, unwrapped_wsol, ts: Clock::get()?.unix_timestamp });
+    emit!(FeesCollected { mint, amount, floor, holder, burn, unwrapped_wsol, tokens, ts: Clock::get()?.unix_timestamp });
     Ok(())
 }

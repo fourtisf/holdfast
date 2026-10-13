@@ -134,3 +134,14 @@ fn collect_fees_is_permissionless_and_creator_has_no_share() {
     assert_eq!(v.floor_sol + v.holder_sol + v.burn_sol, 5 * SOL);
     assert_eq!(env.lamports(&env.launcher.pubkey()), launcher_before);
 }
+
+#[test]
+fn tokens_sent_to_the_treasury_join_the_holder_pool() {
+    let mut env = Env::ready();
+    let coin = env.launch(2_500);
+    env.set_token_account(coin.treasury_ata, coin.mint, coin.treasury, TOKEN_2022_PROGRAM, 12_345);
+    env.collect(&coin, 0).unwrap();
+    let v = env.vault(&coin.mint);
+    assert_eq!(v.holder_tokens, 12_345);
+    assert_eq!(v.total_fees, 0);
+}

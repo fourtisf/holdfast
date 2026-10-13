@@ -46,7 +46,7 @@ treasury PDA and `CoinVault` keeps the bucket accounting.
 | `set_paused(bool)` | admin | pauses outflows (`defend`, `payout`, `burn_hold`, `open_round`); cannot move funds |
 | `transfer_admin(new)` / `accept_admin()` | admin / new admin | two-step |
 | `init_coin(trigger_bps)` | launcher | same tx as pump.fun `create_v2(creator = treasury)`. Checks the bonding curve's `creator == treasury`, SOL quote, not complete. Creates `CoinVault`, funds the treasury's rent, creates treasury token + WSOL accounts |
-| `collect_fees()` | anyone | unwraps the treasury WSOL account (close + recreate), then splits all unaccounted treasury lamports 60/30/10. The keeper prepends pump.fun's permissionless `sweep_creator_fee` + `collect_creator_fee_v2` (curve) and PumpSwap `sweep_creator_fee` + `collect_coin_creator_fee` (after graduation) in the same tx |
+| `collect_fees()` | anyone | unwraps the treasury WSOL account (close + recreate), then splits all unaccounted treasury lamports 60/30/10 and adds coin tokens sent to the treasury outside buybacks to `holder_tokens`. The keeper prepends pump.fun's permissionless `sweep_creator_fee` + `collect_creator_fee_v2` (curve) and PumpSwap `sweep_creator_fee` + `collect_coin_creator_fee` (after graduation) in the same tx |
 | `update_ath()` | keeper | reads spot price from the bonding curve (virtual reserves) or the PumpSwap pool (`quote balance + virtual_quote_reserves`) / base balance, appends a TWAP observation (min spacing), recomputes the TWAP over `twap_window_secs` and raises ATH once a higher TWAP has held for `ath_confirm_secs` |
 | `graduate()` | anyone | after the curve is `complete`: verifies the canonical PumpSwap pool PDA and switches the price/buy venue |
 | `defend(min_tokens_out)` | anyone | see invariant 6. Buy CPI: pump `buy_exact_sol_in` or PumpSwap `buy_exact_quote_in`, account list passed through `remaining_accounts` (validated positions), instruction data built on-chain |
@@ -59,7 +59,7 @@ treasury PDA and `CoinVault` keeps the bucket accounting.
 
 ```rust
 CoinInitialized { mint, vault, treasury, trigger_bps: u16, bonding_curve, ts: i64 }
-FeesCollected   { mint, amount: u64, floor: u64, holder: u64, burn: u64, unwrapped_wsol: u64, ts: i64 }
+FeesCollected   { mint, amount: u64, floor: u64, holder: u64, burn: u64, unwrapped_wsol: u64, tokens: u64, ts: i64 }
 AthUpdated      { mint, twap: u128, ath: u128, floor: u128, ts: i64 }
 Graduated       { mint, pool, coin_creator, ts: i64 }
 Defended        { mint, sol_spent: u64, tokens_bought: u64, spot_price: u128, floor_price: u128, venue: u8, ts: i64 }

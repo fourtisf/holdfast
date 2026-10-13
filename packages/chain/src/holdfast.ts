@@ -190,7 +190,7 @@ export function decodePayoutRound(data: Buffer): PayoutRoundAccount {
 
 export type HoldfastEvent =
   | { name: "CoinInitialized"; mint: PublicKey; vault: PublicKey; treasury: PublicKey; triggerBps: number; bondingCurve: PublicKey; ts: number }
-  | { name: "FeesCollected"; mint: PublicKey; amount: bigint; floor: bigint; holder: bigint; burn: bigint; unwrappedWsol: bigint; ts: number }
+  | { name: "FeesCollected"; mint: PublicKey; amount: bigint; floor: bigint; holder: bigint; burn: bigint; unwrappedWsol: bigint; tokens: bigint; ts: number }
   | { name: "AthUpdated"; mint: PublicKey; twap: bigint; ath: bigint; floor: bigint; ts: number }
   | { name: "Graduated"; mint: PublicKey; pool: PublicKey; coinCreator: PublicKey; ts: number }
   | { name: "Defended"; mint: PublicKey; solSpent: bigint; tokensBought: bigint; spotPrice: bigint; floorPrice: bigint; venue: number; ts: number }
@@ -319,7 +319,15 @@ export function initCoinIx(coin: CoinKeys, launcher: PublicKey, triggerBps: numb
 export function collectFeesIx(coin: CoinKeys): TransactionInstruction {
   return buildIx(
     "collect_fees",
-    { vault: coin.vault, treasury: coin.treasury, treasuryWsolAccount: coin.treasuryWsolAccount, ...commonPrograms },
+    {
+      vault: coin.vault,
+      treasury: coin.treasury,
+      treasuryWsolAccount: coin.treasuryWsolAccount,
+      mint: coin.mint,
+      treasuryTokenAccount: coin.treasuryTokenAccount,
+      tokenProgram: coin.tokenProgram,
+      ...commonPrograms,
+    },
     {},
   );
 }

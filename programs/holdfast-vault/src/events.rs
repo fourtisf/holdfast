@@ -18,6 +18,8 @@ pub struct FeesCollected {
     pub holder: u64,
     pub burn: u64,
     pub unwrapped_wsol: u64,
+    /// Coin tokens added to the holder pool (sent to the treasury outside buybacks).
+    pub tokens: u64,
     pub ts: i64,
 }
 
