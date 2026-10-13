@@ -1,0 +1,49 @@
+"use client";
+
+import { LAUNCH_FEE_LAMPORTS } from "@holdfast/core";
+import { FeeSplitBar } from "@/components/coin/FeeSplitBar";
+import { WeightRamp } from "@/components/coin/WeightRamp";
+import { useHowItWorks } from "@/components/how-it-works/HowItWorksProvider";
+import { ButtonLink } from "@/components/ui/Button";
+import { ChevronRightIcon, RocketIcon } from "@/components/ui/icons";
+import { SOLANA_CLUSTER } from "@/lib/config";
+import { PayoutCountdownCard } from "./PayoutCountdown";
+
+export function Sidebar() {
+  const how = useHowItWorks();
+  return (
+    <aside className="sticky top-[var(--nav-height)] hidden h-[calc(100dvh-var(--nav-height))] w-[272px] shrink-0 flex-col gap-4 overflow-y-auto py-5 pl-6 scrollbar-none lg:flex">
+      <PayoutCountdownCard />
+
+      <div className="rounded-card border border-line bg-surface p-4 shadow-card">
+        <div className="text-xs font-semibold tracking-wider text-muted uppercase">Where creator fees go</div>
+        <FeeSplitBar compact className="mt-3" />
+        <p className="mt-3 text-xs text-muted">
+          <span className="font-semibold text-fg">0% to the dev.</span> The vault has no withdraw function.
+        </p>
+      </div>
+
+      <div className="rounded-card border border-line bg-surface p-4 shadow-card">
+        <div className="text-xs font-semibold tracking-wider text-muted uppercase">Hold longer, earn more</div>
+        <WeightRamp className="mt-2 h-[72px]" />
+        <p className="mt-1 text-xs text-muted">Weight grows from 0.1× to 1.0× over 7 days of holding.</p>
+      </div>
+
+      <button
+        type="button"
+        onClick={how.open}
+        className="flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3 text-left text-sm font-semibold text-fg transition-colors hover:border-line-strong hover:bg-surface-2"
+      >
+        How it works
+        <ChevronRightIcon size={16} className="text-muted" />
+      </button>
+
+      <ButtonLink href="/create" size="lg" className="w-full">
+        <RocketIcon size={18} />
+        Launch a coin · {Number(LAUNCH_FEE_LAMPORTS) / 1e9} SOL
+      </ButtonLink>
+
+      <div className="mt-auto pt-2 text-[11px] text-faint">Solana {SOLANA_CLUSTER} · pump.fun launchpad</div>
+    </aside>
+  );
+}

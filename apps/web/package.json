@@ -1,0 +1,42 @@
+{
+  "name": "@holdfast/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Holdfast launchpad frontend (Next.js App Router).",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "dev:mock": "NEXT_PUBLIC_USE_MOCKS=1 next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "dependencies": {
+    "@holdfast/core": "workspace:*",
+    "@solana/wallet-adapter-base": "0.9.28",
+    "@solana/wallet-adapter-phantom": "0.9.30",
+    "@solana/wallet-adapter-react": "0.15.40",
+    "@solana/wallet-adapter-react-ui": "0.9.40",
+    "@solana/wallet-adapter-solflare": "0.6.34",
+    "@solana/web3.js": "1.99.0",
+    "geist": "1.7.2",
+    "lightweight-charts": "5.2.1",
+    "next": "15.5.27",
+    "qrcode.react": "4.2.0",
+    "react": "19.1.9",
+    "react-dom": "19.1.9",
+    "swr": "2.3.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.1.18",
+    "@types/node": "^22.20.5",
+    "@types/react": "19.1.17",
+    "@types/react-dom": "19.1.11",
+    "playwright": "1.56.1",
+    "tailwindcss": "4.1.18",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}
