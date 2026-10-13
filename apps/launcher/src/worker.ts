@@ -47,7 +47,7 @@ import {
   type MetadataSettings,
 } from "./metadata.js";
 import { pump, quoteDevBuy, readPumpBuyState } from "./pump.js";
-import { PUMP_USER_VOLUME_ACCUMULATOR_SIZE, SYSTEM_ACCOUNT_SIZE, TOKEN_2022_ATA_SIZE, utf8Len } from "./sizes.js";
+import { PUMP_MAX_NAME_BYTES, PUMP_MAX_SYMBOL_BYTES, PUMP_USER_VOLUME_ACCUMULATOR_SIZE, SYSTEM_ACCOUNT_SIZE, TOKEN_2022_ATA_SIZE, utf8Len } from "./sizes.js";
 import { forceLaunchSig, listRecentTerminalLaunches, setMintSecretOnce } from "./store.js";
 import { buildCreateTx, buildDevBuyTx, buildInitTx, buildRefundTx, signTransaction, tokenAccountOf } from "./tx.js";
 
@@ -206,15 +206,12 @@ export class LaunchWorker {
   /** What the deposit must hold: the API's quote, raised to the real cost of this launch if needed. */
   async requiredLamports(l: LaunchRow): Promise<bigint> {
     const rent = await this.rent();
-    let lengths: { nameBytes?: number; symbolBytes?: number } = {};
-    try {
-      const form = normalizeForm(l.form, this.s.metadata.publicBaseUrl);
-      lengths = { nameBytes: utf8Len(form.name), symbolBytes: utf8Len(form.symbol) };
-    } catch {
-      // invalid form: worst-case sizes; it is refunded once the deposit arrives
-    }
+    // An invalid form is refunded once its deposit arrives, so it is quoted like a valid one.
+    const nameBytes = Math.min(utf8Len((l.form.name ?? "").trim()), PUMP_MAX_NAME_BYTES);
+    const symbolBytes = Math.min(utf8Len((l.form.ticker ?? "").trim()), PUMP_MAX_SYMBOL_BYTES);
     const cost = computeLaunchCost(rent, {
-      ...lengths,
+      nameBytes,
+      symbolBytes,
       uriBytes: metadataUriLength(this.s.metadata.publicBaseUrl),
       priority: this.s.priority,
       devBuyLamports: l.devBuyLamports,

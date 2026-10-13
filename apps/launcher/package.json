@@ -32,6 +32,7 @@
     "pino": "^10.1.0"
   },
   "devDependencies": {
+    "@coral-xyz/anchor": "0.31.1",
     "@types/bn.js": "^5.2.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
