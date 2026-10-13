@@ -3,7 +3,11 @@ import BN from "bn.js";
 import { BorshCoder } from "@coral-xyz/anchor";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import {
+  DEFAULT_PARAMS,
   HOLDFAST_IDL,
+  initializeIx,
+  setHoldMintIx,
+  setParamsIx,
   closeRoundIx,
   coinKeys,
   collectFeesIx,
@@ -152,5 +156,15 @@ describe("holdfast client", () => {
     expect(() => payoutIx(coin, keeper, 3n, [{ index: 0, wallet, sol: 0n, tokens: 1n }])).toThrow();
 
     expect(ixName(closeRoundIx(coin, keeper, 3n).data)).toBe("close_round");
+  });
+
+  it("builds admin instructions", () => {
+    const admin = Keypair.generate().publicKey;
+    const init = initializeIx(admin, keeper, Keypair.generate().publicKey);
+    expect(ixName(init.data)).toBe("initialize");
+    expect(init.keys).toHaveLength(5);
+    const decoded = coder.instruction.decode(setParamsIx(admin, { ...DEFAULT_PARAMS, defendCooldownSecs: 90 }).data)!;
+    expect((decoded.data as { params: { defend_cooldown_secs: number } }).params.defend_cooldown_secs).toBe(90);
+    expect(setHoldMintIx(admin, mint).keys).toHaveLength(3);
   });
 });

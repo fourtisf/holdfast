@@ -464,3 +464,58 @@ export function pumpCreatorFor(mint: PublicKey): PublicKey {
 }
 
 export { PUMP_PROGRAM_ID };
+
+// ---- admin ---------------------------------------------------------------------------------------
+
+export type ProgramParams = ConfigAccount["params"];
+
+const BPF_LOADER_UPGRADEABLE_ID = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+
+function paramsArg(p: ProgramParams) {
+  return {
+    defend_cooldown_secs: p.defendCooldownSecs,
+    max_defends_per_hour: p.maxDefendsPerHour,
+    defend_price_tolerance_bps: p.defendPriceToleranceBps,
+    twap_window_secs: p.twapWindowSecs,
+    twap_min_sample_interval_secs: p.twapMinSampleIntervalSecs,
+    twap_max_gap_secs: p.twapMaxGapSecs,
+    ath_confirm_secs: p.athConfirmSecs,
+    max_burn_slippage_bps: p.maxBurnSlippageBps,
+    min_round_interval_secs: p.minRoundIntervalSecs,
+  };
+}
+
+/** Defaults used by the tests and docs/decisions.md. */
+export const DEFAULT_PARAMS: ProgramParams = {
+  defendCooldownSecs: 60,
+  maxDefendsPerHour: 6,
+  defendPriceToleranceBps: 300,
+  twapWindowSecs: 600,
+  twapMinSampleIntervalSecs: 30,
+  twapMaxGapSecs: 120,
+  athConfirmSecs: 0,
+  maxBurnSlippageBps: 500,
+  minRoundIntervalSecs: 60,
+};
+
+/** Must be signed by the program's upgrade authority, which becomes the admin. */
+export function initializeIx(authority: PublicKey, keeper: PublicKey, launcher: PublicKey, params: ProgramParams = DEFAULT_PARAMS, programId: PublicKey = HOLDFAST_PROGRAM_ID): TransactionInstruction {
+  const programData = PublicKey.findProgramAddressSync([programId.toBuffer()], BPF_LOADER_UPGRADEABLE_ID)[0];
+  return buildIx(
+    "initialize",
+    { authority, config: configPda(programId), program: programId, programData, systemProgram: SYSTEM_PROGRAM_ID },
+    { keeper, launcher, params: paramsArg(params) },
+    [],
+    programId,
+  );
+}
+
+const adminAccounts = (admin: PublicKey) => ({ admin, config: configPda() });
+
+export const setKeeperIx = (admin: PublicKey, keeper: PublicKey) => buildIx("set_keeper", adminAccounts(admin), { keeper });
+export const setLauncherIx = (admin: PublicKey, launcher: PublicKey) => buildIx("set_launcher", adminAccounts(admin), { launcher });
+export const setParamsIx = (admin: PublicKey, params: ProgramParams) => buildIx("set_params", adminAccounts(admin), { params: paramsArg(params) });
+export const setPausedIx = (admin: PublicKey, paused: boolean) => buildIx("set_paused", adminAccounts(admin), { paused });
+export const transferAdminIx = (admin: PublicKey, newAdmin: PublicKey) => buildIx("transfer_admin", adminAccounts(admin), { new_admin: newAdmin });
+export const acceptAdminIx = (newAdmin: PublicKey) => buildIx("accept_admin", { newAdmin, config: configPda() }, {});
+export const setHoldMintIx = (admin: PublicKey, holdMint: PublicKey) => buildIx("set_hold_mint", { ...adminAccounts(admin), holdMint }, {});

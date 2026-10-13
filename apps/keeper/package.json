@@ -10,7 +10,8 @@
     "test": "vitest run",
     "start:keeper": "tsx src/main-keeper.ts",
     "start:payout": "tsx src/main-payout.ts",
-    "verify-round": "tsx src/verify-round.ts"
+    "verify-round": "tsx src/verify-round.ts",
+    "admin": "tsx src/admin.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",
