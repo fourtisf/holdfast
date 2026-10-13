@@ -1,6 +1,7 @@
-import { LAUNCH_FEE_LAMPORTS, TRIGGER_OPTIONS_BPS, type LaunchRequest, type Socials, type TriggerBps } from "@holdfast/core";
+import { LAUNCH_FEE_LAMPORTS, TRIGGER_OPTIONS_BPS, type LaunchQuote, type LaunchRequest, type Socials, type TriggerBps } from "@holdfast/core";
 
-export const LAUNCH_FEE_SOL = Number(LAUNCH_FEE_LAMPORTS) / 1e9;
+/** SPEC §2 target. The real cost comes from GET /launch/quote; this is only the fallback while it loads. */
+export const SPEC_LAUNCH_FEE_SOL = Number(LAUNCH_FEE_LAMPORTS) / 1e9;
 export const NAME_MAX = 32;
 export const TICKER_MAX = 10;
 export const DESCRIPTION_MAX = 500;
@@ -58,9 +59,15 @@ export function parseDevBuy(input: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** Exact SOL the user must send: the launch cost plus the optional dev buy. */
-export function requiredDepositSol(devBuySol: number): number {
-  return Math.round((LAUNCH_FEE_SOL + devBuySol) * 1e9) / 1e9;
+/** SOL the user must send: the quoted launch cost + dev buy (+ dev-buy accounts/buffer), or the spec fee while loading. */
+export function requiredDepositSol(devBuySol: number, quote?: LaunchQuote | null): number {
+  if (quote) return quote.requiredSol;
+  return Math.round((SPEC_LAUNCH_FEE_SOL + devBuySol) * 1e9) / 1e9;
+}
+
+/** Launch cost shown in copy ("Send X SOL"): the quote once loaded, the spec fee before. */
+export function launchFeeSol(quote?: LaunchQuote | null): number {
+  return quote?.launchFeeSol ?? SPEC_LAUNCH_FEE_SOL;
 }
 
 export function validateLaunch(form: LaunchForm): LaunchErrors {

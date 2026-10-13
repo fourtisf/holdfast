@@ -41,6 +41,12 @@ export function formatSolAmount(value: number): string {
   return value < 0 ? ">-0.000001" : "<0.000001";
 }
 
+/** Full lamport precision for amounts the user must send (never rounds a deposit down). */
+export function formatSolExact(value: number): string {
+  if (!Number.isFinite(value)) return "–";
+  return trimZeros(value.toFixed(9));
+}
+
 export function formatSol(value: number): string {
   return `${formatSolAmount(value)} SOL`;
 }

@@ -20,7 +20,8 @@ Base URL: `NEXT_PUBLIC_API_URL` (default `http://localhost:4000`). All response 
 | POST | `/trade/quote` | `TradeQuote` | body `TradeQuoteRequest` |
 | POST | `/trade/build` | `TradeBuildResponse` | body `TradeQuoteRequest`; returns unsigned tx for the wallet to sign |
 | POST | `/uploads/image` | `{ imageUrl: string }` | `multipart/form-data` field `file` (png/jpg/gif/webp, ≤ 5 MB) |
-| POST | `/launch` | `LaunchResponse` | body `LaunchRequest`; creates a unique deposit address |
+| GET | `/launch/quote?devBuySol=&name=&ticker=` | `LaunchQuote` | real launch cost (rent + fees) from the launcher's cost model; ≥ 0.015 SOL |
+| POST | `/launch` | `LaunchResponse` | body `LaunchRequest`; creates a unique deposit address; `requiredLamports` = the quote |
 | GET | `/launch/:id` | `LaunchStatus` | |
 
 ## WebSocket `/ws`

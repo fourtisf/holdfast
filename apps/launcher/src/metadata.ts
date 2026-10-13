@@ -8,7 +8,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { TRIGGER_OPTIONS_BPS, type LaunchRequest, type Socials, type TriggerBps } from "@holdfast/core";
 
-import { PUMP_MAX_NAME_BYTES, PUMP_MAX_SYMBOL_BYTES, PUMP_MAX_URI_BYTES, utf8Len } from "./sizes.js";
+import { PUMP_MAX_NAME_BYTES, PUMP_MAX_SYMBOL_BYTES, PUMP_MAX_URI_BYTES, utf8Len } from "@holdfast/chain";
 
 export class ValidationError extends Error {
   override readonly name = "ValidationError";

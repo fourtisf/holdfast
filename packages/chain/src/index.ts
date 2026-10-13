@@ -4,3 +4,4 @@ export * from "./holdfast.js";
 export * from "./pump/index.js";
 export * from "./deposit.js";
 export * from "./accounts.js";
+export * from "./launch/index.js";

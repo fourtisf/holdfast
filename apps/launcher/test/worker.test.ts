@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { coinKeys, TOKEN_2022_PROGRAM_ID, treasuryPda } from "@holdfast/chain";
 import { getCoin, listExcluded, type Db } from "@holdfast/db";
 
-import { DEFAULT_RENT, txFee } from "../src/cost.js";
+import { DEFAULT_RENT, txFee } from "@holdfast/chain";
 import { decryptMintSecret, mintSecretKey } from "../src/crypto.js";
 import { metadataUriLength } from "../src/metadata.js";
 import { pump } from "../src/pump.js";
@@ -17,7 +17,7 @@ import {
   SPL_TOKEN_ACCOUNT_SIZE,
   TOKEN_2022_ATA_SIZE,
   utf8Len,
-} from "../src/sizes.js";
+} from "@holdfast/chain";
 import { tokenAccountOf } from "../src/tx.js";
 import { pumpCoder } from "./fakeChain.js";
 import { defaultForm, freshDb, Harness, MASTER, resetDb, SOL } from "./helpers.js";
@@ -390,7 +390,9 @@ describe("failures", () => {
     expect(h.chain.count("init")).toBe(0);
     const p = h.settings.priority;
     expect(await h.chain.getBalance(from)).toBe(SOL + required - createRent - txFee("create", p) - txFee("refund", p));
-    expect(await getCoin(db, (await mintOf(row.id)).toBase58())).toBeNull();
+    // The coin exists on pump.fun (creator = treasury): it stays registered so a manual init_coin can adopt it.
+    const orphan = await getCoin(db, (await mintOf(row.id)).toBase58());
+    expect(orphan).toMatchObject({ creator: from.toBase58(), launchSig: r.createSig });
     expect(h.logs.some((l) => l.level === "error" && l.msg?.includes("needs a manual init_coin"))).toBe(true);
   });
 
@@ -427,6 +429,7 @@ describe("failures", () => {
     expect(h.chain.tokenBalance(from, mint)).toBeNull();
     const p = h.settings.priority;
     expect(await h.chain.getBalance(from)).toBe(SOL + required - createRent - initRent - txFee("create", p) - txFee("init", p) - txFee("refund", p));
+    // Attempts at tx C pointed launch_sig at their signatures; with no dev buy it is the create tx again.
     expect((await getCoin(db, mint.toBase58()))!.launchSig).toBe(r.createSig);
   });
 
@@ -487,5 +490,24 @@ describe("mint keypair", () => {
     )!;
     expect((created.data as { creator: PublicKey }).creator.equals(treasuryPda(new PublicKey(done.mint!)))).toBe(true);
     expect(tokenAccountOf).toBeTypeOf("function");
+  });
+});
+
+describe("throughput", () => {
+  it("handles several launches in one tick, each with its own mint and refund", async () => {
+    const launches = await Promise.all([0, 1, 2, 3, 4].map(() => h.launch()));
+    const senders = launches.map(() => sender());
+    launches.forEach((l, i) => h.chain.fund(senders[i]!, l.deposit.publicKey, l.required + BigInt(i) * 1_000_000n));
+    await h.tick();
+    const rows = await Promise.all(launches.map((l) => h.row(l.row.id)));
+    expect(rows.map((r) => r.status)).toEqual(["live", "live", "live", "live", "live"]);
+    expect(new Set(rows.map((r) => r.mint)).size).toBe(5);
+    expect(h.chain.count("create")).toBe(5);
+    expect(h.chain.count("refund")).toBe(5);
+    const p = h.settings.priority;
+    for (const [i, l] of launches.entries()) {
+      const refund = l.required + BigInt(i) * 1_000_000n - createRent - initRent - txFee("create", p) - txFee("init", p) - txFee("refund", p);
+      expect(await h.chain.getBalance(senders[i]!)).toBe(SOL + refund);
+    }
   });
 });

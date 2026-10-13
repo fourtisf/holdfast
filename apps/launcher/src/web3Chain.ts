@@ -3,7 +3,7 @@ import { Connection, SendTransactionError, type Commitment, type PublicKey, type
 import bs58 from "bs58";
 
 import { TxError, type AccountSnapshot, type FundingInfo, type LaunchChain, type RecentBlockhash } from "./chain.js";
-import { incomingTransfers, pickFunding } from "./funding.js";
+import { incomingTransfers, pickFunding, type IncomingTransfer } from "./funding.js";
 
 export interface Web3ChainOptions {
   commitment?: Commitment;
@@ -33,7 +33,7 @@ export class Web3LaunchChain implements LaunchChain {
     opts: Web3ChainOptions = {},
   ) {
     this.commitment = opts.commitment ?? "confirmed";
-    this.signatureLimit = opts.signatureLimit ?? 50;
+    this.signatureLimit = opts.signatureLimit ?? 25;
     this.pollIntervalMs = opts.pollIntervalMs ?? 1_000;
     this.rebroadcastIntervalMs = opts.rebroadcastIntervalMs ?? 2_000;
     this.maxConfirmErrors = opts.maxConfirmErrors ?? 30;
@@ -45,6 +45,15 @@ export class Web3LaunchChain implements LaunchChain {
 
   async getBalance(address: PublicKey): Promise<bigint> {
     return BigInt(await this.connection.getBalance(address, this.commitment));
+  }
+
+  async getBalances(addresses: readonly PublicKey[]): Promise<bigint[]> {
+    const out: bigint[] = [];
+    for (let i = 0; i < addresses.length; i += 100) {
+      const infos = await this.connection.getMultipleAccountsInfo(addresses.slice(i, i + 100), this.commitment);
+      out.push(...infos.map((a) => BigInt(a?.lamports ?? 0)));
+    }
+    return out;
   }
 
   async accountExists(address: PublicKey): Promise<boolean> {
@@ -66,11 +75,14 @@ export class Web3LaunchChain implements LaunchChain {
 
   async findFundingSender(address: PublicKey): Promise<FundingInfo | null> {
     const sigs = await this.connection.getSignaturesForAddress(address, { limit: this.signatureLimit }, "confirmed");
-    const ok = sigs.filter((s) => s.err === null).map((s) => s.signature);
-    if (ok.length === 0) return null;
-    const txs = await this.connection.getParsedTransactions(ok, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
     const target = address.toBase58();
-    return pickFunding(txs.flatMap((tx) => incomingTransfers(tx, target)));
+    const transfers: IncomingTransfer[] = [];
+    for (const s of sigs) {
+      if (s.err !== null) continue;
+      const tx = await this.connection.getParsedTransaction(s.signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
+      transfers.push(...incomingTransfers(tx, target));
+    }
+    return pickFunding(transfers);
   }
 
   async sendAndConfirm(tx: Transaction, signers: Signer[]): Promise<string> {

@@ -13,10 +13,11 @@ import { CheckIcon, ExternalIcon } from "@/components/ui/icons";
 import { msUntilServerTime } from "@/lib/clock";
 import { SOLANA_CLUSTER } from "@/lib/config";
 import { explorerTxUrl } from "@/lib/explorer";
-import { formatCountdown, formatSolAmount, shortAddress } from "@/lib/format";
+import { formatSolExact, formatCountdown, formatSolAmount, shortAddress } from "@/lib/format";
 import { useDepositStatus } from "@/lib/hooks/live";
 import { useNow } from "@/lib/hooks/useNow";
-import { LAUNCH_FEE_SOL } from "@/lib/launch";
+import { useLaunchQuote } from "@/lib/hooks/queries";
+import { launchFeeSol } from "@/lib/launch";
 
 const STEPS = ["Send SOL", "Received", "Creating", "Live"];
 
@@ -119,6 +120,8 @@ export function DepositModal({
 }
 
 function AwaitingDeposit({ launch, devBuySol, remainingMs }: { launch: LaunchResponse; devBuySol: number; remainingMs: number }) {
+  const { data: quote } = useLaunchQuote(devBuySol);
+  const fee = launchFeeSol(quote);
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
@@ -129,11 +132,11 @@ function AwaitingDeposit({ launch, devBuySol, remainingMs }: { launch: LaunchRes
           <div>
             <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">Send exactly</div>
             <div className="mt-0.5 flex items-center gap-2">
-              <span className="text-2xl font-semibold text-fg tabular">{formatSolAmount(launch.requiredSol)} SOL</span>
+              <span className="text-2xl font-semibold text-fg tabular">{formatSolExact(launch.requiredSol)} SOL</span>
               <CopyButton value={String(launch.requiredSol)} />
             </div>
             <div className="mt-0.5 text-xs text-muted">
-              {LAUNCH_FEE_SOL} SOL launch cost{devBuySol > 0 ? ` + ${formatSolAmount(devBuySol)} SOL dev buy` : ""}. Anything extra is refunded.
+              {formatSolExact(fee)} SOL launch cost (account rent + fees){devBuySol > 0 ? ` + ${formatSolAmount(devBuySol)} SOL dev buy and a small buffer` : ""}. Anything unused is refunded.
             </div>
           </div>
           <div>

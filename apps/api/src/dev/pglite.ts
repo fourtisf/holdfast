@@ -13,6 +13,7 @@ import { loadConfig } from "../config.js";
 import { hkdfDepositAllocator } from "../launch/deposit.js";
 import { randomDepositAllocator } from "../launch/dev.js";
 import { DbLaunchService } from "../launch/service.js";
+import { launchCostSettings } from "../launch/settings.js";
 import { RpcTradeChain } from "../trade/chain.js";
 import { pgEventSource } from "../ws/events.js";
 import { startSimulator } from "./simulate.js";
@@ -32,7 +33,7 @@ const { app } = await buildApp({
   db,
   config,
   tradeChain: new RpcTradeChain(new Connection(config.rpcUrl, "confirmed")),
-  launches: new DbLaunchService(db, config.depositMasterSecret ? hkdfDepositAllocator(config.depositMasterSecret) : randomDepositAllocator, { ttlMs: config.launchTtlMs }),
+  launches: new DbLaunchService(db, config.depositMasterSecret ? hkdfDepositAllocator(config.depositMasterSecret) : randomDepositAllocator, { ttlMs: config.launchTtlMs, cost: launchCostSettings(config) }),
   events: pgEventSource(db),
   logger: log,
 });

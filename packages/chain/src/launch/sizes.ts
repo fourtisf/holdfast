@@ -9,10 +9,13 @@
  *   shorter because pump reserves trailing space).
  * - Token accounts: SPL Token 165 bytes; Token-2022 ATAs carry ImmutableOwner (170 bytes).
  */
+import { createRequire } from "node:module";
 import { ACCOUNT_SIZE, ExtensionType, getAccountLen, getMintLen } from "@solana/spl-token";
-import { HOLDFAST_IDL } from "@holdfast/chain";
 
-import { pump } from "./pump.js";
+import { HOLDFAST_IDL } from "../holdfast.js";
+
+// pump-sdk through its CommonJS build (see pump/idl.ts).
+const pump = createRequire(import.meta.url)("@pump-fun/pump-sdk") as { BONDING_CURVE_SIZE: number };
 
 type IdlType = string | { array: [IdlType, number] } | { defined: { name: string } } | { option: IdlType } | { vec: IdlType };
 interface IdlTypeDef {

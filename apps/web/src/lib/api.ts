@@ -8,6 +8,7 @@ import type {
   Holder,
   LaunchRequest,
   LaunchResponse,
+  LaunchQuote,
   LaunchStatus,
   Page,
   Position,
@@ -48,6 +49,8 @@ export interface HoldfastApi {
   uploadImage(file: File): Promise<{ imageUrl: string }>;
   launch(req: LaunchRequest): Promise<LaunchResponse>;
   launchStatus(launchId: string): Promise<LaunchStatus>;
+  /** Deposit needed for a launch, from the launcher's cost model. */
+  launchQuote(q?: { devBuySol?: number; name?: string; ticker?: string }): Promise<LaunchQuote>;
 }
 
 export class ApiError extends Error {
@@ -121,6 +124,7 @@ export const httpApi: HoldfastApi = {
   },
   launch: (req) => request("/launch", { method: "POST", json: req }),
   launchStatus: (launchId) => request(`/launch/${enc(launchId)}`),
+  launchQuote: (q = {}) => request(withQuery("/launch/quote", { devBuySol: q.devBuySol, name: q.name, ticker: q.ticker })),
 };
 
 let mockApi: Promise<HoldfastApi> | null = null;
@@ -158,6 +162,7 @@ export const api: HoldfastApi = {
   uploadImage: lazy("uploadImage"),
   launch: lazy("launch"),
   launchStatus: lazy("launchStatus"),
+  launchQuote: lazy("launchQuote"),
 };
 
 export function errorMessage(err: unknown): string {

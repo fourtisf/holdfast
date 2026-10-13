@@ -2,7 +2,8 @@ import {
   LAUNCH_FEE_LAMPORTS,
   marketCapSol,
   type LaunchRequest,
-  type LaunchResponse,
+  type LaunchQuote,
+  LaunchResponse,
   type LaunchStatus,
   type LaunchStatusKind,
   type RoundSnapshot,
@@ -14,7 +15,15 @@ import { ApiError, type HoldfastApi } from "../api";
 import { base58Encode, mockAddress, mockSignature, randomAddress, randomId } from "./ids";
 import * as market from "./market";
 
-const LAUNCH_FEE_SOL = Number(LAUNCH_FEE_LAMPORTS) / 1e9;
+const SPEC_FEE_SOL = Number(LAUNCH_FEE_LAMPORTS) / 1e9;
+
+/** Mirrors the launcher's cost model (packages/chain/src/launch) at default rent and priority fees. */
+function mockLaunchQuote(devBuySol = 0): LaunchQuote {
+  const launchFeeSol = 0.025329;
+  const devBuyExtraSol = devBuySol > 0 ? 0.00601256 + Math.ceil(devBuySol * 0.05 * 1e9) / 1e9 : 0;
+  const requiredSol = Math.round((launchFeeSol + devBuySol + devBuyExtraSol) * 1e9) / 1e9;
+  return { launchFeeSol, devBuySol, devBuyExtraSol, requiredSol, requiredLamports: lamports(requiredSol), specFeeSol: SPEC_FEE_SOL, exceedsSpecFee: true };
+}
 const DEPOSIT_WINDOW_MS = 15 * 60_000;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
@@ -188,10 +197,11 @@ export const mockApi: HoldfastApi = {
     if (file.size > MAX_UPLOAD_BYTES) throw new ApiError("Image is larger than 5 MB", 413);
     return latency({ imageUrl: await readAsDataUrl(file) }, 400, 900);
   },
+  launchQuote: async (q = {}) => latency(mockLaunchQuote(q.devBuySol ?? 0), 60, 160),
   launch: async (req) => {
     if (!req.name.trim() || !req.ticker.trim()) throw new ApiError("Name and ticker are required", 400);
     const launchId = randomId();
-    const requiredSol = LAUNCH_FEE_SOL + (req.devBuySol ?? 0);
+    const { requiredSol } = mockLaunchQuote(req.devBuySol ?? 0);
     const depositAddress = randomAddress();
     const res: LaunchResponse = {
       launchId,

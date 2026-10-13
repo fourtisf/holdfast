@@ -29,9 +29,12 @@ describe("normalizeSocial", () => {
 
 describe("deposit amount", () => {
   it("adds the 0.015 SOL launch cost to the dev buy", () => {
+    // fallback (spec fee) until the quote loads, then the quoted amount
     expect(requiredDepositSol(0)).toBe(0.015);
     expect(requiredDepositSol(0.5)).toBe(0.515);
     expect(requiredDepositSol(0.1 + 0.2)).toBe(0.315);
+    const quote = { launchFeeSol: 0.025329, devBuySol: 0.5, devBuyExtraSol: 0.031, requiredSol: 0.556329, requiredLamports: "556329000", specFeeSol: 0.015, exceedsSpecFee: true };
+    expect(requiredDepositSol(0.5, quote)).toBe(0.556329);
   });
   it("parses dev buy input", () => {
     expect(parseDevBuy("")).toBe(0);

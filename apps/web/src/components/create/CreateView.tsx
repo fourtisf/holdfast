@@ -1,6 +1,7 @@
 "use client";
 
 import { DEFAULT_TRIGGER_BPS, type LaunchResponse } from "@holdfast/core";
+import { useLaunchQuote } from "@/lib/hooks/queries";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -8,10 +9,10 @@ import { ErrorNote } from "@/components/ui/States";
 import { cn } from "@/components/ui/cn";
 import { GlobeIcon, InfoIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
 import { api, errorMessage } from "@/lib/api";
-import { formatSolAmount } from "@/lib/format";
+import { formatSolExact, formatSolAmount } from "@/lib/format";
 import {
   DESCRIPTION_MAX,
-  LAUNCH_FEE_SOL,
+  launchFeeSol,
   NAME_MAX,
   TICKER_MAX,
   normalizeTicker,
@@ -99,7 +100,9 @@ export function CreateView() {
   const errors = validateLaunch(form);
   const shown = touched ? errors : {};
   const devBuySol = parseDevBuy(form.devBuy) ?? 0;
-  const total = requiredDepositSol(devBuySol);
+  const { data: quote } = useLaunchQuote(devBuySol);
+  const total = requiredDepositSol(devBuySol, quote);
+  const devBuyExtra = quote && devBuySol > 0 ? quote.devBuyExtraSol : 0;
   const set = <K extends keyof LaunchForm>(key: K, value: LaunchForm[K]) => setForm((f) => ({ ...f, [key]: value }));
   const border = (key: keyof LaunchForm) => (shown[key] ? "border-sell/60" : "border-line-strong");
 
@@ -131,7 +134,7 @@ export function CreateView() {
       <div className="mb-5">
         <h1 className="text-2xl font-semibold tracking-tight text-fg sm:text-[28px]">Launch a coin</h1>
         <p className="mt-1 text-sm text-muted">
-          No wallet connection. Send {LAUNCH_FEE_SOL} SOL to a one-time address and your coin goes live on pump.fun with its own floor vault.
+          No wallet connection. Send {quote ? "" : "≈"}{formatSolExact(launchFeeSol(quote))} SOL to a one-time address and your coin goes live on pump.fun with its own floor vault.
         </p>
       </div>
 
@@ -304,23 +307,29 @@ export function CreateView() {
             <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">You send</div>
             <dl className="mt-2 space-y-1.5 text-sm">
               <div className="flex justify-between">
-                <dt className="text-muted">Launch cost (network + accounts)</dt>
-                <dd className="text-fg tabular">{LAUNCH_FEE_SOL} SOL</dd>
+                <dt className="text-muted">Launch cost (account rent + fees)</dt>
+                <dd className="text-fg tabular">{formatSolExact(launchFeeSol(quote))} SOL</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted">Dev buy</dt>
                 <dd className="text-fg tabular">{formatSolAmount(devBuySol)} SOL</dd>
               </div>
+              {devBuyExtra > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-muted">Dev-buy accounts + slippage buffer</dt>
+                  <dd className="text-fg tabular">{formatSolExact(devBuyExtra)} SOL</dd>
+                </div>
+              )}
               <div className="flex justify-between border-t border-line pt-2 font-semibold">
                 <dt className="text-fg">Total</dt>
-                <dd className="text-brand tabular">{formatSolAmount(total)} SOL</dd>
+                <dd className="text-brand tabular">{formatSolExact(total)} SOL</dd>
               </div>
             </dl>
             <p className="mt-2 text-xs text-faint">Anything above the total is refunded to the sender. Creator fees go to the coin&apos;s vault: 0% to you.</p>
             {submitError ? <ErrorNote className="mt-3">{submitError}</ErrorNote> : null}
             {touched && Object.keys(errors).length > 0 ? <p className="mt-3 text-xs text-sell">Fix the highlighted fields to continue.</p> : null}
             <Button type="submit" size="lg" className="mt-3 w-full" disabled={submitting || uploading}>
-              {submitting ? "Creating deposit address…" : uploading ? "Waiting for image upload…" : `Launch · send ${formatSolAmount(total)} SOL`}
+              {submitting ? "Creating deposit address…" : uploading ? "Waiting for image upload…" : `Launch · send ${formatSolExact(total)} SOL`}
             </Button>
           </Card>
         </div>

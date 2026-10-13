@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { LaunchResponse, LaunchStatus } from "@holdfast/core";
+import type { LaunchQuote, LaunchResponse, LaunchStatus } from "@holdfast/core";
 import { getLaunch, isExcluded, updateLaunchStatus, type Db } from "@holdfast/db";
 import { deriveDepositKeypair, parseMasterSecret } from "@holdfast/chain";
 import { hkdfDepositAllocator, lamportsToSolString, parseLaunchRequest, sniffImage, solanaPayUrl, tokensToRaw } from "../src/index.js";
+import { launchCost } from "../src/launch/cost.js";
+import { launchCostSettings } from "../src/launch/settings.js";
 import { freshDb, makeApi, NOW, resetDb, type TestApi } from "./helpers.js";
 
 let db: Db;
@@ -24,6 +26,23 @@ afterAll(async () => {
 
 const valid = { name: "Dog Coin", ticker: "DOG", triggerBps: 2500 };
 
+describe("GET /launch/quote", () => {
+  it("quotes the launcher's real cost (rent + fees, never below the spec's 0.015 SOL)", async () => {
+    const base = (await api.app.inject({ method: "GET", url: "/launch/quote" })).json<LaunchQuote>();
+    expect(base.specFeeSol).toBe(0.015);
+    expect(base.launchFeeSol).toBeGreaterThanOrEqual(0.015);
+    expect(base.requiredSol).toBe(base.launchFeeSol);
+    expect(base.exceedsSpecFee).toBe(true);
+    const withBuy = (await api.app.inject({ method: "GET", url: "/launch/quote?devBuySol=1&name=Dog%20Coin&ticker=DOG" })).json<LaunchQuote>();
+    expect(withBuy.devBuySol).toBe(1);
+    expect(withBuy.devBuyExtraSol).toBeGreaterThan(0);
+    expect(withBuy.requiredSol).toBeCloseTo(withBuy.launchFeeSol + 1 + withBuy.devBuyExtraSol, 9);
+    // shorter metadata than the worst case costs slightly less rent
+    expect(withBuy.launchFeeSol).toBeLessThanOrEqual(base.launchFeeSol);
+    expect((await api.app.inject({ method: "GET", url: "/launch/quote?devBuySol=50" })).statusCode).toBe(400);
+  });
+});
+
 describe("POST /launch", () => {
   it("creates a launch with a deposit address and a solana: pay URL", async () => {
     const res = await api.app.inject({
@@ -33,12 +52,15 @@ describe("POST /launch", () => {
     });
     expect(res.statusCode, res.body).toBe(200);
     const body = res.json<LaunchResponse>();
-    expect(body).toMatchObject({ requiredLamports: "515000000", requiredSol: 0.515, expiresAt: NOW + 30 * 60_000 });
-    expect(body.solanaPayUrl).toBe(`solana:${body.depositAddress}?amount=0.515&label=Holdfast&message=Launch%20%24DOG`);
+    // the launcher's real cost model: launch rent/fees (≥ 0.015 SOL) + dev buy + dev-buy accounts and float
+    const required = launchCost(launchCostSettings(api.config), { name: "Dog Coin", ticker: "DOG", devBuySol: 0.5 }).requiredLamports;
+    expect(required).toBeGreaterThan(515_000_000n);
+    expect(body).toMatchObject({ requiredLamports: required.toString(), requiredSol: Number(required) / 1e9, expiresAt: NOW + 30 * 60_000 });
+    expect(body.solanaPayUrl).toBe(`solana:${body.depositAddress}?amount=${lamportsToSolString(required)}&label=Holdfast&message=Launch%20%24DOG`);
     expect(await isExcluded(db, body.depositAddress)).toBe(true);
 
     const row = await getLaunch(db, body.launchId);
-    expect(row).toMatchObject({ status: "awaiting_deposit", devBuyLamports: 500_000_000n, requiredLamports: 515_000_000n });
+    expect(row).toMatchObject({ status: "awaiting_deposit", devBuyLamports: 500_000_000n, requiredLamports: required });
     expect(row?.form.socials).toEqual({ x: "https://x.com/dogcoin", telegram: "https://t.me/dogcoin", website: "https://dog.example" });
 
     const status = await api.app.inject({ method: "GET", url: `/launch/${body.launchId}` });
@@ -46,7 +68,7 @@ describe("POST /launch", () => {
       launchId: body.launchId,
       status: "awaiting_deposit",
       depositAddress: body.depositAddress,
-      requiredLamports: "515000000",
+      requiredLamports: required.toString(),
       receivedLamports: "0",
       sender: null,
       mint: null,

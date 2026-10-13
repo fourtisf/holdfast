@@ -35,7 +35,7 @@ import {
 } from "@holdfast/db";
 
 import { TxError, type LaunchChain } from "./chain.js";
-import { computeLaunchCost, initReimbursement, rentFromChain, txFee, DEFAULT_PRIORITY, type PriorityConfig, type RentFn } from "./cost.js";
+import { computeLaunchCost, initReimbursement, rentFromChain, txFee, DEFAULT_PRIORITY, type PriorityConfig, type RentFn } from "@holdfast/chain";
 import { decryptMintSecret, encryptMintSecret, mintSecretKey } from "./crypto.js";
 import {
   buildMetadataJson,
@@ -47,7 +47,7 @@ import {
   type MetadataSettings,
 } from "./metadata.js";
 import { pump, quoteDevBuy, readPumpBuyState } from "./pump.js";
-import { PUMP_MAX_NAME_BYTES, PUMP_MAX_SYMBOL_BYTES, PUMP_USER_VOLUME_ACCUMULATOR_SIZE, SYSTEM_ACCOUNT_SIZE, TOKEN_2022_ATA_SIZE, utf8Len } from "./sizes.js";
+import { PUMP_MAX_NAME_BYTES, PUMP_MAX_SYMBOL_BYTES, PUMP_USER_VOLUME_ACCUMULATOR_SIZE, SYSTEM_ACCOUNT_SIZE, TOKEN_2022_ATA_SIZE, utf8Len } from "@holdfast/chain";
 import { forceLaunchSig, listRecentTerminalLaunches, setMintSecretOnce } from "./store.js";
 import { buildCreateTx, buildDevBuyTx, buildInitTx, buildRefundTx, signTransaction, tokenAccountOf } from "./tx.js";
 
@@ -93,9 +93,9 @@ export const DEFAULT_SETTINGS = {
   retryMaxMs: 10 * 60_000,
   inFlightGuardMs: 120_000,
   expiryGraceMs: 30_000,
-  sweepIntervalMs: 60_000,
-  sweepLookbackMs: 7 * 24 * 3600_000,
-  batchSize: 200,
+  sweepIntervalMs: 5 * 60_000,
+  sweepLookbackMs: 3 * 24 * 3600_000,
+  batchSize: 500,
   concurrency: 4,
 } satisfies Partial<LauncherSettings>;
 
@@ -139,6 +139,7 @@ export class LaunchWorker {
   /** One pass over every pending launch (+ the periodic sweep of finished ones). */
   async tick(): Promise<void> {
     const due = (await listPendingLaunches(this.db, { limit: this.s.batchSize })).filter((l) => this.isDue(l));
+    const balances = await this.depositBalances(due.filter((l) => l.status === "awaiting_deposit"));
     // Launches are independent (own deposit, own mint; tx B reimburses the launcher atomically), so a
     // slow confirmation of one never holds back the others.
     let next = 0;
@@ -146,7 +147,7 @@ export class LaunchWorker {
       while (next < due.length) {
         const launch = due[next++]!;
         try {
-          await this.process(launch);
+          await this.process(launch, balances.get(launch.id));
         } catch (err) {
           this.log.error({ launchId: launch.id, status: launch.status, err: describe(err) }, "launch processing error");
         }
@@ -159,10 +160,23 @@ export class LaunchWorker {
     }
   }
 
-  async process(launch: LaunchRow): Promise<void> {
+  /** One RPC round trip per 100 deposit addresses instead of one per launch. */
+  private async depositBalances(waiting: readonly LaunchRow[]): Promise<Map<string, bigint>> {
+    const out = new Map<string, bigint>();
+    if (waiting.length === 0) return out;
+    try {
+      const balances = await this.chain.getBalances(waiting.map((l) => new PublicKey(l.depositAddress)));
+      waiting.forEach((l, i) => out.set(l.id, balances[i]!));
+    } catch (err) {
+      this.log.warn({ err: describe(err) }, "batched deposit balance read failed; reading one by one");
+    }
+    return out;
+  }
+
+  async process(launch: LaunchRow, depositBalance?: bigint): Promise<void> {
     switch (launch.status) {
       case "awaiting_deposit":
-        return this.watchDeposit(launch);
+        return this.watchDeposit(launch, depositBalance);
       case "deposit_received":
         return this.beginCreation(launch);
       case "creating":
@@ -239,10 +253,10 @@ export class LaunchWorker {
 
   // ---- awaiting_deposit ----------------------------------------------------------------------------
 
-  private async watchDeposit(l: LaunchRow): Promise<void> {
+  private async watchDeposit(l: LaunchRow, knownBalance?: bigint): Promise<void> {
     const deposit = this.depositKeypair(l).publicKey;
     const required = await this.requiredLamports(l);
-    const balance = await this.chain.getBalance(deposit);
+    const balance = knownBalance ?? (await this.chain.getBalance(deposit));
     const expired = this.now() > l.expiresAt;
 
     if (balance >= required) {
@@ -351,6 +365,10 @@ export class LaunchWorker {
         await this.chain.sendAndConfirm(tx, [deposit, mint]);
         this.log.info({ ...log, sig, uri: meta.uri }, "coin created on pump.fun");
       }
+      // The indexer only indexes mints it knows: register the coin as soon as it exists on-chain, so
+      // trades between tx A and tx B (snipers) are not missed.
+      step = "register";
+      await this.registerCoin(form, coin, deposit.publicKey, sender, meta.uri, l.createSig, false);
 
       // B: init_coin + treasury volume accumulator, rent reimbursed to the launcher.
       step = "init";
@@ -584,6 +602,7 @@ export class LaunchWorker {
       const funding = await this.chain.findFundingSender(deposit.publicKey);
       if (!funding) {
         this.log.warn({ launchId: l.id }, "refund: sender not found yet");
+        await this.touch(l, { incrementAttempts: true }); // back off
         return;
       }
       l = await this.touch(l, { sender: funding.sender });

@@ -1,7 +1,8 @@
 "use client";
 
-import { LAUNCH_FEE_LAMPORTS } from "@holdfast/core";
 import { FeeSplitBar } from "@/components/coin/FeeSplitBar";
+import { useLaunchQuote } from "@/lib/hooks/queries";
+import { formatSolAmount } from "@/lib/format";
 import { WeightRamp } from "@/components/coin/WeightRamp";
 import { useHowItWorks } from "@/components/how-it-works/HowItWorksProvider";
 import { ButtonLink } from "@/components/ui/Button";
@@ -40,10 +41,15 @@ export function Sidebar() {
 
       <ButtonLink href="/create" size="lg" className="w-full">
         <RocketIcon size={18} />
-        Launch a coin · {Number(LAUNCH_FEE_LAMPORTS) / 1e9} SOL
+        <LaunchLabel />
       </ButtonLink>
 
       <div className="mt-auto pt-2 text-[11px] text-faint">Solana {SOLANA_CLUSTER} · pump.fun launchpad</div>
     </aside>
   );
+}
+
+function LaunchLabel() {
+  const { data: quote } = useLaunchQuote(0);
+  return <>Launch a coin{quote ? ` · ${formatSolAmount(quote.launchFeeSol)} SOL` : ""}</>;
 }

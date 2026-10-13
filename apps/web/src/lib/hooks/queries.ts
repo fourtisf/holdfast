@@ -16,6 +16,12 @@ export const keys = {
   profile: (wallet: string) => ["profile", wallet] as const,
 };
 
+/** Launch deposit quote (rounded dev buy keeps the cache key small). */
+export function useLaunchQuote(devBuySol = 0) {
+  const dev = Math.round(devBuySol * 1e4) / 1e4;
+  return useSWR(["launchQuote", dev] as const, () => api.launchQuote({ devBuySol: dev }), { revalidateOnFocus: false, dedupingInterval: 60_000, keepPreviousData: true });
+}
+
 export function useStats() {
   return useSWR(keys.stats(), () => api.stats(), { refreshInterval: 30_000 });
 }

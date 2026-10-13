@@ -1,16 +1,17 @@
 "use client";
 
-import { DEFEND_STEP_BPS, LAUNCH_FEE_LAMPORTS, ROUND_INTERVAL_SECONDS, TRIGGER_OPTIONS_BPS } from "@holdfast/core";
+import { DEFEND_STEP_BPS, ROUND_INTERVAL_SECONDS, TRIGGER_OPTIONS_BPS } from "@holdfast/core";
 import type { ReactNode } from "react";
 import { FeeSplitBar } from "@/components/coin/FeeSplitBar";
 import { WeightRamp } from "@/components/coin/WeightRamp";
 import { Badge } from "@/components/ui/Badge";
 import { ButtonLink, Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { formatBpsAsPct } from "@/lib/format";
+import { formatBpsAsPct, formatSolAmount } from "@/lib/format";
+import { useLaunchQuote } from "@/lib/hooks/queries";
+import { launchFeeSol } from "@/lib/launch";
 import { FloorDiagram } from "./FloorDiagram";
 
-const LAUNCH_FEE_SOL = Number(LAUNCH_FEE_LAMPORTS) / 1e9;
 
 interface Step {
   title: string;
@@ -23,7 +24,7 @@ const STEPS: Step[] = [
     title: "Launch by sending SOL",
     body: (
       <>
-        No wallet connection needed. Fill in the form and send <b className="text-fg">{LAUNCH_FEE_SOL} SOL</b> (plus an optional dev buy) to a one-time deposit
+        No wallet connection needed. Fill in the form and send <b className="text-fg"><LaunchFee /> SOL</b> (account rent + network fees, plus an optional dev buy) to a one-time deposit
         address. Pick how far below the ATH the floor sits. The choice is <b className="text-fg">permanent</b>.
       </>
     ),
@@ -121,4 +122,9 @@ export function HowItWorksModal({ open, onClose }: { open: boolean; onClose: () 
       </ol>
     </Modal>
   );
+}
+
+function LaunchFee() {
+  const { data: quote } = useLaunchQuote(0);
+  return <>{quote ? formatSolAmount(quote.launchFeeSol) : `≈${formatSolAmount(launchFeeSol(null))}`}</>;
 }

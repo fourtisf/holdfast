@@ -266,6 +266,21 @@ export interface LaunchRequest {
   devBuySol?: number;
 }
 
+/** GET /launch/quote: what a launch costs before anything is submitted (same model the launcher uses). */
+export interface LaunchQuote {
+  /** Rent + fees consumed by the launch itself (pump.fun accounts + Holdfast vault accounts + tx fees). */
+  launchFeeSol: number;
+  devBuySol: number;
+  /** Extra accounts/fees of the dev buy plus refundable slippage float. */
+  devBuyExtraSol: number;
+  /** Minimum deposit; anything unused is refunded. */
+  requiredSol: number;
+  requiredLamports: string;
+  /** SPEC §2 target (0.015 SOL) and whether the real cost is above it. */
+  specFeeSol: number;
+  exceedsSpecFee: boolean;
+}
+
 export interface LaunchResponse {
   launchId: string;
   depositAddress: string;

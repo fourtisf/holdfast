@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { Keypair } from "@solana/web3.js";
 import { HOLDFAST_PROGRAM_ID, parseMasterSecret } from "@holdfast/chain";
 
-import { DEFAULT_COMPUTE_UNITS } from "./cost.js";
+import { DEFAULT_COMPUTE_UNITS } from "@holdfast/chain";
 import { assertUriFits, normalizeBaseUrl } from "./metadata.js";
 import { DEFAULT_SETTINGS, type LauncherSettings } from "./worker.js";
 

@@ -35,6 +35,6 @@ Items marked **⚑ needs confirmation** are implemented with the default shown b
 | # | Topic | Status |
 |---|---|---|
 | 19 | **⚑ UI prototype** | `holdfast-launchpad.html` was **not included** with the spec. The frontend follows the spec text, with theme tokens and layout isolated so it can be matched to the prototype once it's shared. |
-| 20 | **⚑ Launch cost** | The spec says 0.015 SOL. Real rent for a pump.fun `create_v2` coin plus the Holdfast accounts is higher (see `apps/launcher/README.md`). The launcher charges `max(0.015 SOL, real cost)` plus the dev buy and refunds the rest. The owner should decide whether to subsidise the difference or show the real number. |
+| 20 | **⚑ Launch cost** | The spec says 0.015 SOL. The real cost is **≈ 0.0244 SOL** of rent and fees (pump.fun ≈ 0.0081, Holdfast ≈ 0.0163; breakdown in `apps/launcher/README.md`), so the deposit needed is 0.025329 SOL plus any dev buy. The API quotes it (`GET /launch/quote`), the UI shows it, and unused SOL is refunded. Options: subsidise ≈ 0.01 SOL per launch, or shrink the vault account (TWAP ring) and create treasury accounts lazily (≈ 0.0145 SOL). |
 | 21 | Dev buy | Bought by the deposit address, then **transferred** to the depositor, so it never creates a lot and never earns, as the spec requires. The dev-buy transaction is also recorded as `launch_sig`, which the indexer skips. |
 | 22 | Legal | Holder revenue sharing may be regulated (SPEC §7.6). Not a code decision. |

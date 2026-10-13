@@ -7,8 +7,8 @@ import { createRequire } from "node:module";
 import { Connection, PublicKey, type AccountInfo } from "@solana/web3.js";
 import BN from "bn.js";
 import type * as PumpSdkModule from "@pump-fun/pump-sdk";
-import { associatedTokenAddress } from "@holdfast/chain";
 import type { BondingCurve, FeeConfig, Global } from "@pump-fun/pump-sdk";
+import { associatedTokenAddress } from "@holdfast/chain";
 
 import type { LaunchChain } from "./chain.js";
 

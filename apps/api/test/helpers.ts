@@ -1,3 +1,4 @@
+import { launchCostSettings } from "../src/launch/settings.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +27,8 @@ export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     statsIntervalMs: 0,
     wsHeartbeatMs: 30_000,
     launchTtlMs: 30 * 60_000,
+    launchPriorityMicroLamports: 50_000,
+    launchDevBuySlippageBps: 500,
     depositMasterSecret: null,
     trade: { computeUnitPriceMicroLamports: 50_000, computeUnitLimitCurve: 250_000, computeUnitLimitAmm: 300_000 },
     logLevel: "silent",
@@ -67,7 +70,7 @@ export async function makeApi(db: Db, overrides: Partial<ApiConfig> = {}, now = 
   const config = testConfig(overrides);
   const events = new MemoryEventSource();
   const chain = new FakeTradeChain();
-  const launches = new DbLaunchService(db, async () => Keypair.fromSeed(Buffer.alloc(32, ++depositCounter)).publicKey.toBase58(), { ttlMs: config.launchTtlMs, now });
+  const launches = new DbLaunchService(db, async () => Keypair.fromSeed(Buffer.alloc(32, ++depositCounter)).publicKey.toBase58(), { ttlMs: config.launchTtlMs, cost: launchCostSettings(config), now });
   const api = await buildApp({ db, config, tradeChain: chain, launches, events, now });
   await api.app.ready();
   return { ...api, events, chain, config };

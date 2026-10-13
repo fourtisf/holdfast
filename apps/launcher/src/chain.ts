@@ -28,6 +28,8 @@ export interface AccountSnapshot {
 
 export interface LaunchChain {
   getBalance(address: PublicKey): Promise<bigint>;
+  /** Balances of many addresses at once (deposit polling); 0 for accounts that do not exist. */
+  getBalances(addresses: readonly PublicKey[]): Promise<bigint[]>;
   /** Who funded `address` (System transfers into it), from its signature history. */
   findFundingSender(address: PublicKey): Promise<FundingInfo | null>;
   accountExists(address: PublicKey): Promise<boolean>;

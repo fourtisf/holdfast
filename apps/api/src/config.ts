@@ -14,6 +14,9 @@ export interface ApiConfig {
   statsIntervalMs: number;
   wsHeartbeatMs: number;
   launchTtlMs: number;
+  /** Shared with the launcher so quotes match what it charges. */
+  launchPriorityMicroLamports: number;
+  launchDevBuySlippageBps: number;
   depositMasterSecret: string | null;
   trade: {
     computeUnitPriceMicroLamports: number;
@@ -38,6 +41,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     statsIntervalMs: Number(env.API_STATS_INTERVAL_MS ?? 10_000),
     wsHeartbeatMs: Number(env.API_WS_HEARTBEAT_MS ?? 30_000),
     launchTtlMs: Number(env.LAUNCH_TTL_MS ?? 30 * 60_000),
+    launchPriorityMicroLamports: Number(env.LAUNCHER_PRIORITY_FEE_MICROLAMPORTS ?? 50_000),
+    launchDevBuySlippageBps: Number(env.LAUNCHER_DEV_BUY_SLIPPAGE_BPS ?? 500),
     depositMasterSecret: env.DEPOSIT_MASTER_SECRET || null,
     trade: {
       computeUnitPriceMicroLamports: Number(env.TRADE_CU_PRICE_MICROLAMPORTS ?? 100_000),

@@ -20,6 +20,9 @@ test-ledger/
 *.keypair.json
 keys/
 
+# local service data (uploaded images, metadata JSON, PGlite)
+data/
+
 # misc
 .DS_Store
 *.log

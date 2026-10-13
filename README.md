@@ -29,6 +29,9 @@ for the owner, are in [`docs/decisions.md`](docs/decisions.md).
 | `apps/api` | Fastify REST + WebSocket API for the frontend ([docs/api.md](docs/api.md)) |
 | `apps/web` | Next.js 15 + Tailwind 4 frontend |
 
+Test suites: 52 Rust (program unit + LiteSVM integration) and 317 TypeScript (core 49, chain 17, db 19, indexer 32,
+api 52, keeper 10 incl. end-to-end against the compiled program, launcher 77, web 61).
+
 Further reading: [pump.fun integration and §8 verification](docs/pump-integration.md) ·
 [payout rounds and verification](docs/payouts.md) · [security model](docs/security.md).
 
@@ -69,6 +72,9 @@ pnpm --filter @holdfast/launcher start
 pnpm --filter @holdfast/web dev            # http://localhost:3000
 ```
 
+No Postgres and no Solana at hand? `pnpm --filter @holdfast/api dev:pglite` serves a seeded demo dataset (embedded
+Postgres, simulated trades), and the web app can point at it.
+
 The frontend also runs with no backend at all: `NEXT_PUBLIC_USE_MOCKS=1 pnpm --filter @holdfast/web dev`.
 
 ### Deploying the program (devnet first)
@@ -83,7 +89,7 @@ The frontend also runs with no backend at all: `NEXT_PUBLIC_USE_MOCKS=1 pnpm --f
 
 | Criterion | Status |
 |---|---|
-| Launch by only sending SOL; fees flow to the vault PDA | Implemented (`apps/launcher`, `init_coin` checks `creator == treasury`). **Devnet run pending.** |
+| Launch by only sending SOL; fees flow to the vault PDA | Implemented and tested against an instruction-executing fake chain (`apps/launcher`, 77 tests). `init_coin` refuses a coin unless `creator == treasury`. **Devnet run pending.** Real cost ≈ 0.0244 SOL, see [decisions #20](docs/decisions.md) |
 | 60/30/10 split proven on-chain | ✅ program tests `fees_split_exactly_60_30_10`, keeper e2e |
 | No way to withdraw SOL except the three paths (proven by tests) | ✅ `tests/program/tests/no_withdraw.rs` (instruction set pinned, admin powers, randomised lamport conservation) |
 | Price ≤ floor triggers a 10% buyback, cooldown works, tokens go to the holder pool | ✅ `ath_defend.rs`, keeper e2e |

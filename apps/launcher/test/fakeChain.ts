@@ -26,10 +26,10 @@ import {
 } from "@holdfast/chain";
 
 import { TxError, type AccountSnapshot, type FundingInfo, type LaunchChain, type RecentBlockhash } from "../src/chain.js";
-import { DEFAULT_RENT, type RentFn } from "../src/cost.js";
+import { DEFAULT_RENT, type RentFn } from "@holdfast/chain";
 import { pickFunding, type IncomingTransfer } from "../src/funding.js";
 import { encodePumpAccount, pump, PUMP_SDK, type BondingCurve, type FeeConfig, type Global } from "../src/pump.js";
-import { COIN_VAULT_SIZE, PUMP_USER_VOLUME_ACCUMULATOR_SIZE, pumpMintSize, SPL_TOKEN_ACCOUNT_SIZE, TOKEN_2022_ATA_SIZE, utf8Len } from "../src/sizes.js";
+import { COIN_VAULT_SIZE, PUMP_USER_VOLUME_ACCUMULATOR_SIZE, pumpMintSize, SPL_TOKEN_ACCOUNT_SIZE, TOKEN_2022_ATA_SIZE, utf8Len } from "@holdfast/chain";
 import { PACKET_DATA_SIZE } from "../src/tx.js";
 
 export const pumpCoder = new BorshCoder(pump.pumpIdl as unknown as Idl);
@@ -165,7 +165,6 @@ export class FakeChain implements LaunchChain {
     wsol[44] = 9;
     wsol[45] = 1;
     this.put(WSOL_MINT, { lamports: 1_000_000_000n, owner: TOKEN_PROGRAM_ID, data: wsol });
-    this.put(configPda(), { lamports: 10_000_000n, owner: HOLDFAST_PROGRAM_ID, data: Buffer.alloc(0) });
   }
 
   // ---- test controls -----------------------------------------------------------------------------
@@ -239,6 +238,10 @@ export class FakeChain implements LaunchChain {
 
   async getBalance(address: PublicKey): Promise<bigint> {
     return this.accounts.get(address.toBase58())?.lamports ?? 0n;
+  }
+
+  async getBalances(addresses: readonly PublicKey[]): Promise<bigint[]> {
+    return addresses.map((a) => this.accounts.get(a.toBase58())?.lamports ?? 0n);
   }
 
   async accountExists(address: PublicKey): Promise<boolean> {

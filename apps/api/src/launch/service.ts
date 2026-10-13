@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { LAUNCH_FEE_LAMPORTS, type LaunchRequest, type LaunchResponse, type LaunchStatus } from "@holdfast/core";
+import type { LaunchRequest, LaunchResponse, LaunchStatus } from "@holdfast/core";
 import { addExcluded, getLaunch, insertLaunch, nextDepositIndex, type Db } from "@holdfast/db";
 import { lamportsToSol, lamportsToSolString, solToLamports } from "../format.js";
+import { launchCost, type LaunchCostSettings } from "./cost.js";
 import { toLaunchStatus } from "../present.js";
 import type { DepositAllocator } from "./deposit.js";
 
@@ -24,13 +25,13 @@ export class DbLaunchService implements LaunchService {
   constructor(
     private readonly db: Db,
     private readonly allocateDepositAddress: DepositAllocator,
-    private readonly opts: { ttlMs: number; now?: () => number },
+    private readonly opts: { ttlMs: number; cost: LaunchCostSettings; now?: () => number },
   ) {}
 
   async create(req: LaunchRequest): Promise<LaunchResponse> {
     const now = this.opts.now?.() ?? Date.now();
     const devBuyLamports = solToLamports(req.devBuySol ?? 0);
-    const required = LAUNCH_FEE_LAMPORTS + devBuyLamports;
+    const required = launchCost(this.opts.cost, req).requiredLamports;
     const id = randomUUID();
     const expiresAt = now + this.opts.ttlMs;
     const row = await this.db.tx(async (q) => {

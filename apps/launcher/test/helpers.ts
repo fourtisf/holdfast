@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Keypair, type PublicKey } from "@solana/web3.js";
@@ -19,10 +19,10 @@ import {
   type LaunchRow,
 } from "@holdfast/db";
 
-import { computeLaunchCost, DEFAULT_PRIORITY, DEFAULT_RENT } from "../src/cost.js";
+import { computeLaunchCost, DEFAULT_PRIORITY, DEFAULT_RENT } from "@holdfast/chain";
 import { metadataUriLength } from "../src/metadata.js";
 import { pump, quoteDevBuy, type DevBuyQuote } from "../src/pump.js";
-import { utf8Len } from "../src/sizes.js";
+import { utf8Len } from "@holdfast/chain";
 import { DEFAULT_SETTINGS, LaunchWorker, type LauncherSettings, type Logger } from "../src/worker.js";
 import { FakeChain } from "./fakeChain.js";
 
@@ -104,6 +104,7 @@ export class Harness {
 
   async close(): Promise<void> {
     await this.unlisten?.();
+    rmSync(this.settings.metadata.storeDir, { recursive: true, force: true });
   }
 
   readonly logger: Logger = {

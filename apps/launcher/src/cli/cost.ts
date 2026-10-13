@@ -5,7 +5,7 @@
 import { Connection } from "@solana/web3.js";
 import { LAUNCH_FEE_LAMPORTS } from "@holdfast/core";
 
-import { computeLaunchCost, DEFAULT_PRIORITY, DEFAULT_RENT, formatSol, rentFromChain, type CostItem } from "../cost.js";
+import { computeLaunchCost, DEFAULT_PRIORITY, DEFAULT_RENT, formatSol, rentFromChain, type CostItem } from "@holdfast/chain";
 import { metadataUriLength } from "../metadata.js";
 
 const args = process.argv.slice(2).filter((a) => a !== "--rpc");

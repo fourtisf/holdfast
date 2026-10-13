@@ -14,6 +14,7 @@ import {
   formatSol,
   formatTokens,
   shortAddress,
+  formatSolExact,
 } from "./format";
 
 describe("formatCompact", () => {
@@ -122,5 +123,13 @@ describe("addresses and time", () => {
     expect(formatCountdown(0)).toBe("00:00");
     expect(formatCountdown(-500)).toBe("00:00");
     expect(formatCountdown(3_725_000)).toBe("1:02:05");
+  });
+});
+
+describe("formatSolExact", () => {
+  it("never rounds a deposit amount", () => {
+    expect(formatSolExact(0.025329)).toBe("0.025329");
+    expect(formatSolExact(0.556341)).toBe("0.556341");
+    expect(formatSolExact(1)).toBe("1");
   });
 });

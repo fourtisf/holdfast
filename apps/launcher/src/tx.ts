@@ -29,7 +29,7 @@ import { coinKeys, initCoinIx, pumpCreatorFor, TOKEN_2022_PROGRAM_ID } from "@ho
 import { PUMP_TOKEN_DECIMALS } from "@holdfast/core";
 
 import type { RecentBlockhash } from "./chain.js";
-import type { PriorityConfig } from "./cost.js";
+import type { PriorityConfig } from "@holdfast/chain";
 import { PUMP_SDK, type BondingCurve } from "./pump.js";
 
 export const PACKET_DATA_SIZE = 1232;

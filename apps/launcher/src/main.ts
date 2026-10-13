@@ -4,7 +4,7 @@ import { connectDb, migrate } from "@holdfast/db";
 
 import { verifyLauncherAuthority } from "./authority.js";
 import { loadConfig, redactUrl } from "./config.js";
-import { computeLaunchCost, formatSol } from "./cost.js";
+import { computeLaunchCost, formatSol } from "@holdfast/chain";
 import { metadataUriLength } from "./metadata.js";
 import { Web3LaunchChain } from "./web3Chain.js";
 import { LaunchWorker } from "./worker.js";
@@ -17,7 +17,10 @@ const db = await connectDb(config.databaseUrl, { onError: (err) => log.error({ e
 if (config.migrate) await migrate(db, { log: (msg) => log.info(msg) });
 
 const chain = Web3LaunchChain.fromUrl(config.rpcUrl);
-const authority = await verifyLauncherAuthority(chain, settings.launcher.publicKey);
+const authority = await verifyLauncherAuthority(chain, settings.launcher.publicKey).catch((err: unknown) => ({
+  ok: false as const,
+  reason: `cannot read the Holdfast Config from ${redactUrl(config.rpcUrl)}: ${err instanceof Error ? err.message : String(err)}`,
+}));
 if (!authority.ok) {
   log.fatal({ reason: authority.reason }, "launcher wallet cannot call init_coin");
   await db.close();
