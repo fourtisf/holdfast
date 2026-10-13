@@ -216,6 +216,9 @@ importers:
         specifier: ^10.1.0
         version: 10.4.0
     devDependencies:
+      '@coral-xyz/anchor':
+        specifier: 0.31.1
+        version: 0.31.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
       '@types/bn.js':
         specifier: ^5.2.0
         version: 5.2.0

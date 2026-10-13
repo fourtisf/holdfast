@@ -276,7 +276,8 @@ export function roundInputsFromJson(json: RoundInputsJson): RoundInputs {
   };
 }
 
-export function buildRoundSnapshot(inputs: RoundInputs, result: RoundResult, ts: number): RoundSnapshot {
+/** `decimals` converts the token pot to whole tokens for the summary fields (API convention). */
+export function buildRoundSnapshot(inputs: RoundInputs, result: RoundResult, ts: number, decimals = 6): RoundSnapshot {
   return {
     version: 1,
     mint: inputs.mint,
@@ -284,7 +285,7 @@ export function buildRoundSnapshot(inputs: RoundInputs, result: RoundResult, ts:
     ts,
     snapshotAt: inputs.snapshotAt,
     solPot: Number(result.solPot) / 1e9,
-    tokenPot: Number(result.tokenPot),
+    tokenPot: Number(result.tokenPot) / 10 ** decimals,
     recipients: result.entries.length,
     snapshotHash: toHex(result.merkleRoot),
     status: "computed",
