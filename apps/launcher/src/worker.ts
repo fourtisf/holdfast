@@ -80,6 +80,8 @@ export interface LauncherSettings {
   sweepIntervalMs: number;
   sweepLookbackMs: number;
   batchSize: number;
+  /** Launches processed in parallel per tick. */
+  concurrency: number;
 }
 
 export const DEFAULT_SETTINGS = {
@@ -94,6 +96,7 @@ export const DEFAULT_SETTINGS = {
   sweepIntervalMs: 60_000,
   sweepLookbackMs: 7 * 24 * 3600_000,
   batchSize: 200,
+  concurrency: 4,
 } satisfies Partial<LauncherSettings>;
 
 export interface WorkerDeps {
@@ -135,15 +138,21 @@ export class LaunchWorker {
 
   /** One pass over every pending launch (+ the periodic sweep of finished ones). */
   async tick(): Promise<void> {
-    const launches = await listPendingLaunches(this.db, { limit: this.s.batchSize });
-    for (const launch of launches) {
-      if (!this.isDue(launch)) continue;
-      try {
-        await this.process(launch);
-      } catch (err) {
-        this.log.error({ launchId: launch.id, status: launch.status, err: describe(err) }, "launch processing error");
+    const due = (await listPendingLaunches(this.db, { limit: this.s.batchSize })).filter((l) => this.isDue(l));
+    // Launches are independent (own deposit, own mint; tx B reimburses the launcher atomically), so a
+    // slow confirmation of one never holds back the others.
+    let next = 0;
+    const lane = async () => {
+      while (next < due.length) {
+        const launch = due[next++]!;
+        try {
+          await this.process(launch);
+        } catch (err) {
+          this.log.error({ launchId: launch.id, status: launch.status, err: describe(err) }, "launch processing error");
+        }
       }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(this.s.concurrency, due.length) }, lane));
     if (this.now() - this.lastSweep >= this.s.sweepIntervalMs) {
       this.lastSweep = this.now();
       await this.sweep();
