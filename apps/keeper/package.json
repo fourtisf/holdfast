@@ -1,0 +1,36 @@
+{
+  "name": "@holdfast/keeper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Keeper crank (collect fees, TWAP/ATH sampling, graduation, floor defence, $HOLD burns) and the 2-minute payout worker.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start:keeper": "tsx src/main-keeper.ts",
+    "start:payout": "tsx src/main-payout.ts",
+    "verify-round": "tsx src/verify-round.ts"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.31.1",
+    "@holdfast/chain": "workspace:*",
+    "@holdfast/core": "workspace:*",
+    "@holdfast/db": "workspace:*",
+    "@pump-fun/pump-sdk": "4.1.0",
+    "@pump-fun/pump-swap-sdk": "2.1.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.2",
+    "pino": "^9.14.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.16",
+    "@types/bn.js": "^5.2.0",
+    "litesvm": "1.6.0",
+    "@solana/kit": "^6.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

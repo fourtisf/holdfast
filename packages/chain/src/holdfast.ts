@@ -38,6 +38,11 @@ export interface CoinVaultAccount {
   holderTokens: bigint;
   lastDefendTs: number;
   defendCount: bigint;
+  hourWindowStart: number;
+  hourWindowDefends: number;
+  /** Timestamp of the newest TWAP observation (0 if none). */
+  lastObservationTs: number;
+  observationCount: number;
   roundId: bigint;
   roundOpen: boolean;
   lastRoundTs: number;
@@ -93,6 +98,15 @@ const num = (v: unknown): number => Number((v as BN | number).toString());
 const key = (v: unknown): PublicKey => v as PublicKey;
 const optKey = (v: unknown): PublicKey | null => ((v as PublicKey).equals(PublicKey.default) ? null : (v as PublicKey));
 
+function latestObservation(r: Raw): { lastObservationTs: number; observationCount: number } {
+  const len = num(r.obs_len);
+  if (len === 0) return { lastObservationTs: 0, observationCount: 0 };
+  const observations = r.observations as { ts: BN }[];
+  const head = num(r.obs_head);
+  const idx = (head + observations.length - 1) % observations.length;
+  return { lastObservationTs: num(observations[idx]!.ts), observationCount: len };
+}
+
 export function decodeCoinVault(data: Buffer): CoinVaultAccount {
   const r = coder.accounts.decode<Raw>("CoinVault", data);
   return {
@@ -112,6 +126,9 @@ export function decodeCoinVault(data: Buffer): CoinVaultAccount {
     holderTokens: big(r.holder_tokens),
     lastDefendTs: num(r.last_defend_ts),
     defendCount: big(r.defend_count),
+    hourWindowStart: num(r.hour_window_start),
+    hourWindowDefends: num(r.hour_window_defends),
+    ...latestObservation(r),
     roundId: big(r.round_id),
     roundOpen: Boolean(r.round_open),
     lastRoundTs: num(r.last_round_ts),
