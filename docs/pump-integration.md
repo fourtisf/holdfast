@@ -100,6 +100,10 @@ are tested.
 
 ## Devnet PoC checklist (SPEC §9.1). Do this before anything else on devnet.
 
+`pnpm --filter @holdfast/keeper devnet-poc` (see [runbook.md](runbook.md#1-devnet-rehearsal)) automates steps 1–4 and 7
+through the real services and, with `--defend`, attempts step 5. It writes every signature to a report. Steps 6
+(graduation) and the PumpSwap half of 4–5 remain manual: completing a curve takes ≈ 85 SOL of buys.
+
 1. Deploy `holdfast_vault` to devnet and run `initialize` from the upgrade authority.
 2. `create_v2` with `creator = treasuryPda(mint)`. Read the bonding curve and confirm `creator` at offset 49.
 3. `init_coin`. Then, once fees are collected, `prepare_treasury` with the pump volume accounts: confirm the CPI

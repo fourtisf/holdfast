@@ -30,12 +30,17 @@ for the owner, are in [`docs/decisions.md`](docs/decisions.md).
 | `apps/notifier` | Telegram bot: payouts, floor defences, graduations and weight milestones for watched wallets and coins ([docs/notifier.md](docs/notifier.md)) |
 | `apps/web` | Next.js 15 + Tailwind 4 frontend |
 
-Test suites: 52 Rust (program unit + LiteSVM integration) and 433 TypeScript (core 60, chain 18, db 25, ops 5,
-indexer 33, api 74, keeper 17 incl. end-to-end against the compiled program, launcher 93, notifier 47, web 61).
+Test suites: 56 Rust (program unit + LiteSVM integration) and 443 TypeScript (core 60, chain 19, db 25, ops 5,
+indexer 33, api 74, keeper 17 incl. end-to-end against the compiled program, launcher 93, notifier 47, web 70).
 
 Further reading: [pump.fun integration and §8 verification](docs/pump-integration.md) ·
 [payout rounds and verification](docs/payouts.md) · [security model](docs/security.md) ·
-[Telegram notifier](docs/notifier.md).
+[Telegram notifier](docs/notifier.md) · [**runbook: devnet rehearsal → mainnet**](docs/runbook.md).
+
+What a user gets beyond the mechanism: graduation progress, SOL/USD display, a watchlist and filters, PnL and trade
+history per wallet, leaderboards (earners, diamond hands, creators), creator pages, wallet-signed comments with holder
+badges, per-round verification in the browser against the on-chain commitment, share cards, priority fees, and
+open-in-wallet links on iOS.
 
 ## Prerequisites
 
@@ -93,9 +98,12 @@ restart never sends anything twice. Create a bot with @BotFather, set `TELEGRAM_
 
 1. `solana-keygen new -o target/deploy/holdfast_vault-keypair.json`, then `anchor keys sync` (updates `declare_id!` and `Anchor.toml`).
 2. `anchor build -p holdfast_vault && anchor deploy --provider.cluster devnet -p holdfast_vault`.
-3. Call `initialize(keeper, launcher, params)` from the upgrade authority.
-4. Work through the devnet PoC checklist in [docs/pump-integration.md](docs/pump-integration.md#devnet-poc-checklist-spec-91) before building anything else on top.
-5. Before mainnet: external audit, upgrade authority moved to a multisig or timelock (or frozen), admin moved to a multisig.
+3. Call `initialize(keeper, launcher, params)` from the upgrade authority (`pnpm --filter @holdfast/keeper admin -- init …`).
+4. Start the stack and run the end-to-end proof of concept with real devnet transactions:
+   `pnpm --filter @holdfast/keeper devnet-poc -- --api … --rpc … --payer …`. Then work through the remaining manual items in
+   [docs/pump-integration.md](docs/pump-integration.md#devnet-poc-checklist-spec-91).
+5. Mainnet (audit, verifiable build, multisig upgrade authority and admin, $HOLD, monitoring, incidents):
+   [docs/runbook.md](docs/runbook.md).
 
 ## Docker
 
@@ -134,10 +142,10 @@ CI (`.github/workflows/ci.yml`) builds and tests the program, runs the TypeScrip
 
 | Criterion | Status |
 |---|---|
-| Launch by only sending SOL; fees flow to the vault PDA | Implemented and tested against an instruction-executing fake chain (`apps/launcher`), in one atomic transaction (anti-snipe) or the four-transaction fallback. `init_coin` refuses a coin unless `creator == treasury`. **0.015 SOL**, as specified ([decisions #20](docs/decisions.md)). **Devnet run pending** |
+| Launch by only sending SOL; fees flow to the vault PDA | Implemented and tested against an instruction-executing fake chain (`apps/launcher`), in one atomic transaction (anti-snipe) or the four-transaction fallback. `init_coin` refuses a coin unless `creator == treasury`. **0.015 SOL**, as specified ([decisions #20](docs/decisions.md)). **Devnet run pending**: `devnet-poc` automates it ([runbook](docs/runbook.md)) |
 | 60/30/10 split proven on-chain | ✅ program tests `fees_split_exactly_60_30_10`, keeper e2e |
 | No way to withdraw SOL except the three paths (proven by tests) | ✅ `tests/program/tests/no_withdraw.rs` (instruction set pinned, admin powers, randomised lamport conservation) |
 | Price ≤ floor triggers a 10% buyback, cooldown works, tokens go to the holder pool | ✅ `ath_defend.rs`, keeper e2e |
 | Payout every 2 minutes per the weight formula, snapshot re-verifiable | ✅ `packages/core` tests, keeper e2e (snapshot root = on-chain `RoundOpened` root), `verify-round` CLI |
 | Dev buy and transferred tokens earn nothing | ✅ lot rules (`packages/core` lots tests, indexer tests), dev buy delivered by transfer |
-| Desktop and mobile UI match the prototype | Prototype file not provided. UI built from the spec text, with screenshots in `apps/web/screenshots/` |
+| Desktop and mobile UI match the prototype | Prototype file not provided. UI built from the spec text; `pnpm --filter @holdfast/web screenshots` smoke-tests every page at desktop and mobile size in mock mode |

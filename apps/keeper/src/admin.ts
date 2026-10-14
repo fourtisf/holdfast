@@ -10,6 +10,9 @@
  *   set-hold-mint <mint>                   one-time
  *   pause | unpause
  *   transfer-admin <pubkey> | accept-admin
+ *
+ * Multisig admins (Squads): add `--print --as <ADMIN_PUBKEY>` to print the instruction (program id,
+ * accounts, base64 data) instead of sending it, for a multisig transaction proposal. No signer needed.
  */
 import { readFileSync } from "node:fs";
 import { Connection, PublicKey, type TransactionInstruction } from "@solana/web3.js";
@@ -52,10 +55,13 @@ async function main() {
     return;
   }
 
+  const print = process.argv.includes("--print");
+  const as = flag("as");
+  if (print && !as) throw new Error("--print needs --as <ADMIN_PUBKEY> (the multisig vault that will sign)");
   const signerPath = flag("signer");
-  if (!signerPath) throw new Error("--signer <keypair.json> is required");
-  const signer = loadKeypair(signerPath);
-  const me = signer.publicKey;
+  if (!print && !signerPath) throw new Error("--signer <keypair.json> is required");
+  const signer = print ? null : loadKeypair(signerPath!);
+  const me = print ? new PublicKey(as!) : signer!.publicKey;
   const key = (i: number) => {
     const v = args[i];
     if (!v) throw new Error(`missing argument ${i + 1}`);
@@ -92,7 +98,21 @@ async function main() {
     default:
       throw new Error(`unknown command ${command}`);
   }
-  const sig = await chain.send([ix], [signer], { computeUnits: 100_000 });
+  if (print) {
+    console.log(
+      JSON.stringify(
+        {
+          programId: ix.programId.toBase58(),
+          accounts: ix.keys.map((k) => ({ pubkey: k.pubkey.toBase58(), isSigner: k.isSigner, isWritable: k.isWritable })),
+          data: Buffer.from(ix.data).toString("base64"),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  const sig = await chain.send([ix], [signer!], { computeUnits: 100_000 });
   console.log(`${command}: ${sig}`);
 }
 
