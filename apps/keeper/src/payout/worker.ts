@@ -1,5 +1,14 @@
 import { PublicKey, type Keypair, type TransactionInstruction } from "@solana/web3.js";
-import { buildRoundSnapshot, computeRound, type CarryInput } from "@holdfast/core";
+import {
+  assessRound,
+  buildRoundSnapshot,
+  computeRound,
+  DEFAULT_PAYOUT_COST_MODEL,
+  effectiveMinSol,
+  effectiveMinTokens,
+  type CarryInput,
+  type PayoutCostModel,
+} from "@holdfast/core";
 import {
   associatedTokenAddress,
   closeRoundIx,
@@ -12,7 +21,7 @@ import {
   type CoinKeys,
   type PayoutIxEntry,
 } from "@holdfast/chain";
-import { getRound, insertRound, markPayout, notify, saveCarries, updateRoundStatus, type Db } from "@holdfast/db";
+import { getCoin, getRound, insertRound, markPayout, notify, saveCarries, updateRoundStatus, type Db } from "@holdfast/db";
 import type { Logger } from "pino";
 
 import type { KeeperChain } from "../chain.js";
@@ -39,6 +48,22 @@ interface Entry {
   wallet: string;
   sol: bigint;
   tokens: bigint;
+}
+
+/** Fee model of this worker's payout transactions (see @holdfast/core economics). */
+export function payoutCostModel(cfg: PayoutConfig): PayoutCostModel {
+  return { ...DEFAULT_PAYOUT_COST_MODEL, priorityMicroLamports: BigInt(cfg.priorityMicroLamports), maxFeeBps: cfg.maxFeeBps };
+}
+
+const OPEN_UNITS = DEFAULT_PAYOUT_COST_MODEL.openUnits;
+const CLOSE_UNITS = DEFAULT_PAYOUT_COST_MODEL.closeUnits;
+
+/** Current price as lamports per token base unit × 1e18 (from the indexer's last trade), or null. */
+async function priceFixed(db: Db, mint: string): Promise<bigint | null> {
+  const coin = await getCoin(db, mint);
+  if (!coin?.lastPrice || !(coin.lastPrice > 0)) return null;
+  // lastPrice: SOL per whole token → lamports per base unit × 1e18
+  return BigInt(Math.round(coin.lastPrice * 1e9 * 1e18 / 10 ** coin.decimals));
 }
 
 /** One payout round for one coin: collect → snapshot → open → pay in batches → reconcile → close. */
@@ -73,9 +98,27 @@ export async function runPayoutRound(deps: PayoutDeps, coin: CoinKeys): Promise<
     await q.query("DELETE FROM payout_rounds WHERE mint = $1 AND round_id = $2 AND status = 'computed'", [mint, String(nextId)]);
   });
 
-  const { inputs, tokenAccounts } = await gatherRoundInputs(db, chain, coin, vault, cfg, chain.nowMs());
+  // Minimum payouts are raised so that no recipient's share of a batch fee exceeds maxFeeBps; the
+  // effective values are part of the published inputs, so the snapshot stays re-verifiable.
+  const model = payoutCostModel(cfg);
+  const price = await priceFixed(db, mint);
+  const roundCfg: PayoutConfig = { ...cfg, minSolLamports: effectiveMinSol(cfg.minSolLamports, model), minTokensRaw: effectiveMinTokens(cfg.minTokensRaw, model, price) };
+  const { inputs, tokenAccounts } = await gatherRoundInputs(db, chain, coin, vault, roundCfg, chain.nowMs());
   const result = computeRound(inputs);
   if (result.entries.length === 0) return { kind: "skipped", reason: "nothing payable this round" };
+
+  const economics = assessRound(model, result.entries.length, result.solPot, result.tokenPot, price);
+  if (!economics.worthIt) {
+    // Nothing moves: the pot stays in the on-chain bucket and the next round pays it, bigger.
+    log.debug({ mint, fee: String(economics.feeLamports), value: String(economics.valueLamports), recipients: economics.recipients }, "round not worth its fees yet");
+    return { kind: "skipped", reason: `pot too small for its fees (${economics.feeLamports} lamports of fees for ${economics.valueLamports} paid)` };
+  }
+  const [keeperInfo] = await chain.getAccounts([keeper.publicKey]);
+  const keeperBalance = BigInt(keeperInfo?.lamports ?? 0);
+  if (keeperBalance < cfg.keeperMinBalanceLamports + economics.feeLamports) {
+    log.error({ mint, keeper: keeper.publicKey.toBase58(), balance: String(keeperBalance) }, "keeper balance too low to open a round");
+    return { kind: "skipped", reason: "keeper balance too low" };
+  }
 
   const snapshot = buildRoundSnapshot(inputs, result, chain.nowMs());
   if (!(await insertRound(db, snapshot, { status: "computed" }))) return { kind: "skipped", reason: `round ${nextId} already recorded` };
@@ -83,7 +126,7 @@ export async function runPayoutRound(deps: PayoutDeps, coin: CoinKeys): Promise<
   const openSig = await chain.send(
     [openRoundIx(coin, keeper.publicKey, nextId, result.solPot, result.tokenPot, result.merkleRoot, result.entries.length)],
     [keeper],
-    { computeUnits: 100_000 },
+    { computeUnits: OPEN_UNITS, microLamports: cfg.priorityMicroLamports },
   );
   await updateRoundStatus(db, mint, nextId, "opened", { openSig });
   await notify(db, { kind: "round", mint, roundId: Number(nextId) });
@@ -138,7 +181,7 @@ async function payAndClose(
     );
 
   if (pending.length > 0) await updateRoundStatus(db, mint, roundId, "paying");
-  for (const batch of planBatches(pending, toIx, (ixs) => chain.fits(ixs, keeper.publicKey, 1))) {
+  for (const batch of planBatches(pending, toIx, (ixs) => chain.fits(ixs, keeper.publicKey, 1), DEFAULT_PAYOUT_COST_MODEL.batchSize)) {
     await sendBatch(deps, coin, roundId, batch, toIx);
   }
 
@@ -158,7 +201,7 @@ async function payAndClose(
     }
   }
 
-  const closeSig = await chain.send([closeRoundIx(coin, keeper.publicKey, roundId)], [keeper], { computeUnits: 60_000 });
+  const closeSig = await chain.send([closeRoundIx(coin, keeper.publicKey, roundId)], [keeper], { computeUnits: CLOSE_UNITS, microLamports: deps.cfg.priorityMicroLamports });
   await db.tx(async (q) => {
     await saveCarries(q, mint, mergeCarries(carriedOut, failed, chain.nowMs()));
     await updateRoundStatus(q, mint, roundId, "closed", { closeSig, error: failed.length > 0 ? `${failed.length} payouts carried to the next round` : null });
@@ -173,7 +216,8 @@ async function sendBatch(deps: PayoutDeps, coin: CoinKeys, roundId: bigint, batc
   const { db, chain, keeper, log } = deps;
   const mint = coin.mint.toBase58();
   try {
-    const sig = await chain.send([toIx(batch)], [keeper], { computeUnits: 60_000 + 40_000 * batch.length });
+    const units = DEFAULT_PAYOUT_COST_MODEL.batchBaseUnits + DEFAULT_PAYOUT_COST_MODEL.batchUnitsPerRecipient * batch.length;
+    const sig = await chain.send([toIx(batch)], [keeper], { computeUnits: units, microLamports: deps.cfg.priorityMicroLamports });
     for (const e of batch) await markPayout(db, { mint, roundId, idx: e.index, status: "sent", sig });
   } catch (err) {
     if (batch.length === 1) {

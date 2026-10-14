@@ -26,6 +26,9 @@ const payoutCfg: PayoutConfig = {
   maxRecipients: 1_024,
   coinConcurrency: 1,
   collectBeforeRound: true,
+  priorityMicroLamports: 1_000,
+  maxFeeBps: 200,
+  keeperMinBalanceLamports: 50_000_000n,
 };
 
 function crankCtx(w: World): CrankContext {
@@ -201,6 +204,39 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
       expect(w.lamports(holders[i]!.wallet) - before[i]!).toBe(p.sol); // paid exactly once
     }
     expect(v.totalPaidSol).toBe(payouts.reduce((s, p) => s + p.sol, 0n));
+  }, 60_000);
+
+  it("lets a pot too small for its fees grow on-chain instead of paying it out", async () => {
+    const w = await createWorld();
+    const coin = await w.launch(2500);
+    await registerCoin(w, coin);
+    await Promise.all([0, 1, 2].map((i) => holder(w, coin, 1_000_000_000n, i * HOUR, SOL)));
+    w.airdrop(coin.treasury, 2_000_000n); // 0.002 SOL of fees → 0.0006 SOL holder pot for 3 wallets
+    const small = await runPayoutRound(payoutDeps(w), coin);
+    expect(small.kind).toBe("skipped");
+    expect(small.kind === "skipped" && small.reason).toMatch(/pot too small for its fees/);
+    let v = await vaultOf(w, coin);
+    expect(v.roundId).toBe(0n);
+    expect(v.holderSol).toBe(600_000n); // booked, still in the bucket
+
+    // more fees arrive: now the round is worth it and pays everything accumulated
+    w.airdrop(coin.treasury, SOL);
+    w.advance(120);
+    const paid = await runPayoutRound(payoutDeps(w), coin);
+    expect(paid.kind).toBe("paid");
+    v = await vaultOf(w, coin);
+    expect(v.totalPaidSol).toBeGreaterThan(300_000_000n);
+  }, 60_000);
+
+  it("does not open a round when the keeper could not afford to finish it", async () => {
+    const w = await createWorld();
+    const coin = await w.launch(2500);
+    await registerCoin(w, coin);
+    await holder(w, coin, 1_000_000_000n, 0, SOL);
+    w.airdrop(coin.treasury, 10n * SOL);
+    const outcome = await runPayoutRound({ ...payoutDeps(w), cfg: { ...payoutCfg, keeperMinBalanceLamports: 10n ** 15n } }, coin);
+    expect(outcome).toEqual({ kind: "skipped", reason: "keeper balance too low" });
+    expect((await vaultOf(w, coin)).roundOpen).toBe(false);
   }, 60_000);
 
   it("skips when nothing is payable and never opens an empty round", async () => {

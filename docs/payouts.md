@@ -15,9 +15,18 @@ serves to the frontend countdown. The payout worker (`apps/keeper`, `start:payou
    - `distributable = pot − Σ outstanding carries`. Carries are still inside the on-chain bucket, so subtracting them prevents double counting.
    - `share = floor(distributable × W / ΣW)` and `owed = share + carry`.
    - Paid now if `owed ≥ minimum` and, for SOL, `wallet_balance + owed ≥ rent-exempt minimum`. Otherwise owed is **carried** (dust is never lost).
+   - The minimums are raised so that a recipient's share of a batch fee never exceeds `PAYOUT_MAX_FEE_BPS` (default
+     2%). With the default 1000 µlamports/CU payout priority that is ≈ 0.0000273 SOL, and the token minimum uses the
+     coin's last price. The effective values are written into the snapshot's `inputs.params`, so verification uses them.
    - Tokens are paid only when the wallet already has a token account (holders always do).
    - Floor-division remainders stay in the bucket.
    - Carries of wallets that no longer hold expire after `PAYOUT_CARRY_EXPIRY_MS` (default 30 days) and return to the pot.
+   - **Economics check** (`assessRound` in `packages/core/src/economics.ts`): when the round's estimated fees (open +
+     batches + close) exceed `PAYOUT_MAX_FEE_BPS` of what it would pay (SOL + tokens at the last price), the round is
+     skipped. Nothing moves: the pot stays in the on-chain bucket and a later round pays it, larger. A new coin with a
+     few cents of fees therefore isn't paid every 2 minutes at a loss; it is paid as soon as paying is worth it.
+   - No round is opened while the keeper wallet holds less than `KEEPER_MIN_BALANCE_LAMPORTS` (+ the round's fees), so an
+     opened round can always be finished.
 4. **Publish.** The full snapshot (inputs + outputs) is stored in `payout_rounds.snapshot` and served publicly at
    `GET /coins/:mint/rounds/:roundId`.
 5. **Commit.** `open_round(round_id, sol_pot, token_pot, merkle_root, recipient_count)`. The program refuses a pot larger than

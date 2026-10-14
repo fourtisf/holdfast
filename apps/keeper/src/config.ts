@@ -34,6 +34,12 @@ export interface PayoutConfig {
   coinConcurrency: number;
   /** Run `collect_fees` right before computing each round so the pot is fresh. */
   collectBeforeRound: boolean;
+  /** Compute-unit price of payout transactions (not time critical, so cheap by default). */
+  priorityMicroLamports: number;
+  /** Most a round may spend on fees, relative to what it pays (bps). Rounds above wait for a bigger pot. */
+  maxFeeBps: number;
+  /** Below this keeper balance no new round is opened (an open round must always be closable). */
+  keeperMinBalanceLamports: bigint;
 }
 
 function int(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
@@ -79,6 +85,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
       maxRecipients: int(env, "PAYOUT_MAX_RECIPIENTS", 1_024),
       coinConcurrency: int(env, "PAYOUT_COIN_CONCURRENCY", 4),
       collectBeforeRound: (env.PAYOUT_COLLECT_BEFORE_ROUND ?? "true") !== "false",
+      priorityMicroLamports: int(env, "PAYOUT_PRIORITY_MICROLAMPORTS", 1_000),
+      maxFeeBps: int(env, "PAYOUT_MAX_FEE_BPS", 200),
+      keeperMinBalanceLamports: bigintEnv(env, "KEEPER_MIN_BALANCE_LAMPORTS", 50_000_000n),
     },
   };
 }
