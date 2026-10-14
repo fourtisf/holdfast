@@ -6,7 +6,8 @@ type Variant = "primary" | "secondary" | "ghost" | "buy" | "sell" | "outline";
 type Size = "sm" | "md" | "lg";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-brand text-brand-ink hover:bg-brand-strong",
+  primary:
+    "bg-linear-to-b from-brand-light to-brand text-brand-ink shadow-[inset_0_1px_0_rgb(255_255_255/0.35),0_6px_20px_-10px_rgb(232_188_91/0.6)] hover:brightness-105",
   secondary: "bg-surface-3 text-fg hover:bg-line-strong",
   ghost: "text-muted hover:text-fg hover:bg-surface-3",
   outline: "border border-line-strong text-fg hover:border-faint hover:bg-surface-2",

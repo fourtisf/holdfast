@@ -44,7 +44,7 @@ export function TopNav() {
               href={link.href}
               className={cn(
                 "rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
-                isActive(pathname, link.href) ? "bg-surface-3 text-fg" : "text-muted hover:text-fg",
+                isActive(pathname, link.href) ? "bg-brand/10 text-brand" : "text-muted hover:text-fg",
               )}
             >
               {link.label}

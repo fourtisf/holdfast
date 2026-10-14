@@ -100,7 +100,7 @@ export function RoundVerifyView({ mint, roundId }: { mint: string; roundId: numb
           ← ${ticker}
         </Link>
         <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-fg">Payout round #{snapshot.roundId}</h1>
+          <h1 className="font-display text-[22px] leading-tight font-semibold tracking-[0.02em] text-fg">Payout round #{snapshot.roundId}</h1>
           <span className="text-xs text-faint">{formatRelativeTime(snapshot.ts, now)}</span>
           <span className={cn("ml-auto text-sm font-semibold", allOk ? "text-brand" : recomputed.ok ? "text-muted" : "text-sell")}>
             {allOk ? "Verified" : recomputed.ok ? "Recomputed, on-chain check pending" : "Does not verify"}

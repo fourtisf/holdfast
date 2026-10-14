@@ -85,7 +85,9 @@ export function CoinsView() {
       <section>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-fg sm:text-[28px]">Coins that defend their floor</h1>
+            <h1 className="font-display text-[26px] leading-tight font-semibold tracking-[0.02em] text-fg sm:text-[32px]">
+              Coins that <span className="bg-linear-to-b from-brand-light to-brand bg-clip-text text-transparent">defend their floor</span>
+            </h1>
             <p className="mt-1 max-w-xl text-sm text-muted">
               Creator fees fill each coin&apos;s vault. It buys back at the floor and pays holders every 2 minutes.
             </p>
@@ -109,7 +111,7 @@ export function CoinsView() {
                 onClick={() => setTab(f.value)}
                 className={cn(
                   "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold ring-1 transition-colors ring-inset",
-                  tab === f.value ? "bg-fg text-bg ring-fg" : "bg-surface text-muted ring-line hover:text-fg hover:ring-line-strong",
+                  tab === f.value ? "bg-brand/12 text-brand ring-brand/40" : "bg-surface text-muted ring-line hover:text-fg hover:ring-line-strong",
                 )}
               >
                 {f.value === "vault_buying" ? (

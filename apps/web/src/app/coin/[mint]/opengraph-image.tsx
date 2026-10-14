@@ -19,7 +19,7 @@ const LOGO_WIDTH = 209; // 48 px tall at the logo's 4.35 : 1 aspect
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const C = { bg: "#07080c", surface: "#0e1016", line: "#222734", fg: "#eceef4", muted: "#949bad", brand: "#7ef0b8", floor: "#ffb547", payout: "#ffd95e" };
+const C = { bg: "#0a0b0e", surface: "#111216", line: "#26272e", fg: "#f3efe4", muted: "#a19d92", brand: "#e8bc5b", floor: "#6aa6ff", payout: "#f2c76a" };
 
 function Metric({ label, value, color }: { label: string; value: string; color: string }) {
   return (

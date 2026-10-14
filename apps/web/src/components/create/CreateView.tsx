@@ -132,7 +132,7 @@ export function CreateView() {
   return (
     <div className="mx-auto max-w-[1080px]">
       <div className="mb-5">
-        <h1 className="text-2xl font-semibold tracking-tight text-fg sm:text-[28px]">Launch a coin</h1>
+        <h1 className="font-display text-[26px] leading-tight font-semibold tracking-[0.02em] text-fg sm:text-[32px]">Launch a coin</h1>
         <p className="mt-1 text-sm text-muted">
           No wallet connection. Send {quote ? "" : "≈"}{formatSolExact(launchFeeSol(quote))} SOL to a one-time address and your coin goes live on pump.fun with its own floor vault.
         </p>

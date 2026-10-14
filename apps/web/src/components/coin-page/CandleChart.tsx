@@ -55,20 +55,20 @@ export default function CandleChart({ candles, floor, markers, athPrice, dataset
     ath: IPriceLine | null;
   } | null>(null);
   const loaded = useRef<{ key: string; first: number; length: number } | null>(null);
-  const colors = useRef({ up: "#2ed47a", down: "#ff4d6a", floor: "#ffb547", ath: "#66c8ff", vault: "#a493ff" });
+  const colors = useRef({ up: "#2ed47a", down: "#ff4d6a", floor: "#6aa6ff", ath: "#c9cfdb", vault: "#a493ff" });
 
   useEffect(() => {
     if (!container.current) return;
     const c = {
       up: token("--chart-up", "#2ed47a"),
       down: token("--chart-down", "#ff4d6a"),
-      floor: token("--color-floor", "#ffb547"),
-      ath: token("--color-ath", "#66c8ff"),
+      floor: token("--color-floor", "#6aa6ff"),
+      ath: token("--color-ath", "#c9cfdb"),
       vault: token("--color-vault", "#a493ff"),
     };
     colors.current = c;
-    const grid = token("--color-line", "#222734");
-    const text = token("--color-muted", "#949bad");
+    const grid = token("--color-line", "#26272e");
+    const text = token("--color-muted", "#a19d92");
     const api = createChart(container.current, {
       autoSize: true,
       layout: {

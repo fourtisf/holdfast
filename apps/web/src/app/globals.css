@@ -10,13 +10,13 @@
   body {
     min-height: 100dvh;
     background:
-      radial-gradient(1200px 500px at 15% -10%, rgb(126 240 184 / 0.06), transparent 60%),
-      radial-gradient(900px 400px at 100% 0%, rgb(164 147 255 / 0.05), transparent 60%), var(--color-bg);
+      radial-gradient(1200px 500px at 15% -10%, rgb(232 188 91 / 0.07), transparent 60%),
+      radial-gradient(900px 400px at 100% 0%, rgb(106 166 255 / 0.04), transparent 60%), var(--color-bg);
     color: var(--color-fg);
     font-feature-settings: "ss01", "cv11";
   }
   ::selection {
-    background: rgb(126 240 184 / 0.3);
+    background: rgb(232 188 91 / 0.3);
   }
   :focus-visible {
     outline: 2px solid var(--color-brand);

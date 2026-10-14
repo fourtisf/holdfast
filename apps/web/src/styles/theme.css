@@ -1,30 +1,36 @@
 /*
- * Holdfast design tokens. Everything visual (colors, fonts, radii, shadows) is defined here so the UI
- * can be re-skinned to the final prototype without touching components.
+ * Moatpad design tokens. Everything visual (colors, fonts, radii, shadows) is defined here so the UI
+ * can be re-skinned without touching components. The palette follows the brand (brand/README.md):
+ * obsidian surfaces, gold for actions and holder payouts, sapphire for the floor (the moat), platinum
+ * for the ATH and amethyst for buybacks and burns.
  */
 @theme {
-  --color-bg: #07080c;
-  --color-surface: #0e1016;
-  --color-surface-2: #141720;
-  --color-surface-3: #1b1f2a;
-  --color-line: #222734;
-  --color-line-strong: #2e3445;
-  --color-fg: #eceef4;
-  --color-muted: #949bad;
-  --color-faint: #5d6477;
+  --color-bg: #0a0b0e;
+  --color-surface: #111216;
+  --color-surface-2: #16171c;
+  --color-surface-3: #1d1e24;
+  --color-line: #26272e;
+  --color-line-strong: #34353d;
+  --color-fg: #f3efe4;
+  --color-muted: #a19d92;
+  --color-faint: #6a675f;
 
-  --color-brand: #7ef0b8;
-  --color-brand-strong: #4ee39a;
-  --color-brand-ink: #04170e;
+  --color-brand: #e8bc5b;
+  --color-brand-light: #f7dc9b;
+  --color-brand-strong: #f1cb72;
+  --color-brand-deep: #a97b2a;
+  --color-brand-ink: #1a1305;
   --color-buy: #2ed47a;
   --color-sell: #ff4d6a;
-  --color-floor: #ffb547;
-  --color-ath: #66c8ff;
+  --color-floor: #6aa6ff;
+  --color-ath: #c9cfdb;
   --color-vault: #a493ff;
-  --color-payout: #ffd95e;
+  --color-payout: #f2c76a;
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* the wordmark's face, for page titles */
+  --font-display: var(--font-cinzel), Georgia, "Times New Roman", serif;
 
   --breakpoint-3xl: 1720px;
 
@@ -32,7 +38,7 @@
   --radius-control: 10px;
 
   --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.6);
-  --shadow-glow: 0 0 0 1px rgb(126 240 184 / 0.35), 0 8px 30px -8px rgb(126 240 184 / 0.25);
+  --shadow-glow: 0 0 0 1px rgb(232 188 91 / 0.35), 0 8px 30px -8px rgb(232 188 91 / 0.25);
 
   --animate-pulse-soft: pulse-soft 1.8s ease-in-out infinite;
   --animate-fade-in: fade-in 160ms ease-out;
@@ -68,7 +74,7 @@
   }
   @keyframes flash {
     from {
-      background-color: rgb(126 240 184 / 0.14);
+      background-color: rgb(232 188 91 / 0.14);
     }
     to {
       background-color: transparent;

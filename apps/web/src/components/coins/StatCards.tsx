@@ -32,7 +32,7 @@ export function StatCards() {
         value={data ? formatCompact(data.coins, 0) : loading}
         sub="0% of fees to devs"
         icon={<RocketIcon size={15} />}
-        tone="bg-brand/12 text-brand"
+        tone="bg-fg/8 text-fg"
       />
       <StatCard
         label="In floor vaults"

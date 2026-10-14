@@ -106,7 +106,7 @@ function ProfileContent({ wallet, own }: { wallet: string; own: boolean }) {
           <UserIcon size={26} />
         </div>
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-fg">{own ? "Your profile" : "Wallet profile"}</h1>
+          <h1 className="font-display text-[26px] leading-tight font-semibold tracking-[0.02em] text-fg">{own ? "Your profile" : "Wallet profile"}</h1>
           {data && data.launchedCoins > 0 ? (
             <Link href={`/creator/${wallet}`} className="text-xs font-semibold text-brand hover:underline">
               Launched {data.launchedCoins} coin{data.launchedCoins === 1 ? "" : "s"} →

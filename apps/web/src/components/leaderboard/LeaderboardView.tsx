@@ -43,7 +43,7 @@ export function LeaderboardView() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">Leaderboard</h1>
+        <h1 className="font-display text-[26px] leading-tight font-semibold tracking-[0.02em] text-fg">Leaderboard</h1>
         <p className="mt-1 text-sm text-muted">Who earns the most from holding, who holds the longest, and which creators&apos; coins pay their holders.</p>
       </div>
       <Card className="overflow-hidden">
