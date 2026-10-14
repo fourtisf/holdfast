@@ -56,6 +56,23 @@ export function formatMarketCap(valueSol: number): string {
   return `${formatCompact(valueSol, valueSol < 10 ? 2 : 1)} SOL`;
 }
 
+/** US dollars: "$1.23", "$12.3K", "<$0.01". */
+export function formatUsd(value: number): string {
+  if (!Number.isFinite(value)) return "–";
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs === 0) return "$0";
+  if (abs < 0.01) return `${sign}<$0.01`;
+  if (abs >= 1000) return `${sign}$${formatCompact(abs, 0)}`;
+  return `${sign}$${trimZeros(abs.toFixed(2))}`;
+}
+
+/** Signed SOL for PnL: "+0.42 SOL", "-1.2 SOL". */
+export function formatSignedSol(value: number): string {
+  if (!Number.isFinite(value)) return "–";
+  return `${value > 0 ? "+" : ""}${formatSolAmount(value)} SOL`;
+}
+
 /** Token amounts are whole tokens. */
 export function formatTokens(value: number): string {
   if (!Number.isFinite(value)) return "–";

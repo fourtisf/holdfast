@@ -1,10 +1,13 @@
 "use client";
 
-import type { CandleTimeframe, CoinSort, Page, Trade } from "@holdfast/core";
+import type { CandleTimeframe, Comment, CoinSort, LeaderboardKind, Page, Trade, WalletTrade } from "@holdfast/core";
 import { useCallback } from "react";
 import useSWR, { unstable_serialize, useSWRConfig } from "swr";
 import useSWRInfinite from "swr/infinite";
-import { api } from "../api";
+import { api, type CoinsQuery } from "../api";
+
+/** Coin list filters on top of sort + search (all optional). */
+export type CoinFilters = Pick<CoinsQuery, "graduated" | "maxAgeHours" | "minMcapSol" | "mints">;
 
 export const keys = {
   stats: () => ["stats"] as const,
@@ -26,13 +29,14 @@ export function useStats() {
   return useSWR(keys.stats(), () => api.stats(), { refreshInterval: 30_000 });
 }
 
-export function useCoins(sort: CoinSort, q: string, pageSize = 24) {
+export function useCoins(sort: CoinSort, q: string, pageSize = 24, filters: CoinFilters = {}, enabled = true) {
+  const f = JSON.stringify(filters);
   return useSWRInfinite(
     (index, previous: Page<unknown> | null) => {
-      if (previous && !previous.nextCursor) return null;
-      return ["coins", sort, q, pageSize, index === 0 ? null : (previous?.nextCursor ?? null)] as const;
+      if (!enabled || (previous && !previous.nextCursor)) return null;
+      return ["coins", sort, q, pageSize, f, index === 0 ? null : (previous?.nextCursor ?? null)] as const;
     },
-    ([, s, query, limit, cursor]) => api.coins({ sort: s, q: query || undefined, limit, cursor }),
+    ([, s, query, limit, filterJson, cursor]) => api.coins({ sort: s, q: query || undefined, limit, cursor, ...(JSON.parse(filterJson) as CoinFilters) }),
     { refreshInterval: 20_000, revalidateFirstPage: true, keepPreviousData: true },
   );
 }
@@ -85,4 +89,42 @@ export function usePatchCache() {
     },
     [cache, mutate],
   );
+}
+
+export function useWalletTrades(wallet: string | null, pageSize = 30) {
+  return useSWRInfinite(
+    (index, previous: Page<WalletTrade> | null) => {
+      if (!wallet || (previous && !previous.nextCursor)) return null;
+      return ["walletTrades", wallet, pageSize, index === 0 ? null : (previous?.nextCursor ?? null)] as const;
+    },
+    ([, w, limit, before]) => api.walletTrades(w, { limit, before }),
+    { revalidateOnFocus: false },
+  );
+}
+
+export function useLeaderboard(kind: LeaderboardKind, days?: number) {
+  return useSWR(["leaderboard", kind, days ?? null] as const, () => api.leaderboard(kind, { limit: 50, days }), { refreshInterval: 60_000, keepPreviousData: true });
+}
+
+export function useCreator(wallet: string) {
+  return useSWR(["creator", wallet] as const, () => api.creator(wallet), { refreshInterval: 60_000 });
+}
+
+export function useComments(mint: string, pageSize = 30) {
+  return useSWRInfinite(
+    (index, previous: Page<Comment> | null) => {
+      if (previous && !previous.nextCursor) return null;
+      return ["comments", mint, pageSize, index === 0 ? null : (previous?.nextCursor ?? null)] as const;
+    },
+    ([, m, limit, before]) => api.comments(m, { limit, before }),
+    { refreshInterval: 20_000, revalidateFirstPage: true },
+  );
+}
+
+export function useRound(mint: string, roundId: number) {
+  return useSWR(["round", mint, roundId] as const, () => api.round(mint, roundId), { revalidateOnFocus: false });
+}
+
+export function useRounds(mint: string) {
+  return useSWR(["rounds", mint] as const, () => api.rounds(mint, { limit: 30 }), { refreshInterval: 60_000 });
 }

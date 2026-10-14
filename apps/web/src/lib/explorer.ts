@@ -13,3 +13,14 @@ export function explorerTxUrl(signature: string, cluster: Cluster): string {
 export function explorerAddressUrl(address: string, cluster: Cluster): string {
   return `https://explorer.solana.com/address/${address}${clusterQuery(cluster)}`;
 }
+
+/** Third-party coin pages. pump.fun and DexScreener index mainnet only. */
+export function coinLinks(mint: string, cluster: Cluster): { label: string; href: string }[] {
+  const solscan = `https://solscan.io/token/${mint}${cluster === "mainnet-beta" ? "" : `?cluster=${cluster === "localnet" ? "custom" : cluster}`}`;
+  if (cluster !== "mainnet-beta") return [{ label: "Solscan", href: solscan }];
+  return [
+    { label: "pump.fun", href: `https://pump.fun/coin/${mint}` },
+    { label: "DexScreener", href: `https://dexscreener.com/solana/${mint}` },
+    { label: "Solscan", href: solscan },
+  ];
+}

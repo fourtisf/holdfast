@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MOCK_WALLET } from "./ids";
-import { candles, coinDetail, holdersList, listCoins, position, profile, stats, tradesPage } from "./market";
+import { candles, coinDetail, commentsPage, holdersList, leaderboard, listCoins, position, postComment, profile, stats, tradesPage, walletTrades } from "./market";
 
 describe("mock market", () => {
   const coins = listCoins("newest");
@@ -60,5 +60,44 @@ describe("mock market", () => {
     const s = stats();
     expect(s.coins).toBe(coins.length);
     expect(s.schedule.nextRoundAt % (s.schedule.roundIntervalSec * 1000)).toBe(0);
+  });
+});
+
+describe("mock launchpad extras", () => {
+  it("bonding-curve progress follows price and is 1 once graduated", () => {
+    for (const c of listCoins("newest")) {
+      expect(c.bondingCurveProgress).toBeGreaterThanOrEqual(0);
+      expect(c.bondingCurveProgress).toBeLessThanOrEqual(1);
+      if (c.graduated) expect(c.bondingCurveProgress).toBe(1);
+    }
+  });
+
+  it("positions carry PnL and the profile totals add up", () => {
+    const p = profile(MOCK_WALLET);
+    expect(p.positions.length).toBeGreaterThan(0);
+    for (const x of p.positions) expect(x.pnlSol).toBeCloseTo(x.valueSol + x.soldSol + x.earnedSol + x.earnedTokens * (x.tokens > 0 ? x.valueSol / x.tokens : 0) - x.boughtSol, 6);
+    expect(p.totalValueSol).toBeCloseTo(p.positions.reduce((s, x) => s + x.valueSol, 0), 9);
+    expect(walletTrades(MOCK_WALLET).length).toBeGreaterThan(0);
+  });
+
+  it("leaderboards are sorted", () => {
+    const earners = leaderboard("earners");
+    const sol = earners.items.map((i) => (i as { earnedSol: number }).earnedSol);
+    expect([...sol].sort((a, b) => b - a)).toEqual(sol);
+    const dh = leaderboard("diamond_hands").items.map((i) => (i as { heldSince: number }).heldSince);
+    expect([...dh].sort((a, b) => a - b)).toEqual(dh);
+  });
+
+  it("comments page backwards and accept posts", () => {
+    const mint = listCoins("newest")[0]!.mint;
+    const first = commentsPage(mint, 2)!;
+    expect(first.items.length).toBeGreaterThan(0);
+    const posted = postComment(mint, { wallet: MOCK_WALLET, body: " gm ", signedAt: Date.now(), signature: "x" })!;
+    expect(posted.body).toBe("gm");
+    expect(commentsPage(mint, 1)!.items[0]!.id).toBe(posted.id);
+  });
+
+  it("stats carry a SOL/USD price", () => {
+    expect(stats().solUsd).toBeGreaterThan(100);
   });
 });

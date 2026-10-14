@@ -43,6 +43,13 @@ export class MockWalletAdapter extends BaseWalletAdapter<"Demo Wallet (mock)"> {
     this.emit("disconnect");
   }
 
+  /** Mock signatures are random: the mock API does not verify them. */
+  async signMessage(_message: Uint8Array): Promise<Uint8Array> {
+    if (!this.publicKey) throw new WalletNotConnectedError();
+    await new Promise((r) => setTimeout(r, 300));
+    return crypto.getRandomValues(new Uint8Array(64));
+  }
+
   async sendTransaction(
     _transaction: TransactionOrVersionedTransaction<this["supportedTransactionVersions"]>,
     _connection: Connection,

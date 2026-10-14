@@ -22,6 +22,7 @@ import {
   userVolumeAccumulatorPda,
   updateAthIx,
 } from "../src/holdfast.js";
+import { roundOpenedFromLogs, HOLDFAST_PROGRAM_ADDRESS } from "@holdfast/core";
 import { HOLDFAST_PROGRAM_ID } from "../src/constants.js";
 import { treasuryPda, vaultPda } from "../src/pda.js";
 
@@ -117,6 +118,41 @@ describe("holdfast client", () => {
     const line = encodeHoldfastEventLog("FeesCollected", { mint, amount: new BN(1), floor: zero, holder: zero, burn: zero, unwrapped_wsol: zero, tokens: zero, ts: zero });
     const other = Keypair.generate().publicKey.toBase58();
     expect(parseHoldfastEvents([`Program ${other} invoke [1]`, line, `Program ${other} success`])).toEqual([]);
+  });
+
+  it("@holdfast/core decodes RoundOpened without Anchor (browser verification)", () => {
+    expect(HOLDFAST_PROGRAM_ADDRESS).toBe(HOLDFAST_PROGRAM_ID.toBase58());
+    const hash = Array.from({ length: 32 }, (_, i) => i * 7);
+    const line = encodeHoldfastEventLog("RoundOpened", {
+      mint,
+      round_id: new BN(42),
+      sol_pot: new BN(1_500_000_000),
+      token_pot: new BN(77),
+      snapshot_hash: hash,
+      recipient_count: 9,
+      ts: new BN(1_760_000_000),
+    });
+    const pid = HOLDFAST_PROGRAM_ID.toBase58();
+    const other = Keypair.generate().publicKey.toBase58();
+    const logs = [
+      `Program ${pid} invoke [1]`,
+      line,
+      // a CPI'd program logging a look-alike event must not count
+      `Program ${other} invoke [2]`,
+      line,
+      `Program ${other} success`,
+      `Program ${pid} success`,
+      `Program ${other} invoke [1]`,
+      line,
+      `Program ${other} success`,
+    ];
+    const events = roundOpenedFromLogs(logs);
+    expect(events).toEqual([
+      { mint: mint.toBase58(), roundId: 42, solPotLamports: 1_500_000_000n, tokenPotRaw: 77n, snapshotHash: Buffer.from(hash).toString("hex"), recipientCount: 9, ts: 1_760_000_000 },
+    ]);
+    // and Anchor agrees
+    const anchor = parseHoldfastEvents(logs.slice(0, 2).concat(`Program ${pid} success`));
+    expect(anchor[0]!.name).toBe("RoundOpened");
   });
 
   it("builds instructions in IDL account order", () => {

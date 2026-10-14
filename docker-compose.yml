@@ -159,7 +159,11 @@ services:
         NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
         NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-devnet}
         NEXT_PUBLIC_USE_MOCKS: ${NEXT_PUBLIC_USE_MOCKS:-0}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
     image: holdfast-web:local
+    environment:
+      # link previews (OG images, page metadata) are fetched server-side over the compose network
+      API_INTERNAL_URL: http://api:4000
     working_dir: /app/apps/web
     command: ["next", "start", "--port", "3000"]    # @holdfast/web start
     init: true

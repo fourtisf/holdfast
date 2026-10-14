@@ -193,6 +193,8 @@ describe("comments", () => {
     expect(hidden).toMatchObject({ id: c.id, hidden: true, body: "" });
 
     const auth = { authorization: `Bearer ${ADMIN_TOKEN}` };
+    const reports = (await api.app.inject({ method: "GET", url: "/admin/reports", headers: auth })).json<{ targetType: string; targetId: string; commentBody: string | null }[]>();
+    expect(reports).toEqual([expect.objectContaining({ targetType: "comment", targetId: String(c.id), commentBody: "rug soon" })].concat(reports.slice(1)));
     await post(`/admin/comments/${c.id}/unhide`, {}, 200, auth);
     expect((await get<Page<Comment>>(`/coins/${f.mint}/comments`)).items[0]).toMatchObject({ hidden: false, body: "rug soon" });
     await post(`/admin/comments/${c.id}/hide`, { reason: "spam" }, 200, auth);

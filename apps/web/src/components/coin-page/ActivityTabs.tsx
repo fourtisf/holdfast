@@ -14,10 +14,11 @@ import { SOLANA_CLUSTER } from "@/lib/config";
 import { explorerTxUrl } from "@/lib/explorer";
 import { formatAgo, formatDuration, formatMultiplier, formatPrice, formatShare, formatSol, formatTokens, shortAddress } from "@/lib/format";
 import { useTrades } from "@/lib/hooks/live";
-import { useDefends, useHolders, useTradesPages } from "@/lib/hooks/queries";
+import { useDefends, useHolders, useRounds, useTradesPages } from "@/lib/hooks/queries";
 import { useNow } from "@/lib/hooks/useNow";
+import { CommentsPanel } from "./CommentsPanel";
 
-type Tab = "trades" | "holders" | "vault";
+type Tab = "trades" | "holders" | "vault" | "rounds" | "comments";
 
 const th = "sticky top-0 z-10 bg-surface px-3 py-2 text-left text-[11px] font-semibold tracking-wider text-faint uppercase whitespace-nowrap";
 const scroller = "scrollbar-thin overflow-x-auto lg:max-h-[640px] lg:overflow-y-auto";
@@ -243,6 +244,45 @@ function VaultBuysTable({ coin }: { coin: CoinDetail }) {
   );
 }
 
+function RoundsTable({ coin }: { coin: CoinDetail }) {
+  const { data, isLoading } = useRounds(coin.mint);
+  const now = useNow(10_000);
+  if (isLoading) return <TableSkeleton />;
+  if (!data || data.length === 0) return <EmptyState title="No payout rounds yet" body="Rounds run every 2 minutes once the holder pot is worth paying out." />;
+  return (
+    <div className={scroller}>
+      <table className="w-full text-sm sm:min-w-[560px]">
+        <thead>
+          <tr className="shadow-[inset_0_-1px_0_var(--color-line)]">
+            <th className={th}>Round</th>
+            <th className={th}>Time</th>
+            <th className={`${th} text-right`}>SOL pot</th>
+            <th className={`${th} hidden text-right sm:table-cell`}>Tokens</th>
+            <th className={`${th} text-right`}>Recipients</th>
+            <th className={th} aria-label="Verify" />
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((r) => (
+            <tr key={r.roundId} className="border-b border-line/60 last:border-0">
+              <td className={`${td} font-semibold text-fg`}>#{r.roundId}</td>
+              <td className={`${td} text-xs text-faint`}>{formatAgo(r.ts, now)}</td>
+              <td className={`${td} text-right font-semibold text-payout`}>{formatSol(r.solPot)}</td>
+              <td className={`${td} hidden text-right text-muted sm:table-cell`}>{r.tokenPot > 0 ? formatTokens(r.tokenPot) : "—"}</td>
+              <td className={`${td} text-right text-muted`}>{r.recipients}</td>
+              <td className={`${td} text-right`}>
+                <Link href={`/coin/${coin.mint}/round/${r.roundId}`} className="text-xs font-semibold text-brand hover:underline">
+                  Verify
+                </Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function TableSkeleton() {
   return (
     <div className="space-y-2 p-4">
@@ -264,10 +304,16 @@ export function ActivityTabs({ coin, wallet }: { coin: CoinDetail; wallet: strin
           { value: "trades", label: "Trades" },
           { value: "holders", label: "Holders", count: coin.holders },
           { value: "vault", label: "Vault buys", count: coin.vault.defendCount },
+          { value: "rounds", label: "Rounds", count: coin.roundId },
+          { value: "comments", label: "Comments" },
         ]}
       />
       {tab === "trades" ? (
         <TradesTable coin={coin} wallet={wallet} />
+      ) : tab === "rounds" ? (
+        <RoundsTable coin={coin} />
+      ) : tab === "comments" ? (
+        <CommentsPanel coin={coin} />
       ) : tab === "holders" ? (
         <HoldersTable coin={coin} wallet={wallet} />
       ) : (

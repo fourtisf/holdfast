@@ -18,7 +18,14 @@ import {
   floorToAthProgress,
   marketCapSol,
   nextRoundAt,
+  positionPnl,
   weightMultiplier,
+  type Comment,
+  type CreatorProfile,
+  type Leaderboard,
+  type LeaderboardKind,
+  type PostCommentRequest,
+  type WalletTrade,
   type Candle,
   type CandleTimeframe,
   type CandlesResponse,
@@ -342,6 +349,8 @@ function payRound(coin: MockCoin, at: number) {
     recipients: Math.min(coin.holderCount, Math.max(1, Math.round(coin.holderCount * 0.8))),
     snapshotHash: hashString(`${coin.mint}:round:${coin.roundId}`).toString(16).padStart(8, "0").repeat(8),
     status: "closed",
+    openSig: mockSignature(`${coin.mint}:open:${coin.roundId}`),
+    closeSig: mockSignature(`${coin.mint}:close:${coin.roundId}`),
   };
 }
 
@@ -565,8 +574,21 @@ function summary(coin: MockCoin): CoinSummary {
     holders: coin.holderCount,
     paidOutSol: coin.paidOutSol,
     graduated: coin.graduated,
+    bondingCurveProgress: curveProgress(coin.graduated, price),
     vault: vaultSnapshot(coin),
   };
+}
+
+/**
+ * pump.fun constant product: virtual reserves start at 30 SOL × 1,073M tokens and 793.1M of them
+ * are sold on the curve, so the spot price pins down how much of the curve is gone.
+ */
+function curveProgress(graduated: boolean, price: number): number {
+  if (graduated) return 1;
+  if (!(price > 0)) return 0;
+  const virtualTokens = Math.sqrt((30 * 1_073_000_000) / price);
+  const realLeft = virtualTokens - (1_073_000_000 - 793_100_000);
+  return Math.min(1, Math.max(0, 1 - realLeft / 793_100_000));
 }
 
 function detail(coin: MockCoin): CoinDetail {
@@ -719,6 +741,8 @@ export function roundsList(mint: string, limit = 20): RoundSummary[] | null {
       recipients: Math.max(1, Math.round(coin.holderCount * (0.7 + r() * 0.2))),
       snapshotHash: mockSignature(`${coin.mint}:${i}`).slice(0, 32),
       status: "closed",
+      openSig: mockSignature(`${coin.mint}:open:${coin.roundId - i}`),
+      closeSig: mockSignature(`${coin.mint}:close:${coin.roundId - i}`),
     });
   }
   return out;
@@ -808,6 +832,12 @@ function holderRows(coin: MockCoin): Holder[] {
     .sort((a, b) => b.weightedTokens - a.weightedTokens || b.tokens - a.tokens);
 }
 
+/** Raw holder records (lots), for building verifiable mock round snapshots. */
+export function holderRecords(mint: string): MockHolderRecord[] | null {
+  const coin = getCoin(mint);
+  return coin ? holdersFor(coin) : null;
+}
+
 export function holdersList(mint: string, limit = 50): Holder[] | null {
   const coin = getCoin(mint);
   if (!coin) return null;
@@ -835,7 +865,16 @@ function positionFor(coin: MockCoin, wallet: string): Position | null {
     earnedTokens: holder.earnedTokens,
     nextPayoutEstimateSol: coin.vault.holderSol * holder.share,
     lots: record.lots.map((l) => ({ amount: l.amount, acquiredAt: l.acquiredAt, weight: weightMultiplier(l.acquiredAt, now) })),
+    ...pnlOf(coin, record, holder, price),
   };
+}
+
+/** Lots were bought at the path's price at the time; transfers in and the dev buy cost nothing here. */
+function pnlOf(coin: MockCoin, record: MockHolderRecord, holder: Holder, price: number) {
+  const boughtSol = record.lots.reduce((s, l) => s + l.amount * priceAt(coin, l.acquiredAt), 0);
+  const soldSol = 0;
+  const { pnlSol, pnlPct } = positionPnl({ boughtSol, soldSol, valueSol: holder.tokens * price, earnedSol: holder.earnedSol, earnedTokensValueSol: holder.earnedTokens * price });
+  return { boughtSol, soldSol, pnlSol, pnlPct };
 }
 
 export function position(wallet: string, mint: string): Position | null {
@@ -873,7 +912,16 @@ export function profile(wallet: string): Profile {
     }
   }
   recentPayouts.sort((a, b) => b.ts - a.ts);
-  return { wallet, totalEarnedSol, totalEarnedTokensValueSol, positions, recentPayouts: recentPayouts.slice(0, 30) };
+  return {
+    wallet,
+    totalEarnedSol,
+    totalEarnedTokensValueSol,
+    totalValueSol: positions.reduce((s, p) => s + p.valueSol, 0),
+    totalPnlSol: positions.reduce((s, p) => s + p.pnlSol, 0),
+    launchedCoins: allCoins().filter((c) => c.launcher === wallet).length,
+    positions,
+    recentPayouts: recentPayouts.slice(0, 30),
+  };
 }
 
 export function stats(): Stats {
@@ -889,6 +937,7 @@ export function stats(): Stats {
     defends24h,
     volume24hSol: summaries.reduce((s, c) => s + c.volume24hSol, 0),
     schedule: { roundIntervalSec: ROUND_INTERVAL_SECONDS, nextRoundAt: nextRoundAt(now), serverTime: now },
+    solUsd: Math.round((152 + 3 * Math.sin(now / (6 * HOUR))) * 100) / 100,
   };
 }
 
@@ -1066,3 +1115,150 @@ export function launchCoin(meta: LaunchedMeta): string {
 }
 
 export { LAUNCH_PRICE };
+
+// ---- portfolio, leaderboards, creators, comments ------------------------------------------------
+
+/** A wallet's buys, one per purchase lot, newest first. */
+export function walletTrades(wallet: string): WalletTrade[] {
+  const out: WalletTrade[] = [];
+  for (const coin of allCoins()) {
+    const record = holdersFor(coin).find((r) => r.wallet === wallet);
+    if (!record) continue;
+    record.lots.forEach((l, i) => {
+      const price = priceAt(coin, l.acquiredAt);
+      out.push({ sig: mockSignature(`${wallet}:${coin.mint}:buy:${i}`), wallet, side: "buy", sol: l.amount * price, tokens: l.amount, price, ts: l.acquiredAt, source: coin.graduated ? "pumpswap" : "curve", mint: coin.mint, ticker: coin.ticker, name: coin.name });
+    });
+  }
+  return out.sort((a, b) => b.ts - a.ts);
+}
+
+export function leaderboard(kind: LeaderboardKind, limit = 50): Leaderboard {
+  const list = allCoins();
+  switch (kind) {
+    case "earners": {
+      const by = new Map<string, { earnedSol: number; coins: number; payouts: number }>();
+      for (const coin of list)
+        for (const h of holderRows(coin)) {
+          if (h.earnedSol <= 0) continue;
+          const e = by.get(h.wallet) ?? { earnedSol: 0, coins: 0, payouts: 0 };
+          e.earnedSol += h.earnedSol;
+          e.coins += 1;
+          e.payouts += Math.max(1, Math.round(coin.roundId * 0.6));
+          by.set(h.wallet, e);
+        }
+      const items = [...by.entries()].map(([wallet, e]) => ({ wallet, ...e })).sort((a, b) => b.earnedSol - a.earnedSol);
+      return { kind, items: items.slice(0, limit) };
+    }
+    case "diamond_hands": {
+      const best = new Map<string, { wallet: string; mint: string; ticker: string; heldSince: number; tokens: number }>();
+      for (const coin of list)
+        for (const r of holdersFor(coin)) {
+          const first = r.lots[0];
+          if (!first) continue;
+          const cur = best.get(r.wallet);
+          if (!cur || first.acquiredAt < cur.heldSince) best.set(r.wallet, { wallet: r.wallet, mint: coin.mint, ticker: coin.ticker, heldSince: first.acquiredAt, tokens: r.lots.reduce((s, l) => s + l.amount, 0) });
+        }
+      return { kind, items: [...best.values()].sort((a, b) => a.heldSince - b.heldSince).slice(0, limit) };
+    }
+    case "creators": {
+      const by = new Map<string, MockCoin[]>();
+      for (const coin of list) if (coin.launcher) by.set(coin.launcher, [...(by.get(coin.launcher) ?? []), coin]);
+      const items = [...by.entries()].map(([wallet, cs]) => ({
+        wallet,
+        coins: cs.length,
+        paidToHoldersSol: cs.reduce((s, c) => s + c.paidOutSol, 0),
+        totalFeesSol: cs.reduce((s, c) => s + (c.paidOutSol + c.vault.holderSol) / (SPLIT_HOLDER_BPS / 10_000), 0),
+        firstLaunchAt: Math.min(...cs.map((c) => c.createdAt)),
+      }));
+      return { kind, items: items.sort((a, b) => b.paidToHoldersSol - a.paidToHoldersSol).slice(0, limit) };
+    }
+    case "coins":
+      return { kind, items: listCoins("top_payouts").slice(0, limit) };
+  }
+}
+
+export function creator(wallet: string): CreatorProfile {
+  const mine = allCoins().filter((c) => c.launcher === wallet);
+  const summaries = mine.map(summary).sort((a, b) => b.createdAt - a.createdAt);
+  return {
+    wallet,
+    coinCount: mine.length,
+    paidToHoldersSol: mine.reduce((s, c) => s + c.paidOutSol, 0),
+    totalFeesSol: mine.reduce((s, c) => s + (c.paidOutSol + c.vault.holderSol) / (SPLIT_HOLDER_BPS / 10_000), 0),
+    firstLaunchAt: mine.length ? Math.min(...mine.map((c) => c.createdAt)) : null,
+    coinsAboveFloor: summaries.filter((c) => c.vault.floorPrice > 0 && c.price > c.vault.floorPrice).length,
+    coins: summaries,
+  };
+}
+
+const COMMENT_LINES = [
+  "floor held again, vault bought the dip 🛡",
+  "my multiplier just hit 1.00×, not selling",
+  "payouts every 2 min is wild",
+  "who else is holding since day one?",
+  "chart looks like a staircase lol",
+  "dev has no allocation, love it",
+  "just got 0.004 SOL from the last round",
+  "ATH ratchet means the floor only goes up",
+];
+
+const comments = new Map<string, Comment[]>();
+let commentSeq = 1;
+
+function commentsFor(coin: MockCoin): Comment[] {
+  let list = comments.get(coin.mint);
+  if (list) return list;
+  const rand = seededRandom(hashString(`${coin.mint}:comments`));
+  const rows = holderRows(coin);
+  const n = 3 + Math.floor(rand() * 6);
+  list = [];
+  for (let i = 0; i < n; i++) {
+    const h = rows[Math.floor(rand() * Math.min(rows.length, 20))];
+    const wallet = h?.wallet ?? WALLET_POOL[i]!;
+    list.push({
+      id: commentSeq++,
+      mint: coin.mint,
+      wallet,
+      body: COMMENT_LINES[Math.floor(rand() * COMMENT_LINES.length)]!,
+      replyTo: null,
+      createdAt: BOOT - Math.floor(rand() * Math.min(DAY, BOOT - coin.createdAt)),
+      holder: Boolean(h && h.eligibleTokens > 0),
+      weightMultiplier: h && h.eligibleTokens > 0 ? h.weightMultiplier : null,
+      isCreator: wallet === coin.launcher,
+      hidden: false,
+    });
+  }
+  list.sort((a, b) => b.createdAt - a.createdAt || b.id - a.id);
+  comments.set(coin.mint, list);
+  return list;
+}
+
+export function commentsPage(mint: string, limit = 50, before?: string | null): { items: Comment[]; nextCursor: string | null } | null {
+  const coin = getCoin(mint);
+  if (!coin) return null;
+  const all = commentsFor(coin);
+  const start = before ? all.findIndex((c) => c.id < Number(before)) : 0;
+  if (start < 0) return { items: [], nextCursor: null };
+  const items = all.slice(start, start + limit);
+  return { items, nextCursor: start + limit < all.length ? String(items[items.length - 1]!.id) : null };
+}
+
+export function postComment(mint: string, req: PostCommentRequest): Comment | null {
+  const coin = getCoin(mint);
+  if (!coin) return null;
+  const h = holderRows(coin).find((x) => x.wallet === req.wallet);
+  const c: Comment = {
+    id: commentSeq++,
+    mint,
+    wallet: req.wallet,
+    body: req.body.trim(),
+    replyTo: req.replyTo ?? null,
+    createdAt: Date.now(),
+    holder: Boolean(h && h.eligibleTokens > 0),
+    weightMultiplier: h && h.eligibleTokens > 0 ? h.weightMultiplier : null,
+    isCreator: req.wallet === coin.launcher,
+    hidden: false,
+  };
+  commentsFor(coin).unshift(c);
+  return c;
+}

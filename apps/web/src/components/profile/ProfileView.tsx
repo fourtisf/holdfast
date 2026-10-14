@@ -19,8 +19,10 @@ import { CoinsIcon, ExternalIcon, SearchIcon, UserIcon } from "@/components/ui/i
 import { errorMessage } from "@/lib/api";
 import { SOLANA_CLUSTER } from "@/lib/config";
 import { explorerAddressUrl, explorerTxUrl } from "@/lib/explorer";
-import { formatAgo, formatCountdown, formatMultiplier, formatShare, formatSol, formatTokens, shortAddress } from "@/lib/format";
-import { useProfile } from "@/lib/hooks/queries";
+import { useMoney } from "@/lib/currency";
+import { formatAgo, formatCountdown, formatMultiplier, formatPct, formatShare, formatSignedSol, formatSol, formatTokens, shortAddress } from "@/lib/format";
+import { useProfile, useWalletTrades } from "@/lib/hooks/queries";
+import { cn } from "@/components/ui/cn";
 import { useNow } from "@/lib/hooks/useNow";
 
 function isAddress(value: string): boolean {
@@ -105,6 +107,11 @@ function ProfileContent({ wallet, own }: { wallet: string; own: boolean }) {
         </div>
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight text-fg">{own ? "Your profile" : "Wallet profile"}</h1>
+          {data && data.launchedCoins > 0 ? (
+            <Link href={`/creator/${wallet}`} className="text-xs font-semibold text-brand hover:underline">
+              Launched {data.launchedCoins} coin{data.launchedCoins === 1 ? "" : "s"} →
+            </Link>
+          ) : null}
           <div className="mt-1 flex items-center gap-2 font-mono text-xs text-muted">
             <span className="sm:hidden">{shortAddress(wallet, 6)}</span>
             <span className="hidden sm:inline">{wallet}</span>
@@ -133,28 +140,45 @@ function ProfileContent({ wallet, own }: { wallet: string; own: boolean }) {
           <Summary profile={data} nextIn={countdown ? formatCountdown(countdown.remainingMs) : "--:--"} />
           <Positions positions={data.positions} own={own} />
           <RecentPayouts payouts={data.recentPayouts} />
+          <TradeHistory wallet={wallet} />
         </>
       )}
     </div>
   );
 }
 
+function PnlText({ sol, pct, className }: { sol: number; pct: number | null; className?: string }) {
+  return (
+    <span className={cn(sol > 0 ? "text-buy" : sol < 0 ? "text-sell" : "text-muted", className)}>
+      {formatSignedSol(sol)}
+      {pct !== null ? <span className="ml-1 text-[11px] opacity-80">({formatPct(pct, { signed: true })})</span> : null}
+    </span>
+  );
+}
+
 function Summary({ profile, nextIn }: { profile: Profile; nextIn: string }) {
+  const money = useMoney();
   const total = profile.totalEarnedSol + profile.totalEarnedTokensValueSol;
-  const value = profile.positions.reduce((s, p) => s + p.valueSol, 0);
+  const value = profile.totalValueSol;
   const nextEstimate = profile.positions.reduce((s, p) => s + p.nextPayoutEstimateSol, 0);
   const eligible = profile.positions.reduce((s, p) => s + p.eligibleTokens, 0);
   const avgWeight = eligible > 0 ? profile.positions.reduce((s, p) => s + p.weightedTokens, 0) / eligible : 0;
   return (
-    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
       <Stat
         label="Total earned"
-        value={formatSol(total)}
+        value={money.sol(total)}
         sub={`${formatSol(profile.totalEarnedSol)} + tokens worth ${formatSol(profile.totalEarnedTokensValueSol)}`}
         tone="text-payout"
       />
-      <Stat label="Next payout" value={`≈ ${formatSol(nextEstimate)}`} sub={`in ${nextIn}`} />
-      <Stat label="Positions" value={profile.positions.length} sub={`Worth ${formatSol(value)}`} />
+      <Stat
+        label="PnL"
+        value={money.usd ? money.sol(profile.totalPnlSol) : formatSignedSol(profile.totalPnlSol)}
+        sub="Value + sells + payouts − buys"
+        tone={profile.totalPnlSol > 0 ? "text-buy" : profile.totalPnlSol < 0 ? "text-sell" : "text-fg"}
+      />
+      <Stat label="Next payout" value={`≈ ${money.sol(nextEstimate)}`} sub={`in ${nextIn}`} />
+      <Stat label="Portfolio" value={money.sol(value)} sub={`${profile.positions.length} position${profile.positions.length === 1 ? "" : "s"}`} />
       <Stat label="Avg weight" value={formatMultiplier(avgWeight)} sub="Reaches 1.0× after 7 days held" tone="text-brand" />
     </div>
   );
@@ -195,6 +219,8 @@ function Positions({ positions, own }: { positions: Position[]; own: boolean }) 
                     <WeightPill weight={p.weightMultiplier} />
                     <span className="text-muted">
                       Earned <span className="font-semibold text-payout tabular">{formatSol(p.earnedSol)}</span>
+                      {" · "}
+                      <PnlText sol={p.pnlSol} pct={null} className="font-semibold tabular" />
                     </span>
                   </div>
                 </Link>
@@ -202,7 +228,7 @@ function Positions({ positions, own }: { positions: Position[]; own: boolean }) 
             ))}
           </ul>
           <div className="scrollbar-thin hidden overflow-x-auto border-t border-line sm:block">
-            <table className="w-full min-w-[820px] text-sm">
+            <table className="w-full min-w-[920px] text-sm">
               <thead className="bg-surface-2/60">
                 <tr>
                   <th className={th}>Coin</th>
@@ -212,6 +238,7 @@ function Positions({ positions, own }: { positions: Position[]; own: boolean }) 
                   <th className={`${th} text-right`}>Share</th>
                   <th className={`${th} text-right`}>Value</th>
                   <th className={`${th} text-right`}>Earned</th>
+                  <th className={`${th} text-right`}>PnL</th>
                   <th className={`${th} text-right`}>Next payout</th>
                 </tr>
               </thead>
@@ -241,6 +268,9 @@ function Positions({ positions, own }: { positions: Position[]; own: boolean }) 
                           + {formatTokens(p.earnedTokens)} {p.ticker}
                         </div>
                       ) : null}
+                    </td>
+                    <td className={`${td} text-right`} title={`Bought ${formatSol(p.boughtSol)} · sold ${formatSol(p.soldSol)}`}>
+                      <PnlText sol={p.pnlSol} pct={p.pnlPct} className="font-semibold" />
                     </td>
                     <td className={`${td} text-right text-muted`}>≈ {formatSol(p.nextPayoutEstimateSol)}</td>
                   </tr>
@@ -272,7 +302,9 @@ function RecentPayouts({ payouts }: { payouts: Profile["recentPayouts"] }) {
               <span className="w-14 shrink-0 text-xs text-faint tabular">{formatAgo(p.ts, now)}</span>
               <Link href={`/coin/${p.mint}`} className="min-w-0 flex-1 hover:text-brand">
                 <span className="block truncate font-semibold text-fg">${p.ticker}</span>
-                <span className="block text-[11px] text-faint">Round #{p.roundId}</span>
+              </Link>
+              <Link href={`/coin/${p.mint}/round/${p.roundId}`} className="shrink-0 text-[11px] text-faint hover:text-brand" title="Verify this round">
+                Round #{p.roundId}
               </Link>
               <span className="text-right tabular">
                 <span className="font-semibold text-payout">+{formatSol(p.sol)}</span>
@@ -303,6 +335,52 @@ function RecentPayouts({ payouts }: { payouts: Profile["recentPayouts"] }) {
         <div className="flex justify-center border-t border-line p-3">
           <Button variant="ghost" size="sm" onClick={() => setExpanded((v) => !v)}>
             {expanded ? "Show fewer" : `Show all ${payouts.length} payouts`}
+          </Button>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function TradeHistory({ wallet }: { wallet: string }) {
+  const { data, size, setSize, isLoading, isValidating } = useWalletTrades(wallet);
+  const now = useNow(30_000);
+  const trades = data?.flatMap((p) => p.items) ?? [];
+  const hasMore = Boolean(data?.[data.length - 1]?.nextCursor);
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader title="Trades" subtitle="Every buy and sell of this wallet on Holdfast coins" />
+      {isLoading ? (
+        <div className="space-y-2 border-t border-line p-4">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="h-8 animate-pulse rounded-md bg-surface-2" />
+          ))}
+        </div>
+      ) : trades.length === 0 ? (
+        <EmptyState title="No trades yet" />
+      ) : (
+        <ul className="divide-y divide-line/70 border-t border-line">
+          {trades.map((t) => (
+            <li key={`${t.sig}-${t.mint}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              <span className="w-14 shrink-0 text-xs text-faint tabular">{formatAgo(t.ts, now)}</span>
+              <span className={cn("w-10 shrink-0 text-xs font-bold uppercase", t.side === "sell" ? "text-sell" : t.side === "vault" ? "text-vault" : "text-buy")}>{t.side}</span>
+              <Link href={`/coin/${t.mint}`} className="min-w-0 flex-1 truncate font-semibold text-fg hover:text-brand">
+                ${t.ticker}
+              </Link>
+              <span className="text-right text-muted tabular">
+                {formatTokens(t.tokens)} · <span className="font-semibold text-fg">{formatSol(t.sol)}</span>
+              </span>
+              <a href={explorerTxUrl(t.sig, SOLANA_CLUSTER)} target="_blank" rel="noopener noreferrer" className="shrink-0 text-faint hover:text-fg" aria-label="View transaction">
+                <ExternalIcon size={13} />
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+      {hasMore ? (
+        <div className="flex justify-center border-t border-line p-3">
+          <Button variant="ghost" size="sm" onClick={() => void setSize(size + 1)} disabled={isValidating}>
+            {isValidating && size > (data?.length ?? 0) ? "Loading…" : "Older trades"}
           </Button>
         </div>
       ) : null}

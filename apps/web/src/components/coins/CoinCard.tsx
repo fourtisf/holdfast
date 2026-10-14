@@ -1,12 +1,18 @@
+"use client";
+
 import type { CoinSummary } from "@holdfast/core";
 import Link from "next/link";
 import { ChangePct, TriggerBadge, VaultBuyingBadge } from "@/components/coin/CoinBadges";
 import { CoinAvatar } from "@/components/coin/CoinAvatar";
+import { CurveProgress } from "@/components/coin/CurveProgress";
 import { FloorAthBar } from "@/components/coin/FloorAthBar";
+import { WatchButton } from "@/components/coin/WatchButton";
 import { cn } from "@/components/ui/cn";
-import { formatAgo, formatCompact, formatMarketCap, formatSol } from "@/lib/format";
+import { useMoney } from "@/lib/currency";
+import { formatAgo, formatCompact } from "@/lib/format";
 
 export function CoinCard({ coin, now }: { coin: CoinSummary; now: number }) {
+  const money = useMoney();
   return (
     <Link
       href={`/coin/${coin.mint}`}
@@ -27,20 +33,24 @@ export function CoinCard({ coin, now }: { coin: CoinSummary; now: number }) {
                 <span>{formatAgo(coin.createdAt, now)}</span>
               </div>
             </div>
-            {coin.vaultBuying ? <VaultBuyingBadge /> : <TriggerBadge triggerBps={coin.triggerBps} />}
+            <div className="flex shrink-0 items-center gap-1.5">
+              {coin.vaultBuying ? <VaultBuyingBadge /> : <TriggerBadge triggerBps={coin.triggerBps} />}
+              <WatchButton mint={coin.mint} ticker={coin.ticker} className="size-6" size={15} />
+            </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-[11px] font-medium text-faint uppercase">MC</span>
-            <span className="font-semibold text-fg tabular">{formatMarketCap(coin.marketCapSol)}</span>
+            <span className="font-semibold text-fg tabular">{money.mc(coin.marketCapSol)}</span>
             <ChangePct value={coin.change24hPct} className="text-xs" />
           </div>
         </div>
       </div>
       <FloorAthBar progress={coin.floorToAthProgress} vaultBuying={coin.vaultBuying} />
+      <CurveProgress progress={coin.bondingCurveProgress} graduated={coin.graduated} />
       <dl className="grid grid-cols-3 gap-2 border-t border-line pt-2.5 text-xs">
         <div className="min-w-0">
           <dt className="text-faint">Vault</dt>
-          <dd className="truncate font-semibold text-floor tabular">{formatSol(coin.vault.floorSol)}</dd>
+          <dd className="truncate font-semibold text-floor tabular">{money.sol(coin.vault.floorSol)}</dd>
         </div>
         <div className="min-w-0">
           <dt className="text-faint">Holders</dt>
@@ -48,7 +58,7 @@ export function CoinCard({ coin, now }: { coin: CoinSummary; now: number }) {
         </div>
         <div className="min-w-0">
           <dt className="text-faint">Paid out</dt>
-          <dd className="truncate font-semibold text-payout tabular">{formatSol(coin.paidOutSol)}</dd>
+          <dd className="truncate font-semibold text-payout tabular">{money.sol(coin.paidOutSol)}</dd>
         </div>
       </dl>
     </Link>

@@ -6,6 +6,7 @@ import { useHowItWorks } from "@/components/how-it-works/HowItWorksProvider";
 import { cn } from "@/components/ui/cn";
 import { BookIcon } from "@/components/ui/icons";
 import { USE_MOCKS } from "@/lib/config";
+import { CurrencyToggle } from "@/lib/currency";
 import { Logo } from "./Logo";
 import { PayoutCountdownPill } from "./PayoutCountdown";
 import { WalletButton } from "./WalletButton";
@@ -13,6 +14,7 @@ import { WalletButton } from "./WalletButton";
 export const NAV_LINKS = [
   { href: "/", label: "Coins" },
   { href: "/create", label: "Create" },
+  { href: "/leaderboard", label: "Leaderboard" },
   { href: "/profile", label: "Profile" },
 ] as const;
 
@@ -51,6 +53,7 @@ export function TopNav() {
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <PayoutCountdownPill className="lg:hidden" />
+          <CurrencyToggle className="hidden sm:inline-flex" />
           <button
             type="button"
             onClick={how.open}

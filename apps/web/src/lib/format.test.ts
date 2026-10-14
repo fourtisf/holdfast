@@ -15,7 +15,11 @@ import {
   formatTokens,
   shortAddress,
   formatSolExact,
+  formatSignedSol,
+  formatUsd,
 } from "./format";
+import { toggleInList } from "./watchlist";
+import { walletBrowseLinks } from "../components/layout/WalletButton";
 
 describe("formatCompact", () => {
   it("abbreviates thousands, millions, billions", () => {
@@ -131,5 +135,34 @@ describe("formatSolExact", () => {
     expect(formatSolExact(0.025329)).toBe("0.025329");
     expect(formatSolExact(0.556341)).toBe("0.556341");
     expect(formatSolExact(1)).toBe("1");
+  });
+});
+
+describe("USD, signed SOL, watchlist, wallet links", () => {
+  it("formats dollars", () => {
+    expect(formatUsd(0)).toBe("$0");
+    expect(formatUsd(0.004)).toBe("<$0.01");
+    expect(formatUsd(1.5)).toBe("$1.5");
+    expect(formatUsd(76.104)).toBe("$76.1");
+    expect(formatUsd(12_345)).toBe("$12.35K");
+    expect(formatUsd(-3.2)).toBe("-$3.2");
+  });
+
+  it("signs PnL", () => {
+    expect(formatSignedSol(0.42)).toBe("+0.42 SOL");
+    expect(formatSignedSol(-1.2)).toBe("-1.2 SOL");
+    expect(formatSignedSol(0)).toBe("0 SOL");
+  });
+
+  it("toggles watchlist entries, newest first", () => {
+    expect(toggleInList([], "a")).toEqual(["a"]);
+    expect(toggleInList(["a"], "b")).toEqual(["b", "a"]);
+    expect(toggleInList(["b", "a"], "b")).toEqual(["a"]);
+  });
+
+  it("builds wallet-app browse links", () => {
+    const [phantom, solflare] = walletBrowseLinks("https://holdfast.app/coin/X?y=1", "https://holdfast.app");
+    expect(phantom!.href).toBe("https://phantom.app/ul/browse/https%3A%2F%2Fholdfast.app%2Fcoin%2FX%3Fy%3D1?ref=https%3A%2F%2Fholdfast.app");
+    expect(solflare!.href).toContain("https://solflare.com/ul/v1/browse/https%3A%2F%2Fholdfast.app");
   });
 });

@@ -1,17 +1,22 @@
 import type {
   CandleTimeframe,
   CandlesResponse,
+  Comment,
   CoinDetail,
   CoinSort,
   CoinSummary,
+  CreatorProfile,
   DefendEvent,
   Holder,
+  Leaderboard,
+  LeaderboardKind,
   LaunchRequest,
   LaunchResponse,
   LaunchQuote,
   LaunchStatus,
   Page,
   Position,
+  PostCommentRequest,
   Profile,
   ReportRequest,
   ReportResponse,
@@ -23,6 +28,7 @@ import type {
   TradeBuildResponse,
   TradeQuote,
   TradeQuoteRequest,
+  WalletTrade,
 } from "@holdfast/core";
 import { API_URL, USE_MOCKS } from "./config";
 
@@ -31,6 +37,11 @@ export interface CoinsQuery {
   q?: string;
   limit?: number;
   cursor?: string | null;
+  graduated?: boolean | null;
+  maxAgeHours?: number | null;
+  minMcapSol?: number | null;
+  /** Watchlist: only these mints. */
+  mints?: readonly string[] | null;
 }
 
 export interface HoldfastApi {
@@ -54,6 +65,12 @@ export interface HoldfastApi {
   /** Deposit needed for a launch, from the launcher's cost model. */
   launchQuote(q?: { devBuySol?: number; name?: string; ticker?: string }): Promise<LaunchQuote>;
   report(mint: string, req: ReportRequest): Promise<ReportResponse>;
+  walletTrades(wallet: string, opts?: { limit?: number; before?: string | null }): Promise<Page<WalletTrade>>;
+  leaderboard(kind: LeaderboardKind, opts?: { limit?: number; days?: number }): Promise<Leaderboard>;
+  creator(wallet: string): Promise<CreatorProfile>;
+  comments(mint: string, opts?: { limit?: number; before?: string | null }): Promise<Page<Comment>>;
+  postComment(mint: string, req: PostCommentRequest): Promise<Comment>;
+  reportComment(id: number, req: ReportRequest): Promise<ReportResponse>;
 }
 
 export class ApiError extends Error {
@@ -108,7 +125,19 @@ const enc = encodeURIComponent;
 export const httpApi: HoldfastApi = {
   stats: () => request("/stats"),
   schedule: () => request("/schedule"),
-  coins: (q = {}) => request(withQuery("/coins", { sort: q.sort, q: q.q, limit: q.limit, cursor: q.cursor })),
+  coins: (q = {}) =>
+    request(
+      withQuery("/coins", {
+        sort: q.sort,
+        q: q.q,
+        limit: q.limit,
+        cursor: q.cursor,
+        graduated: q.graduated === null || q.graduated === undefined ? undefined : String(q.graduated),
+        maxAgeHours: q.maxAgeHours,
+        minMcapSol: q.minMcapSol,
+        mints: q.mints ? q.mints.join(",") : undefined,
+      }),
+    ),
   coin: (mint) => request(`/coins/${enc(mint)}`),
   candles: (mint, tf, range = {}) => request(withQuery(`/coins/${enc(mint)}/candles`, { tf, from: range.from, to: range.to })),
   trades: (mint, opts = {}) => request(withQuery(`/coins/${enc(mint)}/trades`, { limit: opts.limit, before: opts.before })),
@@ -129,6 +158,12 @@ export const httpApi: HoldfastApi = {
   launchStatus: (launchId) => request(`/launch/${enc(launchId)}`),
   launchQuote: (q = {}) => request(withQuery("/launch/quote", { devBuySol: q.devBuySol, name: q.name, ticker: q.ticker })),
   report: (mint, req) => request(`/coins/${enc(mint)}/report`, { method: "POST", json: req }),
+  walletTrades: (wallet, opts = {}) => request(withQuery("/me/trades", { wallet, limit: opts.limit, before: opts.before })),
+  leaderboard: (kind, opts = {}) => request(withQuery("/leaderboard", { kind, limit: opts.limit, days: opts.days })),
+  creator: (wallet) => request(`/creators/${enc(wallet)}`),
+  comments: (mint, opts = {}) => request(withQuery(`/coins/${enc(mint)}/comments`, { limit: opts.limit, before: opts.before })),
+  postComment: (mint, req) => request(`/coins/${enc(mint)}/comments`, { method: "POST", json: req }),
+  reportComment: (id, req) => request(`/comments/${id}/report`, { method: "POST", json: req }),
 };
 
 let mockApi: Promise<HoldfastApi> | null = null;
@@ -168,6 +203,12 @@ export const api: HoldfastApi = {
   launchStatus: lazy("launchStatus"),
   launchQuote: lazy("launchQuote"),
   report: lazy("report"),
+  walletTrades: lazy("walletTrades"),
+  leaderboard: lazy("leaderboard"),
+  creator: lazy("creator"),
+  comments: lazy("comments"),
+  postComment: lazy("postComment"),
+  reportComment: lazy("reportComment"),
 };
 
 export function errorMessage(err: unknown): string {

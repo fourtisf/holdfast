@@ -237,10 +237,17 @@ function AdminConsole({ client, onSignOut }: { client: AdminClient; onSignOut: (
                         <Link href={`/coin/${r.mint}`} className="font-mono text-xs text-fg hover:underline">
                           {shortAddress(r.mint, 5)}
                         </Link>
+                        {r.targetType === "comment" ? <span className="ml-2 text-xs text-faint">comment #{r.targetId}</span> : null}
+                        {r.commentBody ? <div className="mt-0.5 max-w-md border-l-2 border-line pl-2 text-xs text-fg">“{r.commentBody}”</div> : null}
                         {r.details ? <div className="mt-0.5 max-w-md text-xs text-muted">{r.details}</div> : null}
                       </td>
                       <td className="px-4 py-2 text-muted">{formatRelativeTime(r.createdAt, now)}</td>
-                      <td className="px-4 py-2 text-right">
+                      <td className="px-4 py-2 text-right whitespace-nowrap">
+                        {r.targetType === "comment" ? (
+                          <Button size="sm" variant="outline" className="mr-2" disabled={busy} onClick={() => void act(() => client.hideComment(r.targetId, `reported: ${r.reason}`))}>
+                            Hide comment
+                          </Button>
+                        ) : null}
                         <Button size="sm" variant="secondary" disabled={busy} onClick={() => void act(() => client.resolveReport(r.id, "dismissed"))}>
                           Dismiss
                         </Button>

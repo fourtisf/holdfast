@@ -26,6 +26,17 @@ const BUY_PRESETS = [0.1, 0.5, 1];
 const SELL_PRESETS = [25, 50, 100];
 const SLIPPAGE_PRESETS = [50, 100, 200, 500];
 const isBps = (v: unknown): v is number => typeof v === "number" && v > 0 && v <= 5000;
+
+/** Priority fee: compute-unit price in micro-lamports (null = the API's default). */
+type Priority = "default" | "fast" | "turbo";
+const PRIORITY: Record<Priority, { label: string; microLamports: number | null }> = {
+  default: { label: "Normal", microLamports: null },
+  fast: { label: "Fast", microLamports: 500_000 },
+  turbo: { label: "Turbo", microLamports: 2_000_000 },
+};
+const isPriority = (v: unknown): v is Priority => v === "default" || v === "fast" || v === "turbo";
+/** ≈ SOL a priority level adds at a ~250k compute-unit trade. */
+const priorityCostSol = (microLamports: number) => (microLamports * 250_000) / 1e6 / 1e9;
 /** Quotes need a wallet field; before connecting, buy quotes use the system program address as a stand-in. */
 const QUOTE_PLACEHOLDER_WALLET = "11111111111111111111111111111111";
 
@@ -44,6 +55,8 @@ export function TradePanel({ coin, position }: { coin: CoinDetail; position: Pos
   const [amount, setAmount] = useState("");
   const [slippageBps, setSlippageBps] = useStoredState<number>("holdfast:slippage-bps", 200, isBps);
   const [showSlippage, setShowSlippage] = useState(false);
+  const [priority, setPriority] = useStoredState<Priority>("holdfast:priority", "default", isPriority);
+  const priorityMicroLamports = PRIORITY[priority].microLamports ?? undefined;
   const [quote, setQuote] = useState<TradeQuote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoting, setQuoting] = useState(false);
@@ -110,7 +123,7 @@ export function TradePanel({ coin, position }: { coin: CoinDetail; position: Pos
     setSignature(null);
     try {
       setPhase("building");
-      const built = await api.buildTrade({ mint: coin.mint, wallet, side, amount: value, slippageBps });
+      const built = await api.buildTrade({ mint: coin.mint, wallet, side, amount: value, slippageBps, priorityMicroLamports });
       const tx = decodeTransaction(built.transaction);
       setPhase("signing");
       const sig = await sendTransaction(tx, connection);
@@ -178,6 +191,7 @@ export function TradePanel({ coin, position }: { coin: CoinDetail; position: Pos
         >
           <SettingsIcon size={13} />
           Slippage {formatPct(slippageBps / 100)}
+          {priority !== "default" ? ` · ${PRIORITY[priority].label}` : ""}
         </button>
       </div>
 
@@ -210,6 +224,32 @@ export function TradePanel({ coin, position }: { coin: CoinDetail; position: Pos
             />
             <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-[10px] text-faint">%</span>
           </label>
+        </div>
+      ) : null}
+      {showSlippage ? (
+        <div className="mt-1.5 rounded-control bg-surface-2 p-2 ring-1 ring-line">
+          <div className="mb-1.5 text-[11px] font-semibold tracking-wider text-faint uppercase">Priority fee</div>
+          <div className="flex items-center gap-1.5">
+            {(Object.keys(PRIORITY) as Priority[]).map((p) => {
+              const micro = PRIORITY[p].microLamports;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPriority(p)}
+                  title={micro === null ? "The API's default compute-unit price" : `≈ ${formatSolAmount(priorityCostSol(micro))} SOL extra`}
+                  className={cn("h-7 flex-1 rounded-md text-xs font-semibold", priority === p ? "bg-fg text-bg" : "bg-surface-3 text-muted hover:text-fg")}
+                >
+                  {PRIORITY[p].label}
+                </button>
+              );
+            })}
+          </div>
+          {priority !== "default" ? (
+            <p className="mt-1.5 text-[11px] text-faint">
+              ≈ {formatSolAmount(priorityCostSol(PRIORITY[priority].microLamports!))} SOL extra per trade, to land faster when the network is busy.
+            </p>
+          ) : null}
         </div>
       ) : null}
 

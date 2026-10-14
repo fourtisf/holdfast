@@ -179,3 +179,30 @@ export const EyeOffIcon = (p: IconProps) => (
     <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
   </svg>
 );
+export const StarIcon = ({ filled, ...p }: IconProps & { filled?: boolean }) => (
+  <svg {...base(p)} fill={filled ? "currentColor" : "none"}>
+    <path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />
+  </svg>
+);
+export const TrophyIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z" />
+    <path d="M17 6h3v2a3 3 0 0 1-3 3M7 6H4v2a3 3 0 0 0 3 3" />
+  </svg>
+);
+export const ChatIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.6A8 8 0 1 1 21 12z" />
+  </svg>
+);
+export const FilterIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M4 5h16l-6 7.5V19l-4 2v-8.5z" />
+  </svg>
+);
+export const CheckShieldIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z" />
+    <path d="m9 12 2 2 4-4" />
+  </svg>
+);

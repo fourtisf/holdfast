@@ -480,6 +480,8 @@ export interface AdminReport {
   createdAt: number;
   resolvedAt: number | null;
   resolution: string | null;
+  /** Comment reports: the reported text. */
+  commentBody: string | null;
 }
 
 export interface AdminCoin {

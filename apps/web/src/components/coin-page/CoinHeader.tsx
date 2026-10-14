@@ -1,15 +1,21 @@
 "use client";
 
 import type { CoinDetail } from "@holdfast/core";
+import Link from "next/link";
 import { ChangePct, TriggerBadge, VaultBuyingBadge } from "@/components/coin/CoinBadges";
 import { CoinAvatar } from "@/components/coin/CoinAvatar";
+import { CurveProgress } from "@/components/coin/CurveProgress";
 import { FloorAthBar } from "@/components/coin/FloorAthBar";
+import { WatchButton } from "@/components/coin/WatchButton";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { CopyButton } from "@/components/ui/CopyButton";
-import { GlobeIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
+import { ExternalIcon, GlobeIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
 import { HiddenNotice, ReportButton } from "@/components/moderation/ReportButton";
-import { formatMarketCap, formatPrice, formatRelativeTime, shortAddress } from "@/lib/format";
+import { SOLANA_CLUSTER } from "@/lib/config";
+import { useMoney } from "@/lib/currency";
+import { coinLinks } from "@/lib/explorer";
+import { formatPrice, formatRelativeTime, shortAddress } from "@/lib/format";
 import { useNow } from "@/lib/hooks/useNow";
 
 function SocialLink({ href, label, children }: { href: string; label: string; children: React.ReactNode }) {
@@ -38,12 +44,23 @@ export function CoinHeader({ coin }: { coin: CoinDetail }) {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <h1 className="truncate text-xl font-semibold tracking-tight text-fg sm:text-2xl">{coin.name}</h1>
             <span className="text-sm font-semibold text-muted">${coin.ticker}</span>
+            <WatchButton mint={coin.mint} ticker={coin.ticker} className="size-7" size={17} />
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {coin.vaultBuying ? <VaultBuyingBadge /> : null}
             <TriggerBadge triggerBps={coin.triggerBps} />
             <Badge tone={coin.graduated ? "ath" : "muted"}>{coin.graduated ? "PumpSwap" : "Bonding curve"}</Badge>
-            <span className="text-xs text-faint">Launched {formatRelativeTime(coin.createdAt, now)}</span>
+            <span className="text-xs text-faint">
+              Launched {formatRelativeTime(coin.createdAt, now)}
+              {coin.launcher ? (
+                <>
+                  {" by "}
+                  <Link href={`/creator/${coin.launcher}`} className="font-mono text-muted hover:text-fg">
+                    {shortAddress(coin.launcher)}
+                  </Link>
+                </>
+              ) : null}
+            </span>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-2 py-1 font-mono text-xs text-muted ring-1 ring-line">
@@ -65,6 +82,18 @@ export function CoinHeader({ coin }: { coin: CoinDetail }) {
                 <GlobeIcon size={15} />
               </SocialLink>
             ) : null}
+            {coinLinks(coin.mint, SOLANA_CLUSTER).map((l) => (
+              <a
+                key={l.label}
+                href={l.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-8 items-center gap-1 rounded-lg bg-surface-3 px-2 text-xs font-semibold text-muted transition-colors hover:text-fg"
+              >
+                {l.label}
+                <ExternalIcon size={11} />
+              </a>
+            ))}
             <span className="ml-auto">
               <ReportButton mint={coin.mint} ticker={coin.ticker} />
             </span>
@@ -78,13 +107,14 @@ export function CoinHeader({ coin }: { coin: CoinDetail }) {
 }
 
 export function MarketCapCard({ coin }: { coin: CoinDetail }) {
+  const money = useMoney();
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
         <div>
           <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">Market cap</div>
           <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-[28px] leading-none font-semibold tracking-tight text-fg tabular">{formatMarketCap(coin.marketCapSol)}</span>
+            <span className="text-[28px] leading-none font-semibold tracking-tight text-fg tabular">{money.mc(coin.marketCapSol)}</span>
             <ChangePct value={coin.change24hPct} className="text-sm font-semibold" />
             <span className="text-xs text-faint">24h</span>
           </div>
@@ -96,15 +126,16 @@ export function MarketCapCard({ coin }: { coin: CoinDetail }) {
           </div>
           <div>
             <dt className="text-faint">Floor MC</dt>
-            <dd className="mt-0.5 font-semibold text-floor tabular">{formatMarketCap(coin.floorMarketCapSol)}</dd>
+            <dd className="mt-0.5 font-semibold text-floor tabular">{money.mc(coin.floorMarketCapSol)}</dd>
           </div>
           <div>
             <dt className="text-faint">ATH MC</dt>
-            <dd className="mt-0.5 font-semibold text-ath tabular">{formatMarketCap(coin.athMarketCapSol)}</dd>
+            <dd className="mt-0.5 font-semibold text-ath tabular">{money.mc(coin.athMarketCapSol)}</dd>
           </div>
         </dl>
       </div>
       <FloorAthBar detailed className="mt-4" progress={coin.floorToAthProgress} vaultBuying={coin.vaultBuying} />
+      <CurveProgress detailed className="mt-4" progress={coin.bondingCurveProgress} graduated={coin.graduated} />
     </Card>
   );
 }

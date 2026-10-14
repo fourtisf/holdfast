@@ -1,4 +1,6 @@
 import {
+  buildRoundSnapshot,
+  computeRound,
   LAUNCH_FEE_LAMPORTS,
   marketCapSol,
   type LaunchRequest,
@@ -6,6 +8,7 @@ import {
   LaunchResponse,
   type LaunchStatus,
   type LaunchStatusKind,
+  type RoundInputs,
   type RoundSnapshot,
   type TradeQuote,
   type TradeQuoteRequest,
@@ -150,7 +153,13 @@ export const mockApi: HoldfastApi = {
   stats: () => latency(market.stats()),
   schedule: () => latency(market.stats().schedule, 40, 160),
   coins: async (q = {}) => {
-    const all = market.listCoins(q.sort, q.q);
+    const now = Date.now();
+    const all = market
+      .listCoins(q.sort, q.q)
+      .filter((c) => q.graduated === null || q.graduated === undefined || c.graduated === q.graduated)
+      .filter((c) => !q.maxAgeHours || c.createdAt >= now - q.maxAgeHours * 3_600_000)
+      .filter((c) => !q.minMcapSol || c.marketCapSol >= q.minMcapSol)
+      .filter((c) => !q.mints || q.mints.includes(c.mint));
     const start = q.cursor ? Number(q.cursor) : 0;
     const limit = q.limit ?? 24;
     const items = all.slice(start, start + limit);
@@ -164,25 +173,26 @@ export const mockApi: HoldfastApi = {
   rounds: async (mint, opts = {}) => latency(market.roundsList(mint, opts.limit ?? 20) ?? notFound("Coin")),
   round: async (mint, roundId) => {
     const summary = (market.roundsList(mint, 50) ?? notFound("Coin")).find((r) => r.roundId === roundId) ?? notFound("Round");
-    const snapshot: RoundSnapshot = {
-      ...summary,
-      version: 1,
+    // A real computation over the mock holders, so the verify page's checks pass in mock mode too.
+    const records = market.holderRecords(mint) ?? [];
+    const inputs: RoundInputs = {
       mint,
+      roundId: BigInt(roundId),
       snapshotAt: summary.ts,
-      inputs: {
-        mint,
-        roundId,
-        snapshotAt: summary.ts,
-        potSolLamports: lamports(summary.solPot),
-        potTokensRaw: String(Math.round(summary.tokenPot * 1e6)),
-        params: { minSolLamports: "10000", minTokensRaw: "1000000", rentExemptMinLamports: "890880", carryExpiryMs: 86_400_000, maxRecipients: 500 },
-        holders: [],
-        carriedIn: [],
-      },
-      totalWeight: "0",
-      entries: [],
-      carriedOut: [],
+      potSol: BigInt(lamports(summary.solPot)),
+      potTokens: BigInt(Math.round(summary.tokenPot * 1e6)),
+      params: { minSolLamports: 10_000n, minTokensRaw: 1_000_000n, rentExemptMinLamports: 890_880n, carryExpiryMs: 86_400_000, maxRecipients: 500 },
+      holders: records
+        .filter((r) => r.lots.some((l) => l.acquiredAt <= summary.ts))
+        .map((r) => ({
+          wallet: r.wallet,
+          lots: r.lots.filter((l) => l.acquiredAt <= summary.ts).map((l) => ({ amount: BigInt(Math.round(l.amount * 1e6)), acquiredAt: l.acquiredAt })),
+          solBalance: 1_000_000_000n,
+          hasTokenAccount: true,
+        })),
+      carriedIn: [],
     };
+    const snapshot: RoundSnapshot = { ...buildRoundSnapshot(inputs, computeRound(inputs), summary.ts), openSig: summary.openSig, closeSig: summary.closeSig, status: summary.status };
     return latency(snapshot);
   },
   profile: async (wallet) => latency(market.profile(wallet)),
@@ -219,4 +229,18 @@ export const mockApi: HoldfastApi = {
     return latency(res, 300, 600);
   },
   launchStatus: async (id) => latency(launchState(id), 60, 160),
+  walletTrades: async (wallet, opts = {}) => {
+    const all = market.walletTrades(wallet);
+    const start = opts.before ? Number(opts.before) : 0;
+    const limit = opts.limit ?? 50;
+    return latency({ items: all.slice(start, start + limit), nextCursor: start + limit < all.length ? String(start + limit) : null });
+  },
+  leaderboard: async (kind, opts = {}) => latency(market.leaderboard(kind, opts.limit ?? 50)),
+  creator: async (wallet) => latency(market.creator(wallet)),
+  comments: async (mint, opts = {}) => latency(market.commentsPage(mint, opts.limit ?? 50, opts.before) ?? notFound("Coin"), 80, 200),
+  postComment: async (mint, req) => {
+    if (!req.body.trim()) throw new ApiError("body: 1 to 500 characters", 400);
+    return latency(market.postComment(mint, req) ?? notFound("Coin"), 200, 400);
+  },
+  reportComment: async () => latency({ recorded: true }),
 };

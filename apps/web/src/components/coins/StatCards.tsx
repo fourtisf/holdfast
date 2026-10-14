@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/components/ui/cn";
 import { CoinsIcon, RocketIcon, ShieldIcon, VaultIcon } from "@/components/ui/icons";
-import { formatCompact, formatSol } from "@/lib/format";
+import { useMoney } from "@/lib/currency";
+import { formatCompact } from "@/lib/format";
 import { useLiveStats } from "@/lib/hooks/live";
 
 function StatCard({ label, value, sub, icon, tone }: { label: string; value: ReactNode; sub: ReactNode; icon: ReactNode; tone: string }) {
@@ -22,6 +23,7 @@ function StatCard({ label, value, sub, icon, tone }: { label: string; value: Rea
 
 export function StatCards() {
   const { data } = useLiveStats();
+  const money = useMoney();
   const loading = <Skeleton className="h-7 w-24" />;
   return (
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -34,14 +36,14 @@ export function StatCards() {
       />
       <StatCard
         label="In floor vaults"
-        value={data ? formatSol(data.totalVaultSol) : loading}
+        value={data ? money.sol(data.totalVaultSol) : loading}
         sub="Defending floors"
         icon={<VaultIcon size={15} />}
         tone="bg-floor/12 text-floor"
       />
       <StatCard
         label="Paid to holders"
-        value={data ? formatSol(data.totalPaidSol) : loading}
+        value={data ? money.sol(data.totalPaidSol) : loading}
         sub="Every 2 minutes"
         icon={<CoinsIcon size={15} />}
         tone="bg-payout/12 text-payout"
@@ -49,7 +51,7 @@ export function StatCards() {
       <StatCard
         label="Buybacks 24h"
         value={data ? formatCompact(data.defends24h, 0) : loading}
-        sub={data ? `Volume ${formatSol(data.volume24hSol)}` : "Volume –"}
+        sub={data ? `Volume ${money.sol(data.volume24hSol)}` : "Volume –"}
         icon={<ShieldIcon size={15} />}
         tone="bg-vault/14 text-vault"
       />

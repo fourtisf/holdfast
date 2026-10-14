@@ -14,6 +14,7 @@ export function adminClient(token: string) {
     launches: (statuses: string[]) => get<AdminLaunch[]>(`/admin/launches${statuses.length ? `?status=${statuses.join(",")}` : ""}`),
     log: () => get<AdminLogEntry[]>("/admin/log"),
     hide: (mint: string, body: HideCoinRequest) => post(`/admin/coins/${enc(mint)}/hide`, body),
+    hideComment: (id: string, reason: string) => post(`/admin/comments/${enc(id)}/hide`, { reason }),
     unhide: (mint: string) => post(`/admin/coins/${enc(mint)}/unhide`),
     reviewed: (mint: string) => post(`/admin/coins/${enc(mint)}/reviewed`),
     resolveReport: (id: number, resolution: string) => post(`/admin/reports/${id}/resolve`, { resolution }),

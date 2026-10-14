@@ -9,6 +9,7 @@ import { useCallback, useMemo, type ReactNode } from "react";
 import { SWRConfig, type SWRConfiguration } from "swr";
 import { HowItWorksProvider } from "@/components/how-it-works/HowItWorksProvider";
 import { ApiError } from "@/lib/api";
+import { CurrencyProvider } from "@/lib/currency";
 import { SOLANA_CLUSTER, SOLANA_RPC_URL, USE_MOCKS } from "@/lib/config";
 import { MockWalletAdapter } from "@/lib/mocks/wallet";
 import { ScheduleProvider } from "./ScheduleProvider";
@@ -40,7 +41,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
         <WalletProvider wallets={wallets} autoConnect onError={onError} localStorageKey="holdfast:wallet">
           <WalletModalProvider>
             <ScheduleProvider>
-              <HowItWorksProvider>{children}</HowItWorksProvider>
+              <CurrencyProvider>
+                <HowItWorksProvider>{children}</HowItWorksProvider>
+              </CurrencyProvider>
             </ScheduleProvider>
           </WalletModalProvider>
         </WalletProvider>

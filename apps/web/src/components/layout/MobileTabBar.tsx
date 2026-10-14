@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useHowItWorks } from "@/components/how-it-works/HowItWorksProvider";
 import { cn } from "@/components/ui/cn";
-import { BookIcon, CoinsIcon, PlusIcon, UserIcon } from "@/components/ui/icons";
+import { BookIcon, CoinsIcon, PlusIcon, TrophyIcon, UserIcon } from "@/components/ui/icons";
 import { isActive } from "./TopNav";
 
 const ITEMS = [
   { href: "/", label: "Coins", icon: CoinsIcon },
   { href: "/create", label: "Create", icon: PlusIcon },
+  { href: "/leaderboard", label: "Ranks", icon: TrophyIcon },
   { href: "/profile", label: "Profile", icon: UserIcon },
 ] as const;
 

@@ -108,6 +108,26 @@ async function run() {
       await shot(page, "coins-vault-buying", vp.name, { fullPage: false });
       await page.getByRole("tab", { name: "Newest" }).click();
 
+      // Watchlist, filters and the USD toggle
+      await page.getByRole("button", { name: /to watchlist$/ }).first().click();
+      await page.getByRole("tab", { name: /Watchlist/ }).click();
+      await page.waitForTimeout(700);
+      if ((await page.locator('a[href^="/coin/"]').count()) !== 1) problems.push(`[${label("/ watchlist")}] expected exactly one starred coin`);
+      await shot(page, "coins-watchlist", vp.name, { fullPage: false });
+      await page.getByRole("tab", { name: "Newest" }).click();
+      await page.getByRole("button", { name: /^Filters/ }).click();
+      await page.getByRole("radio", { name: "Bonding curve" }).click();
+      await page.waitForTimeout(700);
+      await shot(page, "coins-filters", vp.name, { fullPage: false });
+      await page.getByRole("button", { name: "Reset" }).click();
+      await page.getByRole("button", { name: /^Filters/ }).click();
+      if (vp.name === "desktop") {
+        await page.getByRole("button", { name: "Show amounts in USD" }).click();
+        await page.waitForTimeout(300);
+        await shot(page, "coins-usd", vp.name, { fullPage: false });
+        await page.getByRole("button", { name: "Show amounts in SOL" }).click();
+      }
+
       // How it works modal
       await page.getByRole("button", { name: "How it works" }).first().click();
       await page.getByRole("dialog").waitFor();
@@ -139,6 +159,33 @@ async function run() {
       await page.waitForTimeout(600);
       await checkOverflow(page, label("/coin tabs"));
 
+      // Comments: sign and post as the mock wallet
+      await page.getByRole("tab", { name: /Comments/ }).click();
+      await page.getByLabel("Comment").fill("diamond hands only, the floor keeps rising");
+      await page.getByRole("button", { name: "Post", exact: true }).click();
+      await page.locator("li", { hasText: "diamond hands only, the floor keeps rising" }).first().waitFor({ timeout: 10_000 });
+      await page.getByLabel("Comment").scrollIntoViewIfNeeded();
+      await checkOverflow(page, label("/coin comments"));
+      await shot(page, "coin-comments", vp.name, { fullPage: false });
+
+      // Rounds → in-browser verification
+      await page.getByRole("tab", { name: /Rounds/ }).click();
+      await page.getByRole("link", { name: "Verify" }).first().click();
+      await page.getByText("Recomputed in your browser").waitFor();
+      await page.waitForTimeout(600);
+      if (!(await page.getByText("Every payout follows from the inputs").count())) problems.push(`[${label("/round")}] mock round did not verify`);
+      await checkOverflow(page, label("/round"));
+      await shot(page, "round-verify", vp.name);
+      // The OG card of this coin renders on the server
+      const og = await page.request.get(`${BASE}${kelp}/opengraph-image`);
+      if (!og.ok() || !(og.headers()["content-type"] ?? "").startsWith("image/png")) problems.push(`[${label("og")}] opengraph-image: HTTP ${og.status()}`);
+      else if (vp.name === "desktop") {
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(path.join(OUT, "og-coin.png"), await og.body());
+      }
+      await page.goto(`${BASE}${kelp}`, { waitUntil: "networkidle" });
+      await page.getByText("Share of next round").waitFor();
+
       // Buy flow with the mock wallet
       await page.getByRole("button", { name: "0.5 SOL" }).click();
       await page.getByText(/You receive/).waitFor();
@@ -165,6 +212,22 @@ async function run() {
       await profilePage.getByText("Connect a wallet to see your earnings").waitFor();
       await shot(profilePage, "profile-disconnected", vp.name, { fullPage: false });
       await fresh.close();
+
+      // Leaderboard and a creator page
+      await page.goto(`${BASE}/leaderboard`, { waitUntil: "networkidle" });
+      await page.getByRole("tab", { name: "Top earners" }).waitFor();
+      await page.locator("tbody tr").first().waitFor();
+      await checkOverflow(page, label("/leaderboard"));
+      await shot(page, "leaderboard", vp.name);
+      await page.getByRole("tab", { name: "Creators" }).click();
+      await page.locator('a[href^="/creator/"]').first().waitFor();
+      const creator = await page.locator('a[href^="/creator/"]').first().getAttribute("href");
+      await page.goto(`${BASE}${creator}`, { waitUntil: "networkidle" });
+      await page.getByText("Paid to holders").first().waitFor();
+      await page.locator('a[href^="/coin/"]').first().waitFor();
+      await page.waitForTimeout(400);
+      await checkOverflow(page, label("/creator"));
+      await shot(page, "creator", vp.name);
 
       // Create → deposit modal → live → redirect
       await page.goto(`${BASE}/create`, { waitUntil: "networkidle" });

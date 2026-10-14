@@ -12,6 +12,8 @@ export interface ReportRow {
   createdAt: number;
   resolvedAt: number | null;
   resolution: string | null;
+  /** Comment reports: the reported text, for the admin console. */
+  commentBody: string | null;
 }
 
 function mapReport(r: Record<string, unknown>): ReportRow {
@@ -25,6 +27,7 @@ function mapReport(r: Record<string, unknown>): ReportRow {
     createdAt: ms(r.created_at),
     resolvedAt: msOrNull(r.resolved_at),
     resolution: (r.resolution as string | null) ?? null,
+    commentBody: (r.comment_body as string | null | undefined) ?? null,
   };
 }
 
@@ -49,7 +52,9 @@ export async function countOpenReports(q: Queryable, targetType: "coin" | "comme
 
 export async function listReports(q: Queryable, opts: { open?: boolean; limit: number; offset?: number }): Promise<ReportRow[]> {
   const res = await q.query(
-    `SELECT * FROM reports ${opts.open === false ? "" : "WHERE resolved_at IS NULL"} ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2`,
+    `SELECT r.*, c.body AS comment_body FROM reports r
+       LEFT JOIN comments c ON r.target_type = 'comment' AND c.id::text = r.target_id
+     ${opts.open === false ? "" : "WHERE r.resolved_at IS NULL"} ORDER BY r.created_at DESC, r.id DESC LIMIT $1 OFFSET $2`,
     [opts.limit, opts.offset ?? 0],
   );
   return res.rows.map(mapReport);
