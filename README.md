@@ -85,6 +85,37 @@ The frontend also runs with no backend at all: `NEXT_PUBLIC_USE_MOCKS=1 pnpm --f
 4. Work through the devnet PoC checklist in [docs/pump-integration.md](docs/pump-integration.md#devnet-poc-checklist-spec-91) before building anything else on top.
 5. Before mainnet: external audit, upgrade authority moved to a multisig or timelock (or frozen), admin moved to a multisig.
 
+## Docker
+
+```bash
+cp .env.example .env            # RPC, DEPOSIT_MASTER_SECRET, LAUNCHER_ADDRESS, NEXT_PUBLIC_*, ...
+mkdir -p keys                   # keeper.json + launcher.json (Solana CLI keypairs), mounted read-only
+docker compose up --build       # web http://localhost:3000, api :4000, indexer webhooks :4100
+```
+
+`docker-compose.yml` runs Postgres 16 (volume `pgdata`), a one-shot `migrate` (`pnpm db:migrate`), then `api`, `indexer`,
+`keeper`, `payout`, `launcher` and `web`. Every backend reads `.env`; compose points `DATABASE_URL` at the `postgres`
+service (`POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`, all defaulting to `holdfast`), the keypair paths at
+`/app/keys/keeper.json` and `/app/keys/launcher.json`, and `METADATA_STORE` at a volume shared by the api and the launcher.
+`NEXT_PUBLIC_*` are build args of the web image, so run `docker compose build web` after changing them. The keeper,
+payout and launcher exit and restart until the program is deployed and the keypairs match `Config.keeper` / `Config.launcher`.
+
+The root `Dockerfile` builds two images: the default `services` target holds every backend, and `--target web` holds the
+Next.js app. A service is its package's start script command, run from the package directory:
+
+| Service | `-w` (working dir) | Command |
+|---|---|---|
+| api (image default) | `/app/apps/api` | `tsx src/main.ts` |
+| indexer | `/app/apps/indexer` | `tsx src/main.ts` |
+| keeper | `/app/apps/keeper` | `tsx src/main-keeper.ts` |
+| payout | `/app/apps/keeper` | `tsx src/main-payout.ts` |
+| launcher | `/app/apps/launcher` | `tsx src/main.ts` |
+| migrations | `/app` | `pnpm db:migrate` |
+| web (`--target web`) | `/app/apps/web` | `next start --port 3000` |
+
+CI (`.github/workflows/ci.yml`) builds and tests the program, runs the TypeScript typecheck and tests against the compiled
+`.so` files, and builds both images.
+
 ## Acceptance criteria (SPEC §10)
 
 | Criterion | Status |
