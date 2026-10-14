@@ -27,3 +27,6 @@ data/
 .DS_Store
 *.log
 apps/web/screenshots/
+
+# agent worktrees
+.claude/worktrees/
