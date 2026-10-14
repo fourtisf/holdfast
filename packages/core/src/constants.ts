@@ -38,3 +38,6 @@ export const PUMP_TOTAL_SUPPLY_BASE_UNITS = 1_000_000_000_000_000n;
 
 /** Rent-exempt minimum for a 0-data system account. A first SOL transfer to an empty wallet must be ≥ this. */
 export const RENT_EXEMPT_MIN_LAMPORTS = 890_880n;
+
+/** pump.fun bonding curve: tokens sold until the curve completes and migrates (Global.initialRealTokenReserves). */
+export const PUMP_INITIAL_REAL_TOKEN_RESERVES = 793_100_000_000_000n;

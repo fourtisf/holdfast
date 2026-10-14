@@ -1,6 +1,7 @@
 import type { Db } from "@holdfast/db";
 import type { ApiConfig } from "./config.js";
 import type { LaunchService } from "./launch/service.js";
+import type { SolPriceSource } from "./services/price.js";
 import type { TradeChain } from "./trade/chain.js";
 import type { LiveFeed } from "./ws/feed.js";
 import type { SubscriptionHub } from "./ws/hub.js";
@@ -13,5 +14,6 @@ export interface ApiContext {
   launches: LaunchService;
   hub: SubscriptionHub;
   feed: LiveFeed;
+  prices: SolPriceSource;
   now: () => number;
 }

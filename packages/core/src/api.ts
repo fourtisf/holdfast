@@ -63,6 +63,8 @@ export interface CoinSummary {
   /** Lifetime SOL paid to holders (rounds). */
   paidOutSol: number;
   graduated: boolean;
+  /** Share of the pump.fun bonding curve sold, 0..1 (1 once graduated to PumpSwap). */
+  bondingCurveProgress: number;
   vault: VaultSnapshot;
 }
 
@@ -155,6 +157,9 @@ export interface RoundSummary {
   /** Merkle root committed on-chain in `open_round`, hex. */
   snapshotHash: string;
   status: "computed" | "opened" | "paying" | "closed" | "failed";
+  /** `open_round` transaction: its RoundOpened event carries the committed root (verification). */
+  openSig: string | null;
+  closeSig: string | null;
 }
 
 export interface RoundSnapshotEntry {
@@ -219,6 +224,8 @@ export interface Stats {
   defends24h: number;
   volume24hSol: number;
   schedule: Schedule;
+  /** SOL price in USD from the API's price feed (null while unknown). */
+  solUsd: number | null;
 }
 
 export interface Schedule {
@@ -250,6 +257,12 @@ export interface Position {
   /** Estimated SOL in the next round at the current pot and weights. */
   nextPayoutEstimateSol: number;
   lots: PositionLot[];
+  /** SOL spent on buys / received from sells (indexed trades of this wallet). */
+  boughtSol: number;
+  soldSol: number;
+  /** Value + sells + payouts (tokens at today's price) − buys. */
+  pnlSol: number;
+  pnlPct: number | null;
 }
 
 export interface Profile {
@@ -257,6 +270,10 @@ export interface Profile {
   totalEarnedSol: number;
   /** Earned tokens valued at current prices. */
   totalEarnedTokensValueSol: number;
+  totalValueSol: number;
+  totalPnlSol: number;
+  /** Coins this wallet launched. */
+  launchedCoins: number;
   positions: Position[];
   recentPayouts: { mint: string; ticker: string; roundId: number; sol: number; tokens: number; ts: number; sig: string | null }[];
 }
@@ -334,6 +351,8 @@ export interface TradeQuoteRequest {
   /** buy: SOL to spend. sell: whole tokens to sell. */
   amount: number;
   slippageBps: number;
+  /** Compute-unit price for the transaction (micro-lamports); the API's default when absent. */
+  priorityMicroLamports?: number;
 }
 
 export interface TradeQuote {
@@ -356,6 +375,86 @@ export interface TradeBuildResponse {
 export interface Page<T> {
   items: T[];
   nextCursor: string | null;
+}
+
+// ---- portfolio, leaderboards, creators, comments ----------------------------------------------
+
+/** GET /me/trades */
+export interface WalletTrade extends Trade {
+  mint: string;
+  ticker: string;
+  name: string;
+}
+
+export type LeaderboardKind = "earners" | "diamond_hands" | "creators" | "coins";
+
+export interface LeaderboardEarner {
+  wallet: string;
+  earnedSol: number;
+  coins: number;
+  payouts: number;
+}
+
+export interface LeaderboardDiamondHand {
+  wallet: string;
+  mint: string;
+  ticker: string;
+  heldSince: number;
+  tokens: number;
+}
+
+export interface LeaderboardCreator {
+  wallet: string;
+  coins: number;
+  paidToHoldersSol: number;
+  totalFeesSol: number;
+  firstLaunchAt: number | null;
+}
+
+/** GET /leaderboard?kind= */
+export type Leaderboard =
+  | { kind: "earners"; items: LeaderboardEarner[] }
+  | { kind: "diamond_hands"; items: LeaderboardDiamondHand[] }
+  | { kind: "creators"; items: LeaderboardCreator[] }
+  | { kind: "coins"; items: CoinSummary[] };
+
+/** GET /creators/:wallet */
+export interface CreatorProfile {
+  wallet: string;
+  coinCount: number;
+  paidToHoldersSol: number;
+  totalFeesSol: number;
+  firstLaunchAt: number | null;
+  /** Coins of this creator currently trading above their floor. */
+  coinsAboveFloor: number;
+  coins: CoinSummary[];
+}
+
+export interface Comment {
+  id: number;
+  mint: string;
+  wallet: string;
+  body: string;
+  replyTo: number | null;
+  createdAt: number;
+  /** The author holds the coin right now (eligible tokens > 0), and their weight multiplier. */
+  holder: boolean;
+  weightMultiplier: number | null;
+  /** Is this the wallet that launched the coin. */
+  isCreator: boolean;
+  hidden: boolean;
+}
+
+/**
+ * POST /coins/:mint/comments. `signature` (base58) is the wallet's ed25519 signature over
+ * `commentMessage({ mint, body, replyTo, signedAt })` from @holdfast/core.
+ */
+export interface PostCommentRequest {
+  wallet: string;
+  body: string;
+  replyTo?: number | null;
+  signedAt: number;
+  signature: string;
 }
 
 // ---- moderation / admin ------------------------------------------------------------------------

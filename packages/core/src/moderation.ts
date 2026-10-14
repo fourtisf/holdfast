@@ -37,13 +37,26 @@ export function normalizeForModeration(text: string): string {
   return folded.replace(/(.)\1+/gu, "$1");
 }
 
-/** Tokens of the text (split on anything but letters/digits), each normalized. */
+/**
+ * Tokens of the text (split on anything but letters/digits), each normalized. Runs of one-letter
+ * tokens are also joined ("p.e.d.o", "p e d o" → "pedo"), the usual way to spell a word apart.
+ */
 function tokens(text: string): string[] {
-  return text
+  const toks = text
     .normalize("NFKD")
     .split(/[^\p{L}\p{N}@$!|+]+/u)
     .map(normalizeForModeration)
     .filter(Boolean);
+  const out = [...toks];
+  let run = "";
+  for (const t of [...toks, ""]) {
+    if (t.length === 1) run += t;
+    else {
+      if (run.length > 1) out.push(normalizeForModeration(run));
+      run = "";
+    }
+  }
+  return out;
 }
 
 /**
@@ -153,6 +166,14 @@ export function moderateLaunchText(fields: LaunchTextFields, lists: ModerationLi
     if (name === r) review.push(`name matches the reserved asset "${r}"`);
   }
   return review.length > 0 ? { action: "review", reasons: [...new Set(review)] } : { action: "allow" };
+}
+
+/** Free text (comments): does it contain a blocked term. Reserved names do not apply here. */
+export function containsBlockedTerm(text: string, lists: ModerationLists = DEFAULT_MODERATION_LISTS): boolean {
+  if (!text) return false;
+  const joined = normalizeForModeration(text);
+  const toks = tokens(text);
+  return lists.blocked.map(normalizeForModeration).some((term) => term && matches(term, joined, toks));
 }
 
 export const REPORT_REASONS = ["scam", "impersonation", "nsfw", "hate", "illegal", "other"] as const;

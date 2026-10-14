@@ -35,6 +35,7 @@ import {
   saveLedger,
   setLaunchSig,
   updateCoinMetadata,
+  updateCurveReserves,
   updateLastPrice,
   updateRoundStatus,
   upsertCandles,
@@ -143,6 +144,8 @@ interface Swap {
   price: number;
   spotFixed: bigint;
   venue: "curve" | "pumpswap";
+  /** Curve real token reserves after the trade (graduation progress); null for pool trades. */
+  curveRealTokenReserves: bigint | null;
   eventIndex: number;
 }
 
@@ -340,16 +343,19 @@ class TxRun {
       let mint: string | undefined;
       let spotFixed: bigint;
       let venue: Swap["venue"];
+      let curveRealTokenReserves: bigint | null = null;
       switch (event.type) {
         case "curve_trade":
           mint = event.mint;
           spotFixed = curveSpotAfter(event);
           venue = "curve";
+          curveRealTokenReserves = event.realTokenReserves;
           break;
         case "post_complete_buy":
           mint = event.mint;
           spotFixed = postCompleteSpotAfter(event);
           venue = "curve";
+          curveRealTokenReserves = 0n;
           break;
         case "amm_buy":
         case "amm_sell":
@@ -364,7 +370,7 @@ class TxRun {
       if (!coin) continue;
       const amounts = tradeAmounts(event, coin.decimals);
       if (amounts.tokens === 0n) continue;
-      swaps.push({ mint: coin.mint, user: event.user, ...amounts, spotFixed, venue, eventIndex: index });
+      swaps.push({ mint: coin.mint, user: event.user, ...amounts, spotFixed, venue, curveRealTokenReserves, eventIndex: index });
     }
     return swaps;
   }
@@ -392,6 +398,7 @@ class TxRun {
       inserted++;
       await upsertCandles(this.q, { mint: s.mint, ts: this.time, price: s.price, volume: s.sol, slot: this.tx.slot });
       if (s.spotFixed > 0n) await updateLastPrice(this.q, s.mint, fixedToSolPerToken(s.spotFixed, coin.decimals), this.time, this.tx.slot);
+      if (s.curveRealTokenReserves !== null) await updateCurveReserves(this.q, s.mint, s.curveRealTokenReserves, this.tx.slot);
       this.notify({ kind: "trade", mint: s.mint, sig: this.tx.signature });
     }
     return inserted;

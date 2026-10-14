@@ -10,6 +10,16 @@ const CoinsQuery = z.object({
   q: z.string().trim().max(64).optional(),
   limit: intParam(24, 1, 100),
   cursor: z.string().max(512).optional(),
+  graduated: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
+  maxAgeHours: z.coerce.number().positive().max(24 * 365).optional(),
+  minMcapSol: z.coerce.number().nonnegative().max(1e12).optional(),
+  /** Watchlist: comma-separated mints (at most 100). */
+  mints: z
+    .string()
+    .max(100 * 45)
+    .transform((v) => v.split(",").map((s) => s.trim()).filter(Boolean))
+    .pipe(z.array(base58Address).max(100))
+    .optional(),
 });
 const MintParams = z.object({ mint: base58Address });
 const CandlesQuery = z.object({ tf: z.enum(["1m", "5m", "15m", "1h"]).default("1m"), from: optionalMs, to: optionalMs, limit: intParam(500, 1, 1500) });
@@ -20,12 +30,19 @@ const RoundParams = z.object({ mint: base58Address, roundId: z.coerce.number().i
 export function marketRoutes(app: FastifyInstance, ctx: ApiContext): void {
   const { db, now } = ctx;
 
-  app.get("/stats", async () => stats(db, now()));
+  app.get("/stats", async () => stats(db, now(), ctx.prices.solUsd()));
   app.get("/schedule", async () => schedule(now()));
 
   app.get("/coins", async (req) => {
     const q = CoinsQuery.parse(req.query);
-    return listCoins(db, { sort: q.sort, search: q.q, limit: q.limit, cursor: q.cursor, now: now() });
+    return listCoins(db, {
+      sort: q.sort,
+      search: q.q,
+      limit: q.limit,
+      cursor: q.cursor,
+      now: now(),
+      filters: { graduated: q.graduated ?? null, maxAgeHours: q.maxAgeHours ?? null, minMarketCapSol: q.minMcapSol ?? null, mints: q.mints ?? null },
+    });
   });
 
   app.get("/coins/:mint", async (req) => coinDetail(db, MintParams.parse(req.params).mint, now()));

@@ -1,6 +1,7 @@
 import type { Stats, WsServerMessage } from "@holdfast/core";
 import { getCoinMetrics, type Db, type HoldfastNotification } from "@holdfast/db";
 import type { LaunchService } from "../launch/service.js";
+import type { SolPriceSource } from "../services/price.js";
 import { toCoinSummary } from "../present.js";
 import { roundSummary, stats, tradesBySig } from "../services/market.js";
 import type { EventSource } from "./events.js";
@@ -24,6 +25,7 @@ export class LiveFeed {
       db: Db;
       hub: SubscriptionHub;
       launches: LaunchService;
+      prices?: SolPriceSource;
       now: () => number;
       log: FeedLogger;
       statsIntervalMs: number;
@@ -88,7 +90,7 @@ export class LiveFeed {
   }
 
   async currentStats(): Promise<Stats> {
-    return stats(this.deps.db, this.deps.now());
+    return stats(this.deps.db, this.deps.now(), this.deps.prices?.solUsd() ?? null);
   }
 
   async broadcastStats(): Promise<void> {

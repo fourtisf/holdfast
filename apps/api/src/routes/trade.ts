@@ -9,6 +9,8 @@ import { assembleTransaction, tradeInstructions } from "../trade/build.js";
 import { quoteTrade } from "../trade/quote.js";
 import { base58Address } from "../validation.js";
 
+export const MAX_PRIORITY_MICROLAMPORTS = 40_000_000;
+
 const TradeRequest = z.object({
   mint: base58Address,
   /** Optional for quotes: a disconnected UI sends the System Program address (or nothing). */
@@ -16,6 +18,8 @@ const TradeRequest = z.object({
   side: z.enum(["buy", "sell"]),
   amount: z.number().positive().finite().max(1e12),
   slippageBps: z.number().int().min(0).max(5_000),
+  /** Priority fee: compute-unit price in micro-lamports (≤ 0.01 SOL at the curve's CU limit). */
+  priorityMicroLamports: z.number().int().min(0).max(MAX_PRIORITY_MICROLAMPORTS).optional(),
 });
 
 export function tradeRoutes(app: FastifyInstance, ctx: ApiContext): void {
@@ -39,7 +43,7 @@ export function tradeRoutes(app: FastifyInstance, ctx: ApiContext): void {
       payer: p.wallet,
       blockhash: latest.blockhash,
       computeUnitLimit: p.venue.venue === "curve" ? ctx.config.trade.computeUnitLimitCurve : ctx.config.trade.computeUnitLimitAmm,
-      computeUnitPriceMicroLamports: ctx.config.trade.computeUnitPriceMicroLamports,
+      computeUnitPriceMicroLamports: p.req.priorityMicroLamports ?? ctx.config.trade.computeUnitPriceMicroLamports,
     });
     return { quote: p.quote, transaction: Buffer.from(tx.serialize()).toString("base64"), lastValidBlockHeight: latest.lastValidBlockHeight };
   });

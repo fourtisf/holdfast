@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { moderateLaunchText, normalizeForModeration, parseBlocklist, withExtraBlocked, DEFAULT_MODERATION_LISTS } from "../src/moderation.js";
+import { containsBlockedTerm, moderateLaunchText, normalizeForModeration, parseBlocklist, withExtraBlocked, DEFAULT_MODERATION_LISTS } from "../src/moderation.js";
 
 describe("moderation", () => {
   it("normalizes leetspeak, accents, separators and repeated letters", () => {
@@ -33,5 +33,15 @@ describe("moderation", () => {
     const lists = withExtraBlocked(DEFAULT_MODERATION_LISTS, extra);
     expect(moderateLaunchText({ name: "b4dw0rd", ticker: "X" }, lists).action).toBe("block");
     expect(moderateLaunchText({ name: "fine", ticker: "X", description: "some other term here" }, lists).action).toBe("block");
+  });
+});
+
+describe("containsBlockedTerm (comments)", () => {
+  it("matches blocked terms in free text, not reserved names or innocent words", () => {
+    expect(containsBlockedTerm("send me your s33d phr4se")).toBe(true);
+    expect(containsBlockedTerm("P.E.D.O")).toBe(true);
+    expect(containsBlockedTerm("torpedo time")).toBe(false);
+    expect(containsBlockedTerm("SOL to the moon, buy $HOLD")).toBe(false);
+    expect(containsBlockedTerm("")).toBe(false);
   });
 });

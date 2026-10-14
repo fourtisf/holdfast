@@ -41,6 +41,7 @@ describe("stats & schedule", () => {
       defends24h: 1,
       volume24hSol: 0.2 + 0.15 + 0.03,
       schedule: { roundIntervalSec: 120, nextRoundAt: nextRoundAt(NOW), serverTime: NOW },
+      solUsd: null,
     });
   });
 
@@ -195,7 +196,7 @@ describe("coins", () => {
   it("GET /coins/:mint/defends and /rounds", async () => {
     expect(await get(`/coins/${f.mint}/defends`)).toEqual([{ sig: f.sigs[2], solSpent: 0.15, tokensBought: 1000, price: 1.5e-7, ts: NOW - 30 * 60_000 }]);
     const rounds = await get<RoundSummary[]>(`/coins/${f.mint}/rounds`);
-    expect(rounds).toEqual([{ roundId: 1, ts: NOW - 3_600_000 + 5_000, solPot: 0.5, tokenPot: 0, recipients: 1, snapshotHash: expect.stringMatching(/^[0-9a-f]{64}$/), status: "closed" }]);
+    expect(rounds).toEqual([{ roundId: 1, ts: NOW - 3_600_000 + 5_000, solPot: 0.5, tokenPot: 0, recipients: 1, snapshotHash: expect.stringMatching(/^[0-9a-f]{64}$/), status: "closed", openSig: "open1", closeSig: "close1" }]);
   });
 
   it("GET /coins/:mint/rounds/:id returns the verifiable public snapshot", async () => {

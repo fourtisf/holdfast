@@ -5,6 +5,7 @@ import {
   blockImage,
   countLaunchesByStatus,
   getCoin,
+  getComment,
   listLaunches,
   listModeratedCoins,
   listModerationLog,
@@ -14,6 +15,7 @@ import {
   resolveReports,
   setCoinHidden,
   setCoinNeedsReview,
+  setCommentHidden,
   type LaunchRow,
 } from "@holdfast/db";
 import { readFile } from "node:fs/promises";
@@ -113,6 +115,25 @@ export function adminRoutes(app: FastifyInstance, ctx: ApiContext): void {
         await resolveReports(q, { targetType: "coin", targetId: mint }, "reviewed: no action");
         await logModeration(q, { action: "reviewed", target: mint, actor: actorOf(req) });
       });
+      return { ok: true };
+    });
+
+    scope.post("/admin/comments/:id/hide", async (req) => {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      const { reason } = z.object({ reason: z.string().trim().min(1).max(200) }).parse(req.body ?? {});
+      if (!(await getComment(db, id))) throw notFound("Comment not found");
+      await db.tx(async (q) => {
+        await setCommentHidden(q, id, true, reason);
+        await resolveReports(q, { targetType: "comment", targetId: String(id) }, `hidden: ${reason}`);
+        await logModeration(q, { action: "hide_comment", target: String(id), actor: actorOf(req), reason });
+      });
+      return { ok: true };
+    });
+
+    scope.post("/admin/comments/:id/unhide", async (req) => {
+      const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
+      if (!(await setCommentHidden(db, id, false, null))) throw notFound("Comment not found");
+      await logModeration(db, { action: "unhide_comment", target: String(id), actor: actorOf(req) });
       return { ok: true };
     });
 

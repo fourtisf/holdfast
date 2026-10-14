@@ -124,6 +124,17 @@ describe("POST /trade/quote and /trade/build", () => {
     expect(res.quote.venue).toBe("curve");
   });
 
+  it("uses the requested priority fee (compute-unit price), bounded", async () => {
+    api.chain.venue = (coin) => curveVenue(coin.mint);
+    const res = await post<TradeBuildResponse>("/trade/build", { mint: f.mint, wallet: user.toBase58(), side: "buy", amount: 0.5, slippageBps: 100, priorityMicroLamports: 777_000 });
+    const tx = VersionedTransaction.deserialize(Buffer.from(res.transaction, "base64"));
+    const keys = tx.message.staticAccountKeys;
+    const price = tx.message.compiledInstructions.find((ix) => keys[ix.programIdIndex]!.equals(ComputeBudgetProgram.programId) && ix.data[0] === 3)!;
+    expect(Buffer.from(price.data).readBigUInt64LE(1)).toBe(777_000n);
+    const tooHigh = await api.app.inject({ method: "POST", url: "/trade/build", payload: { mint: f.mint, wallet: user.toBase58(), side: "buy", amount: 0.5, slippageBps: 100, priorityMicroLamports: 10 ** 9 } });
+    expect(tooHigh.statusCode).toBe(400);
+  });
+
   it("builds a sell on PumpSwap after graduation", async () => {
     api.chain.venue = (coin, wallet) => ammVenue(coin.mint, wallet, { hasTokenAccount: true });
     const res = await post<TradeBuildResponse>("/trade/build", { mint: f.mint, wallet: user.toBase58(), side: "sell", amount: 1000, slippageBps: 100 });

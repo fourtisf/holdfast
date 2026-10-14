@@ -289,6 +289,8 @@ export function buildRoundSnapshot(inputs: RoundInputs, result: RoundResult, ts:
     recipients: result.entries.length,
     snapshotHash: toHex(result.merkleRoot),
     status: "computed",
+    openSig: null,
+    closeSig: null,
     inputs: roundInputsToJson(inputs),
     totalWeight: result.totalWeight.toString(),
     entries: result.entries.map((e) => ({

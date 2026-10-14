@@ -38,6 +38,15 @@ export interface ListCoinsOptions {
   now: number;
   /** Admin views only: also list coins hidden by moderators. */
   includeHidden?: boolean;
+  /** Coins launched by this wallet (deposit sender). */
+  creator?: string | null;
+  graduated?: boolean | null;
+  /** Only coins created at or after this time (ms). */
+  createdAfter?: number | null;
+  /** Market cap floor in SOL (pump.fun coins: 1B tokens, so price × 1e9). */
+  minMarketCapSol?: number | null;
+  /** Restrict to these mints (watchlist). */
+  mints?: readonly string[] | null;
 }
 
 const FLOOR_PRICE = "(COALESCE(v.floor, 0)::float8 * power(10::float8, c.decimals) / 1e27)";
@@ -121,15 +130,38 @@ export async function listCoinMetrics(q: Queryable, opts: ListCoinsOptions): Pro
   const params: unknown[] = [ts(opts.now)];
   const where: string[] = [];
   if (!opts.includeHidden) where.push("NOT c.hidden");
+  if (opts.creator) {
+    params.push(opts.creator);
+    where.push(`c.creator = $${params.length}`);
+  }
+  if (opts.graduated !== undefined && opts.graduated !== null) {
+    params.push(opts.graduated);
+    where.push(`c.graduated = $${params.length}`);
+  }
+  if (opts.createdAfter) {
+    params.push(ts(opts.createdAfter));
+    where.push(`c.created_at >= $${params.length}`);
+  }
+  if (opts.mints) {
+    params.push([...opts.mints]);
+    where.push(`c.mint = ANY($${params.length}::text[])`);
+  }
   if (opts.search && opts.search.trim()) where.push(searchClause(opts.search, params));
   if (opts.sort === "newest" && opts.after) {
     params.push(ts(opts.after.createdAt), opts.after.mint);
     where.push(`(c.created_at, c.mint) < ($${params.length - 1}, $${params.length})`);
   }
+  const outer: string[] = [];
+  const sortFilter = SORT_FILTER[opts.sort];
+  if (sortFilter) outer.push(sortFilter);
+  if (opts.minMarketCapSol && opts.minMarketCapSol > 0) {
+    // market cap in SOL = price per whole token × 1B tokens (pump.fun supply)
+    params.push(opts.minMarketCapSol);
+    outer.push(`m_price * 1e9 >= $${params.length}::float8`);
+  }
   params.push(opts.limit, opts.sort === "newest" ? 0 : (opts.offset ?? 0));
-  const filter = SORT_FILTER[opts.sort];
   const sql = `SELECT * FROM (${METRICS_SELECT}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}) m
-    ${filter ? `WHERE ${filter}` : ""}
+    ${outer.length ? `WHERE ${outer.join(" AND ")}` : ""}
     ORDER BY ${SORT_ORDER[opts.sort]} LIMIT $${params.length - 1} OFFSET $${params.length}`;
   const res = await q.query(sql, params);
   return res.rows.map(mapMetrics);

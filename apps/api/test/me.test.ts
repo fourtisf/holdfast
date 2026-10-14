@@ -49,6 +49,11 @@ describe("GET /me/position", () => {
       // integer lamports: floor(0.999e9 × 1/11) + 0.001e9
       nextPayoutEstimateSol: (Math.floor(999_000_000 / 11) + 1_000_000) / 1e9,
       lots: [{ amount: 1000, acquiredAt: NOW, weight: 0.1 }],
+      // bought for 0.2 SOL, worth 0.00031 now, nothing paid out yet
+      boughtSol: 0.2,
+      soldSol: 0,
+      pnlSol: expect.closeTo(1000 * 3.1e-7 - 0.2, 12),
+      pnlPct: expect.closeTo(((1000 * 3.1e-7 - 0.2) / 0.2) * 100, 9),
     });
 
     const a = await get<Position>(`/me/position?wallet=${f.alice}&mint=${f.mint}`);

@@ -11,7 +11,7 @@ import type { Global } from "@pump-fun/pump-sdk";
 import type { GlobalConfig, Pool, SwapSolanaState } from "@pump-fun/pump-swap-sdk";
 import { canonicalPoolPda, treasuryPda } from "@holdfast/chain";
 import { createPgliteDb, migrate, type CoinRow, type Db } from "@holdfast/db";
-import { buildApp, DbLaunchService, MemoryEventSource, type ApiConfig, type HoldfastApi, type TradeChain, type VenueState } from "../src/index.js";
+import { buildApp, DbLaunchService, MemoryEventSource, type ApiConfig, type AppDeps, type HoldfastApi, type TradeChain, type VenueState } from "../src/index.js";
 import { pumpSdk } from "../src/trade/sdk.js";
 
 export const NOW = Date.UTC(2026, 9, 10, 12, 0, 0);
@@ -70,12 +70,12 @@ export interface TestApi extends HoldfastApi {
 }
 
 let depositCounter = 0;
-export async function makeApi(db: Db, overrides: Partial<ApiConfig> = {}, now = () => NOW): Promise<TestApi> {
+export async function makeApi(db: Db, overrides: Partial<ApiConfig> = {}, now = () => NOW, extra: Pick<AppDeps, "prices"> = {}): Promise<TestApi> {
   const config = testConfig(overrides);
   const events = new MemoryEventSource();
   const chain = new FakeTradeChain();
   const launches = new DbLaunchService(db, async () => Keypair.fromSeed(Buffer.alloc(32, ++depositCounter)).publicKey.toBase58(), { ttlMs: config.launchTtlMs, cost: launchCostSettings(config), now });
-  const api = await buildApp({ db, config, tradeChain: chain, launches, events, now });
+  const api = await buildApp({ db, config, tradeChain: chain, launches, events, now, ...extra });
   await api.app.ready();
   return { ...api, events, chain, config };
 }

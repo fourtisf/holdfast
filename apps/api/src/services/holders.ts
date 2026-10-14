@@ -1,5 +1,6 @@
-import { lotsTotal, lotWeightPpm, weightedAmount, type Holder, type Lot, type Position, type Profile } from "@holdfast/core";
+import { lotsTotal, lotWeightPpm, positionPnl, weightedAmount, type Holder, type Lot, type Position, type Profile } from "@holdfast/core";
 import {
+  creatorSummary,
   earningsByMint,
   earningsByWallet,
   getCarry,
@@ -12,9 +13,11 @@ import {
   loadWalletBook,
   recentPayoutsForWallet,
   sumCarries,
+  walletFlows,
   type CoinRow,
   type Earnings,
   type Queryable,
+  type WalletFlow,
 } from "@holdfast/db";
 import { lamportsToSol, rawToTokens } from "../format.js";
 import { requireCoin } from "./market.js";
@@ -69,7 +72,17 @@ async function currentPrice(q: Queryable, coin: CoinRow): Promise<number> {
 
 function buildPosition(
   coin: CoinRow,
-  data: { balance: bigint; lots: Lot[]; earned: Earnings | undefined; price: number; totalW: bigint; potSol: bigint; carriedSol: bigint; ownCarrySol: bigint },
+  data: {
+    balance: bigint;
+    lots: Lot[];
+    earned: Earnings | undefined;
+    flow: WalletFlow | undefined;
+    price: number;
+    totalW: bigint;
+    potSol: bigint;
+    carriedSol: bigint;
+    ownCarrySol: bigint;
+  },
   now: number,
 ): Position {
   const d = coin.decimals;
@@ -78,6 +91,12 @@ function buildPosition(
   const share = data.totalW > 0n ? Number(w) / Number(data.totalW) : 0;
   const distributable = data.potSol > data.carriedSol ? data.potSol - data.carriedSol : 0n;
   const tokens = rawToTokens(data.balance, d);
+  const valueSol = tokens * data.price;
+  const earnedSol = data.earned ? lamportsToSol(data.earned.sol) : 0;
+  const earnedTokens = data.earned ? rawToTokens(data.earned.tokens, d) : 0;
+  const boughtSol = lamportsToSol(data.flow?.boughtSol ?? 0n);
+  const soldSol = lamportsToSol(data.flow?.soldSol ?? 0n);
+  const pnl = positionPnl({ boughtSol, soldSol, valueSol, earnedSol, earnedTokensValueSol: earnedTokens * data.price });
   return {
     mint: coin.mint,
     name: coin.name,
@@ -88,12 +107,16 @@ function buildPosition(
     weightedTokens: weightedTokens(w, d),
     weightMultiplier: multiplier(w, eligible),
     share,
-    valueSol: tokens * data.price,
-    earnedSol: data.earned ? lamportsToSol(data.earned.sol) : 0,
-    earnedTokens: data.earned ? rawToTokens(data.earned.tokens, d) : 0,
+    valueSol,
+    earnedSol,
+    earnedTokens,
     // Same split as computeRound: (pot − outstanding carries) × share, plus this wallet's own carry.
     nextPayoutEstimateSol: lamportsToSol(data.totalW > 0n ? (distributable * w) / data.totalW : 0n) + lamportsToSol(data.ownCarrySol),
     lots: data.lots.map((l) => ({ amount: rawToTokens(l.amount, d), acquiredAt: l.acquiredAt, weight: Number(lotWeightPpm(l.acquiredAt, now)) / PPM })),
+    boughtSol,
+    soldSol,
+    pnlSol: pnl.pnlSol,
+    pnlPct: pnl.pnlPct,
   };
 }
 
@@ -103,6 +126,7 @@ async function positionFor(
   wallet: string,
   held: { balance: bigint; lots: Lot[] } | undefined,
   earned: Earnings | undefined,
+  flow: WalletFlow | undefined,
   now: number,
 ): Promise<Position> {
   const [price, totalW, vault, carries, ownCarry] = await Promise.all([
@@ -118,6 +142,7 @@ async function positionFor(
       balance: held?.balance ?? 0n,
       lots: held?.lots ?? [],
       earned,
+      flow,
       price,
       totalW,
       potSol: vault?.holderSol ?? 0n,
@@ -135,11 +160,18 @@ export async function position(q: Queryable, wallet: string, mint: string, now: 
   const held = (await loadWalletBook(q, wallet)).get(mint);
   const earned = (await earningsByWallet(q, wallet)).get(mint);
   if ((!held || (held.balance === 0n && held.lots.length === 0)) && !earned) return null;
-  return positionFor(q, coin, wallet, held, earned, now);
+  const flow = (await walletFlows(q, wallet, mint)).get(mint);
+  return positionFor(q, coin, wallet, held, earned, flow, now);
 }
 
 export async function profile(q: Queryable, wallet: string, now: number): Promise<Profile> {
-  const [book, earnings, recent] = await Promise.all([loadWalletBook(q, wallet), earningsByWallet(q, wallet), recentPayoutsForWallet(q, wallet, 20)]);
+  const [book, earnings, recent, flows, created] = await Promise.all([
+    loadWalletBook(q, wallet),
+    earningsByWallet(q, wallet),
+    recentPayoutsForWallet(q, wallet, 20),
+    walletFlows(q, wallet),
+    creatorSummary(q, wallet),
+  ]);
   const mints = new Set<string>();
   for (const [mint, h] of book) if (h.balance > 0n || h.lots.length > 0) mints.add(mint);
   for (const mint of earnings.keys()) mints.add(mint);
@@ -149,21 +181,30 @@ export async function profile(q: Queryable, wallet: string, now: number): Promis
   const positions: Position[] = [];
   let totalEarnedSol = 0;
   let totalEarnedTokensValueSol = 0;
+  let totalValueSol = 0;
+  let totalPnlSol = 0;
   for (const mint of mints) {
     const coin = coins.get(mint);
     if (!coin) continue;
     const held = book.get(mint);
     const earned = earnings.get(mint);
-    const p = await positionFor(q, coin, wallet, held, earned, now);
+    const p = await positionFor(q, coin, wallet, held, earned, flows.get(mint), now);
     totalEarnedSol += p.earnedSol;
     totalEarnedTokensValueSol += p.earnedTokens * (p.tokens > 0 ? p.valueSol / p.tokens : await currentPrice(q, coin));
+    totalValueSol += p.valueSol;
+    totalPnlSol += p.pnlSol;
     if (p.tokens > 0 || p.eligibleTokens > 0 || p.earnedSol > 0 || p.earnedTokens > 0) positions.push(p);
   }
+  // Coins traded and fully exited, never paid out: realized PnL only (nothing held, nothing earned).
+  for (const [mint, f] of flows) if (!mints.has(mint)) totalPnlSol += lamportsToSol(f.soldSol) - lamportsToSol(f.boughtSol);
   positions.sort((a, b) => b.valueSol - a.valueSol || b.earnedSol - a.earnedSol);
   return {
     wallet,
     totalEarnedSol,
     totalEarnedTokensValueSol,
+    totalValueSol,
+    totalPnlSol,
+    launchedCoins: created.coins,
     positions,
     recentPayouts: recent.map((p) => {
       const coin = coins.get(p.mint);

@@ -1,4 +1,5 @@
 import {
+  bondingCurveProgress,
   fixedToSolPerToken,
   floorToAthProgress,
   marketCapSol,
@@ -60,6 +61,7 @@ export function toCoinSummary(m: CoinMetrics): CoinSummary {
     holders: m.holders,
     paidOutSol: lamportsToSol(m.paidOutSol),
     graduated: coin.graduated,
+    bondingCurveProgress: bondingCurveProgress(coin.curveRealTokenReserves, coin.graduated),
     vault,
   };
 }
@@ -73,6 +75,8 @@ export function toRoundSummary(r: RoundRow, decimals: number): RoundSummary {
     recipients: r.recipientCount,
     snapshotHash: r.snapshotHash,
     status: r.status,
+    openSig: r.openSig,
+    closeSig: r.closeSig,
   };
 }
 

@@ -24,6 +24,8 @@ export interface CoinRow {
   createdAt: number;
   lastPrice: number | null;
   lastTradeAt: number | null;
+  /** Bonding-curve real token reserves after the newest curve trade (graduation progress). */
+  curveRealTokenReserves: bigint | null;
   /** Hidden by moderators: not listed, user content withheld (the coin itself lives on). */
   hidden: boolean;
   hiddenReason: string | null;
@@ -52,7 +54,7 @@ export interface NewCoin {
 
 export const COIN_COLUMNS = `c.mint, c.name, c.ticker, c.image_url, c.description, c.socials, c.trigger_bps, c.creator, c.vault,
   c.treasury, c.bonding_curve, c.amm_pool, c.token_program, c.decimals, c.graduated, c.graduated_at, c.launch_sig,
-  c.metadata_uri, c.created_at, c.last_price, c.last_trade_at, c.hidden, c.hidden_reason, c.needs_review`;
+  c.metadata_uri, c.created_at, c.last_price, c.last_trade_at, c.hidden, c.hidden_reason, c.needs_review, c.curve_real_token_reserves`;
 
 export function mapCoin(r: Record<string, unknown>): CoinRow {
   return {
@@ -77,6 +79,7 @@ export function mapCoin(r: Record<string, unknown>): CoinRow {
     createdAt: ms(r.created_at),
     lastPrice: numOrNull(r.last_price),
     lastTradeAt: msOrNull(r.last_trade_at),
+    curveRealTokenReserves: r.curve_real_token_reserves === null || r.curve_real_token_reserves === undefined ? null : BigInt(String(r.curve_real_token_reserves).split(".")[0]!),
     hidden: Boolean(r.hidden),
     hiddenReason: (r.hidden_reason as string | null) ?? null,
     needsReview: Boolean(r.needs_review),
@@ -191,6 +194,14 @@ export async function updateCoinMetadata(q: Queryable, mint: string, patch: Coin
       patch.metadataUri ?? null,
     ],
   );
+}
+
+/**
+ * Curve reserves after a curve trade at `slot`. Call after `updateLastPrice` for the same trade:
+ * a trade older than the newest applied one is ignored.
+ */
+export async function updateCurveReserves(q: Queryable, mint: string, realTokenReserves: bigint, slot: number): Promise<void> {
+  await q.query("UPDATE coins SET curve_real_token_reserves = $2 WHERE mint = $1 AND last_trade_slot <= $3", [mint, realTokenReserves.toString(), slot]);
 }
 
 /** Record the spot price after a trade; older slots never overwrite newer ones. */

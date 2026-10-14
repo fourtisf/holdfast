@@ -70,7 +70,7 @@ function mapPayout(r: Record<string, unknown>): PayoutRow {
  * Store a computed round (public snapshot document + one pending payout per entry). Returns false
  * when the round already exists; the stored snapshot is immutable once written.
  */
-export async function insertRound(q: Queryable, snapshot: RoundSnapshot, opts: { status?: RoundStatus; ts?: number } = {}): Promise<boolean> {
+export async function insertRound(q: Queryable, snapshot: Omit<RoundSnapshot, "openSig" | "closeSig">, opts: { status?: RoundStatus; ts?: number } = {}): Promise<boolean> {
   const solPot = snapshot.entries.reduce((s, e) => s + BigInt(e.solLamports), 0n);
   const tokenPot = snapshot.entries.reduce((s, e) => s + BigInt(e.tokensRaw), 0n);
   const res = await q.query(

@@ -7,6 +7,7 @@ import { hkdfDepositAllocator } from "./launch/deposit.js";
 import { randomDepositAllocator } from "./launch/dev.js";
 import { DbLaunchService } from "./launch/service.js";
 import { launchCostSettings } from "./launch/settings.js";
+import { SolUsdFeed } from "./services/price.js";
 import { RpcTradeChain } from "./trade/chain.js";
 import { pgEventSource } from "./ws/events.js";
 
@@ -27,6 +28,10 @@ const { app } = await buildApp({
   tradeChain: new RpcTradeChain(new Connection(config.rpcUrl, "confirmed")),
   launches: new DbLaunchService(db, allocator, { ttlMs: config.launchTtlMs, cost: launchCostSettings(config) }),
   events: pgEventSource(db),
+  prices:
+    process.env.PRICE_FEED === "off"
+      ? undefined
+      : new SolUsdFeed({ hermesUrl: process.env.PYTH_HERMES_URL || undefined, coingeckoUrl: process.env.COINGECKO_PRICE_URL === "off" ? null : process.env.COINGECKO_PRICE_URL || undefined, log }),
   logger: log,
 });
 await app.listen({ port: config.port, host: config.host });

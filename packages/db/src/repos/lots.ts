@@ -167,6 +167,24 @@ export async function loadHolderBook(q: Queryable, mint: string): Promise<Holder
   return [...book.values()];
 }
 
+/** Open lots of some wallets in one coin (comment badges): wallet → lots, oldest first. */
+export async function openLotsForWallets(q: Queryable, mint: string, wallets: readonly string[]): Promise<Map<string, Lot[]>> {
+  const out = new Map<string, Lot[]>();
+  if (wallets.length === 0) return out;
+  const res = await q.query(
+    `SELECT wallet, id, amount_remaining, acquired_at FROM lots
+     WHERE mint = $1 AND wallet = ANY($2::text[]) AND amount_remaining > 0 ORDER BY wallet, ${OPEN_LOTS_ORDER}`,
+    [mint, [...new Set(wallets)]],
+  );
+  for (const r of res.rows) {
+    const w = r.wallet as string;
+    const list = out.get(w) ?? [];
+    list.push(mapLot(r));
+    out.set(w, list);
+  }
+  return out;
+}
+
 /** Every position of one wallet: mint → balance, untracked and open lots. */
 export async function loadWalletBook(q: Queryable, wallet: string): Promise<Map<string, Omit<HolderBookEntry, "wallet">>> {
   const balances = await q.query("SELECT mint, balance, untracked FROM wallet_balances WHERE wallet = $1", [wallet]);

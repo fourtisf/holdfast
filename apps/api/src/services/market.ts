@@ -40,7 +40,7 @@ export function schedule(now: number): Schedule {
   return { roundIntervalSec: ROUND_INTERVAL_SECONDS, nextRoundAt: nextRoundAt(now), serverTime: now };
 }
 
-export async function stats(q: Queryable, now: number): Promise<Stats> {
+export async function stats(q: Queryable, now: number, solUsd: number | null = null): Promise<Stats> {
   const s = await getGlobalStats(q, now);
   return {
     coins: s.coins,
@@ -49,6 +49,7 @@ export async function stats(q: Queryable, now: number): Promise<Stats> {
     defends24h: s.defends24h,
     volume24hSol: lamportsToSol(s.volume24h),
     schedule: schedule(now),
+    solUsd,
   };
 }
 
@@ -57,12 +58,25 @@ type CoinsCursor = { s: CoinSort; c?: number; m?: string; o?: number };
 /** Coin list. `newest` pages by (createdAt, mint); the activity sorts page by offset. */
 export async function listCoins(
   q: Queryable,
-  opts: { sort: CoinSort; search?: string; limit: number; cursor?: string | null; now: number },
+  opts: {
+    sort: CoinSort;
+    search?: string;
+    limit: number;
+    cursor?: string | null;
+    now: number;
+    filters?: { graduated?: boolean | null; maxAgeHours?: number | null; minMarketCapSol?: number | null; mints?: readonly string[] | null; creator?: string | null };
+  },
 ): Promise<Page<CoinSummary>> {
   const cur = decodeCursor<CoinsCursor>(opts.cursor);
   const valid = cur && cur.s === opts.sort ? cur : null;
   const offset = valid?.o ?? 0;
+  const f = opts.filters ?? {};
   const rows = await listCoinMetrics(q, {
+    graduated: f.graduated ?? null,
+    createdAfter: f.maxAgeHours ? opts.now - f.maxAgeHours * 3_600_000 : null,
+    minMarketCapSol: f.minMarketCapSol ?? null,
+    mints: f.mints ?? null,
+    creator: f.creator ?? null,
     sort: opts.sort,
     search: opts.search,
     limit: opts.limit + 1,

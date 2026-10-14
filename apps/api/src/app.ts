@@ -12,6 +12,9 @@ import type { ApiConfig } from "./config.js";
 import type { ApiContext } from "./context.js";
 import type { LaunchService } from "./launch/service.js";
 import type { TradeChain } from "./trade/chain.js";
+import { NO_PRICE, type SolPriceSource } from "./services/price.js";
+import { commentRoutes } from "./routes/comments.js";
+import { socialRoutes } from "./routes/social.js";
 import { adminRoutes } from "./routes/admin.js";
 import { launchRoutes } from "./routes/launch.js";
 import { moderationRoutes } from "./routes/moderation.js";
@@ -30,6 +33,8 @@ export interface AppDeps {
   tradeChain: TradeChain;
   launches: LaunchService;
   events: EventSource;
+  /** SOL/USD for Stats.solUsd (default: none). Started and stopped with the app when it has start/stop. */
+  prices?: SolPriceSource & { start?(): void; stop?(): void };
   now?: () => number;
   logger?: FastifyBaseLogger | boolean;
 }
@@ -63,8 +68,9 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   });
 
   const hub = new SubscriptionHub();
-  const feed = new LiveFeed({ db: deps.db, hub, launches: deps.launches, now, log: app.log, statsIntervalMs: deps.config.statsIntervalMs });
-  const ctx: ApiContext = { db: deps.db, config: deps.config, tradeChain: deps.tradeChain, launches: deps.launches, hub, feed, now };
+  const prices = deps.prices ?? NO_PRICE;
+  const feed = new LiveFeed({ db: deps.db, hub, launches: deps.launches, prices, now, log: app.log, statsIntervalMs: deps.config.statsIntervalMs });
+  const ctx: ApiContext = { db: deps.db, config: deps.config, tradeChain: deps.tradeChain, launches: deps.launches, hub, feed, prices, now };
 
   app.setErrorHandler((err: FastifyError | ZodError | { statusCode?: number; error?: string; message?: string }, req, reply) => {
     if (err instanceof ZodError) return reply.code(400).send({ error: formatZodError(err) });
@@ -112,13 +118,17 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   uploadRoutes(app, ctx);
   launchRoutes(app, ctx);
   moderationRoutes(app, ctx);
+  socialRoutes(app, ctx);
+  commentRoutes(app, ctx);
   adminRoutes(app, ctx);
   await app.register(async (scope) => wsRoutes(scope, ctx));
 
   app.addHook("onReady", async () => {
+    deps.prices?.start?.();
     await feed.start(deps.events);
   });
   app.addHook("onClose", async () => {
+    deps.prices?.stop?.();
     await feed.stop();
   });
 
