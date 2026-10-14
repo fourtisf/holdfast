@@ -1,44 +1,55 @@
 # Holdfast brand
 
-A *holdfast* is the root a kelp uses to grip a rock so waves cannot tear it away; "hold fast" means hold on
-tight. The mark draws exactly that: **claws gripping a rock that rests on the floor, with an arrow rising out
-of them.** Grip the floor, rise from it: the vault defends each coin's floor, and holders who hold on earn more.
+**The mark is a monogram H built like a rampart.** Two walls hold; between them a chevron rises. It is the
+product in one shape: every coin's vault defends its floor while the price climbs. The pillars' tops rise
+toward the centre and every diagonal shares one slope. The outer faces catch the light and the inner faces
+sit in shade, so the walls read as folded metal.
+
+The wordmark is **HOLDFAST** in Geist SemiBold, set in capitals with wide tracking (0.16 em, F–A kerned),
+outlined to paths so no font is needed.
+
+![Brand board](png/holdfast-brand-board.png)
 
 ## Files
 
 | File | Use |
 |---|---|
-| `holdfast-mark.svg` | App icon / favicon / anywhere a square logo fits (mint tile, ink glyph). Used as `apps/web/src/app/icon.svg`. |
-| `holdfast-logo.svg` | Horizontal logo for dark backgrounds (light wordmark). |
-| `holdfast-logo-on-light.svg` | Horizontal logo for light backgrounds (dark wordmark). |
-| `holdfast-wordmark.svg` | Wordmark alone (Geist Bold, outlined to paths: no font needed). |
-| `holdfast-glyph-mint.svg` / `holdfast-glyph-ink.svg` | Glyph without the tile, for dark / light backgrounds. |
-| `holdfast-avatar.svg` | Full-bleed square for profile pictures (X, Telegram, Discord): survives a circle crop. |
-| `png/` | Exports: mark 512/1024, apple-touch-icon 180, avatar 400/1000, logos (dark, light, transparent), glyph, X header 1500×500. |
+| `holdfast-logo.svg` | Primary horizontal logo, for dark backgrounds |
+| `holdfast-logo-on-light.svg` | Horizontal logo for light backgrounds (deep emerald mark, night wordmark) |
+| `holdfast-logo-white.svg` | One-colour white, for photos and busy backgrounds |
+| `holdfast-logo-stacked.svg` | Mark above wordmark: splash screens, square layouts |
+| `holdfast-mark.svg` / `holdfast-mark-on-light.svg` | The mark alone (dark / light backgrounds) |
+| `holdfast-mark-white.svg` / `holdfast-mark-black.svg` | One-colour silhouettes |
+| `holdfast-icon.svg` | App icon: the mark on the night tile with an emerald glow |
+| `holdfast-favicon.svg` | Small sizes (≤ 32 px): flat mark, larger in the tile. Used as `apps/web/src/app/icon.svg` |
+| `holdfast-avatar.svg` | Full-bleed square for X, Telegram and Discord profile pictures (survives a circle crop) |
+| `holdfast-wordmark.svg` / `holdfast-wordmark-on-light.svg` | Wordmark alone |
+| `png/` | Exports: app icon 1024/512, apple-touch-icon 180, avatar 1000/400, mark 1024, logos on dark / light / transparent, stacked logo, X header 1500×500, brand board |
 
 ## Colours
 
-| Token | Hex | Role |
+| Name | Hex | Role |
 |---|---|---|
-| Mint (brand) | `#7ef0b8` | accents, glyph on dark |
-| Tile gradient | `#9ff5cc` → `#3fd690` | the mark's background, top-left to bottom-right |
-| Ink | `#04170e` | glyph on the mint tile, on light backgrounds |
-| Night | `#07080c` | app background |
-| Paper | `#eceef4` | wordmark on dark |
+| Emerald | `#5fe8a8` | the brand colour |
+| Mint light | `#d4ffe9` | highlight end of the lit gradient |
+| Deep emerald | `#0c8653` | shadow end of the lit gradient; the mark on light backgrounds |
+| Night | `#07080c` | backgrounds, dark wordmark |
+| Paper | `#eef2ef` | light wordmark |
 
 ## Rules
 
-- Clear space around the mark: at least a quarter of its width on every side.
-- Smallest size: 16 px for the mark (favicon), 24 px tall for the horizontal logo.
-- Keep the glyph ink on the mint tile, or mint / ink on its own. Don't recolour it, outline it, add shadows,
-  stretch it, or put the mint tile on a mint background.
-- The wordmark is always "Holdfast" (capital H, one word). The token is **$HOLD**.
+- Clear space: at least half the mark's width on every side of the logo.
+- Minimum sizes: horizontal logo 20 px tall; mark 16 px (use `holdfast-favicon.svg` below 32 px).
+- Use the lit/shade colouring or a one-colour version. Don't recolour single faces, add outlines or
+  shadows, rotate, or stretch.
+- Don't set the wordmark in another font or in lower case. The product is "Holdfast" in running text,
+  "HOLDFAST" in the logo, and the token is **$HOLD**.
 
 ## Regenerating
 
 ```bash
-pip install fonttools && python3 brand/generate.py      # SVGs (outlines the wordmark from Geist Bold)
+pip install fonttools && python3 brand/generate.py      # SVGs
 cd apps/web && cp ../../brand/export.mjs .brand-export.mjs && node .brand-export.mjs; rm .brand-export.mjs   # PNGs
 ```
 
-The web app draws the same glyph in `apps/web/src/components/layout/Logo.tsx`; keep the paths in sync.
+The web app draws the same mark in `apps/web/src/components/layout/Logo.tsx`; keep the coordinates in sync.

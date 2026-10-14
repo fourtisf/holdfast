@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { logoGlyph } from "@/components/layout/Logo";
+import { logoMarkElements } from "@/components/layout/Logo";
 import { fetchCoinForPreview } from "@/lib/server-coin";
 import { formatMarketCap, formatSol } from "@/lib/format";
 
@@ -26,12 +26,11 @@ export default async function Image({ params }: { params: Promise<{ mint: string
     (
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: C.bg, color: C.fg, padding: 60, fontFamily: "sans-serif" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 30, fontWeight: 700, color: C.brand }}>
-            <svg width="44" height="44" viewBox="0 0 64 64">
-              <rect width="64" height="64" rx="16" fill={C.brand} />
-              {logoGlyph()}
+          <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 28, fontWeight: 600, color: C.fg, letterSpacing: 5 }}>
+            <svg width="42" height="44" viewBox="14 12 72 76">
+              {logoMarkElements("og")}
             </svg>
-            Holdfast
+            HOLDFAST
           </div>
           <div style={{ fontSize: 26, color: C.muted }}>0% to the dev · vault defends the floor</div>
         </div>
