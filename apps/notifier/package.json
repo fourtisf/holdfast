@@ -1,0 +1,34 @@
+{
+  "name": "@holdfast/notifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telegram bot: payout, floor-defence, graduation and weight-milestone alerts for watched wallets and followed coins.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@holdfast/core": "workspace:*",
+    "@holdfast/db": "workspace:*",
+    "@holdfast/ops": "workspace:*",
+    "@solana/web3.js": "^1.98.4",
+    "pino": "^10.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

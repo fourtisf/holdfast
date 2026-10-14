@@ -27,13 +27,15 @@ for the owner, are in [`docs/decisions.md`](docs/decisions.md).
 | `apps/keeper` | Keeper crank (fees, TWAP sampling, graduation, defend, $HOLD burn) and the 2-minute payout worker |
 | `apps/launcher` | Launch flow: deposit address → one atomic transaction (pump.fun `create_v2(creator = treasury)` + `init_coin` + dev buy) → refund; IPFS metadata (Pinata) |
 | `apps/api` | Fastify REST + WebSocket API for the frontend ([docs/api.md](docs/api.md)) |
+| `apps/notifier` | Telegram bot: payouts, floor defences, graduations and weight milestones for watched wallets and coins ([docs/notifier.md](docs/notifier.md)) |
 | `apps/web` | Next.js 15 + Tailwind 4 frontend |
 
-Test suites: 52 Rust (program unit + LiteSVM integration) and 317 TypeScript (core 49, chain 17, db 19, indexer 32,
-api 52, keeper 10 incl. end-to-end against the compiled program, launcher 77, web 61).
+Test suites: 52 Rust (program unit + LiteSVM integration) and 433 TypeScript (core 60, chain 18, db 25, ops 5,
+indexer 33, api 74, keeper 17 incl. end-to-end against the compiled program, launcher 93, notifier 47, web 61).
 
 Further reading: [pump.fun integration and §8 verification](docs/pump-integration.md) ·
-[payout rounds and verification](docs/payouts.md) · [security model](docs/security.md).
+[payout rounds and verification](docs/payouts.md) · [security model](docs/security.md) ·
+[Telegram notifier](docs/notifier.md).
 
 ## Prerequisites
 
@@ -69,6 +71,7 @@ pnpm --filter @holdfast/indexer start
 pnpm --filter @holdfast/keeper start:keeper
 pnpm --filter @holdfast/keeper start:payout
 pnpm --filter @holdfast/launcher start
+pnpm --filter @holdfast/notifier start     # Telegram bot (needs TELEGRAM_BOT_TOKEN)
 pnpm --filter @holdfast/web dev            # http://localhost:3000
 ```
 
@@ -76,6 +79,15 @@ No Postgres and no Solana at hand? `pnpm --filter @holdfast/api dev:pglite` serv
 Postgres, simulated trades), and the web app can point at it.
 
 The frontend also runs with no backend at all: `NEXT_PUBLIC_USE_MOCKS=1 pnpm --filter @holdfast/web dev`.
+
+### Telegram notifier
+
+`apps/notifier` is a Telegram bot for holders. `/watch <wallet>` sends a message for every payout that wallet
+receives ("💰 You earned 0.0123 SOL from $TICKER round #42") and when one of its positions reaches 0.5x and full
+weight. `/coin <mint>` follows a coin's round results, floor defences and graduation to PumpSwap. It listens on the
+`holdfast_events` channel the indexer and payout worker publish on, and records every message in `tg_sent` so a
+restart never sends anything twice. Create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN` and `WEB_URL`, and run
+`pnpm --filter @holdfast/notifier start`. Commands, events and operations: [docs/notifier.md](docs/notifier.md).
 
 ### Deploying the program (devnet first)
 
@@ -94,11 +106,12 @@ docker compose up --build       # web http://localhost:3000, api :4000, indexer 
 ```
 
 `docker-compose.yml` runs Postgres 16 (volume `pgdata`), a one-shot `migrate` (`pnpm db:migrate`), then `api`, `indexer`,
-`keeper`, `payout`, `launcher` and `web`. Every backend reads `.env`; compose points `DATABASE_URL` at the `postgres`
+`keeper`, `payout`, `launcher`, `notifier` and `web`. Every backend reads `.env`; compose points `DATABASE_URL` at the `postgres`
 service (`POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`, all defaulting to `holdfast`), the keypair paths at
 `/app/keys/keeper.json` and `/app/keys/launcher.json`, and `METADATA_STORE` at a volume shared by the api and the launcher.
 `NEXT_PUBLIC_*` are build args of the web image, so run `docker compose build web` after changing them. The keeper,
-payout and launcher exit and restart until the program is deployed and the keypairs match `Config.keeper` / `Config.launcher`.
+payout and launcher exit and restart until the program is deployed and the keypairs match `Config.keeper` / `Config.launcher`;
+the notifier does the same until `TELEGRAM_BOT_TOKEN` is set.
 
 The root `Dockerfile` builds two images: the default `services` target holds every backend, and `--target web` holds the
 Next.js app. A service is its package's start script command, run from the package directory:
@@ -110,6 +123,7 @@ Next.js app. A service is its package's start script command, run from the packa
 | keeper | `/app/apps/keeper` | `tsx src/main-keeper.ts` |
 | payout | `/app/apps/keeper` | `tsx src/main-payout.ts` |
 | launcher | `/app/apps/launcher` | `tsx src/main.ts` |
+| notifier | `/app/apps/notifier` | `tsx src/main.ts` |
 | migrations | `/app` | `pnpm db:migrate` |
 | web (`--target web`) | `/app/apps/web` | `next start --port 3000` |
 

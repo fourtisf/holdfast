@@ -155,6 +155,12 @@ export async function getRound(q: Queryable, mint: string, roundId: bigint | num
   return { ...mapRound(r), snapshot };
 }
 
+/** One round without its (possibly large) snapshot document. */
+export async function getRoundRow(q: Queryable, mint: string, roundId: bigint | number): Promise<RoundRow | null> {
+  const res = await q.query(`SELECT ${ROUND_COLUMNS} FROM payout_rounds WHERE mint = $1 AND round_id = $2`, [mint, String(roundId)]);
+  return res.rows[0] ? mapRound(res.rows[0]) : null;
+}
+
 export async function getLatestRound(q: Queryable, mint: string): Promise<RoundRow | null> {
   return (await listRounds(q, mint, 1))[0] ?? null;
 }
