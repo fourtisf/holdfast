@@ -1,0 +1,46 @@
+# Build context for the Node images (Dockerfile). Keep it to the TypeScript workspace.
+
+# VCS, CI, editor/agent state
+.git
+.github
+.claude
+**/.DS_Store
+
+# dependencies and build output: rebuilt inside the image
+**/node_modules
+**/.pnpm-store
+**/dist
+**/.next
+**/out
+**/*.tsbuildinfo
+**/coverage
+**/next-env.d.ts
+
+# Rust / Anchor: the program is built by CI, not by these images
+target
+.anchor
+test-ledger
+programs
+tests
+Cargo.toml
+Cargo.lock
+Anchor.toml
+
+# secrets and local state: mounted or passed at runtime, never baked into an image
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+keys
+**/*.keypair.json
+data
+
+# misc
+**/*.log
+apps/web/screenshots
+docs
+Dockerfile
+docker-compose.yml
+.dockerignore

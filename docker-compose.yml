@@ -1,0 +1,157 @@
+# Holdfast stack: Postgres, migrations, the backend services and the web app.
+#
+#   cp .env.example .env     # fill in RPC, DEPOSIT_MASTER_SECRET, LAUNCHER_ADDRESS, ...
+#   mkdir -p keys            # keeper.json + launcher.json (Solana CLI keypair files)
+#   docker compose up --build
+#
+# Every Node service reads .env. Compose overrides what has to point inside the stack: the
+# database host, the keypair paths (./keys is mounted read-only at /app/keys) and the metadata
+# directory shared by the api and the launcher. POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
+# can be set in .env (or the shell); they default to the credentials in .env.example.
+# NEXT_PUBLIC_* are baked into the web bundle at build time: change them, then rebuild web.
+#
+# Each long-running service runs its package.json start script's command from the package
+# directory (what `pnpm run` does) without pnpm in between, so SIGTERM reaches the service and
+# its graceful shutdown completes on `docker compose stop`.
+name: holdfast
+
+x-backend: &backend
+  build:
+    context: .
+    target: services
+  image: holdfast:local
+  env_file: .env
+  init: true
+  restart: unless-stopped
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgres://${POSTGRES_USER:-holdfast}:${POSTGRES_PASSWORD:-holdfast}@postgres:5432/${POSTGRES_DB:-holdfast}
+  KEEPER_KEYPAIR: /app/keys/keeper.json
+  LAUNCHER_KEYPAIR: /app/keys/launcher.json
+  METADATA_STORE: /app/data/metadata
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-holdfast}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-holdfast}
+      POSTGRES_DB: ${POSTGRES_DB:-holdfast}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    # Uncomment to reach the database from the host (psql, `pnpm --filter ... dev`):
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  # One-shot: applies packages/db/migrations, then exits 0. The services below wait for it.
+  migrate:
+    <<: *backend
+    working_dir: /app
+    command: ["pnpm", "db:migrate"]
+    restart: "no"
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    working_dir: /app/apps/api
+    command: ["tsx", "src/main.ts"]                 # @holdfast/api start
+    environment:
+      <<: *backend-env
+      API_HOST: 0.0.0.0
+      API_PORT: "4000"
+    ports:
+      - "4000:4000"
+    volumes:
+      - metadata:/app/data/metadata
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  indexer:
+    <<: *backend
+    working_dir: /app/apps/indexer
+    command: ["tsx", "src/main.ts"]                 # @holdfast/indexer start
+    environment:
+      <<: *backend-env
+      INDEXER_HOST: 0.0.0.0
+      INDEXER_PORT: "4100"
+    # Helius raw webhooks are delivered to http://<host>:4100/webhooks/helius
+    ports:
+      - "4100:4100"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4100/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  keeper:
+    <<: *backend
+    working_dir: /app/apps/keeper
+    command: ["tsx", "src/main-keeper.ts"]          # @holdfast/keeper start:keeper
+    environment: *backend-env
+    volumes:
+      - ./keys:/app/keys:ro
+    stop_grace_period: 30s
+
+  payout:
+    <<: *backend
+    working_dir: /app/apps/keeper
+    command: ["tsx", "src/main-payout.ts"]          # @holdfast/keeper start:payout
+    environment: *backend-env
+    volumes:
+      - ./keys:/app/keys:ro
+    stop_grace_period: 30s
+
+  launcher:
+    <<: *backend
+    working_dir: /app/apps/launcher
+    command: ["tsx", "src/main.ts"]                 # @holdfast/launcher start
+    environment: *backend-env
+    volumes:
+      - ./keys:/app/keys:ro
+      - metadata:/app/data/metadata
+    stop_grace_period: 30s
+
+  # No env_file on purpose: the web container needs no backend secrets, and its NEXT_PUBLIC_*
+  # settings are build args (read from .env by compose's own variable substitution).
+  web:
+    build:
+      context: .
+      target: web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:4000/ws}
+        NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
+        NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-devnet}
+        NEXT_PUBLIC_USE_MOCKS: ${NEXT_PUBLIC_USE_MOCKS:-0}
+    image: holdfast-web:local
+    working_dir: /app/apps/web
+    command: ["next", "start", "--port", "3000"]    # @holdfast/web start
+    init: true
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  metadata:

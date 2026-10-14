@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOLANA_VERSION: 2.3.13
+  ANCHOR_VERSION: 0.32.1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # On-chain program + LiteSVM tests: the "Build and test" steps from README.md.
+  program:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # LiteSVM (tests/program) links OpenSSL through agave-precompiles.
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
+
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      # Solana CLI, Anchor CLI and the SBF platform-tools that `cargo build-sbf` downloads on first use.
+      - name: Cache Solana and Anchor toolchains
+        id: toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/solana/install
+            ~/.cache/solana
+            ~/.cargo/bin/anchor
+          key: toolchains-${{ runner.os }}-solana-${{ env.SOLANA_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-v1
+
+      - name: Install Solana CLI (Agave ${{ env.SOLANA_VERSION }})
+        if: steps.toolchains.outputs.cache-hit != 'true'
+        run: sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+
+      - name: Add Solana to PATH
+        run: echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI ${{ env.ANCHOR_VERSION }}
+        if: steps.toolchains.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/coral-xyz/anchor --tag "v${ANCHOR_VERSION}" anchor-cli --locked
+
+      - name: Toolchain versions
+        run: |
+          solana --version
+          cargo build-sbf --version
+          anchor --version
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: anchor build
+        run: anchor build -p holdfast_vault
+
+      - name: Build test stand-ins (mock pump.fun / PumpSwap)
+        run: |
+          cargo build-sbf --manifest-path tests/mocks/mock-pump/Cargo.toml --sbf-out-dir target/deploy
+          cargo build-sbf --manifest-path tests/mocks/mock-pump-amm/Cargo.toml --sbf-out-dir target/deploy
+
+      - name: Unit + LiteSVM integration tests
+        run: cargo test -p holdfast-vault -p holdfast-vault-tests
+
+      # The artifact root is target/ (common ancestor), so it holds deploy/*.so and idl/.
+      - name: Upload program artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: program
+          path: |
+            target/deploy/*.so
+            target/idl
+          if-no-files-found: error
+          retention-days: 7
+
+  typescript:
+    needs: program
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # No version input: the action reads package.json#packageManager.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm --filter './packages/*' build
+
+      - run: pnpm -r typecheck
+
+      # Lands as target/deploy/{holdfast_vault,mock_pump,mock_pump_amm}.so, where the keeper e2e
+      # harness (apps/keeper/test/harness.ts) loads them from.
+      - name: Download program artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: program
+          path: target
+
+      # The keeper e2e suite skips itself when the .so files are missing; fail instead.
+      - name: Check compiled programs
+        run: |
+          ls -l target/deploy
+          for so in holdfast_vault mock_pump mock_pump_amm; do
+            test -f "target/deploy/$so.so" || { echo "::error::target/deploy/$so.so is missing"; exit 1; }
+          done
+
+      - run: pnpm -r test
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Validate docker-compose.yml
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+
+      - name: Build services image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: services
+          push: false
+          tags: holdfast:ci
+          cache-from: type=gha,scope=services
+          cache-to: type=gha,scope=services,mode=max
+
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          push: false
+          tags: holdfast-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
