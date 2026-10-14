@@ -49,7 +49,7 @@ What the Moatpad keeper sends in one transaction (`apps/keeper/src/pump.ts`, bui
 `pump sweep_creator_fee` → (after graduation) `pump_amm sweep_creator_fee` → `collect_creator_fee_v2` (+ the AMM
 `collect_coin_creator_fee` leg when its vault ATA exists, via `OnlinePumpSdk.collectCoinCreatorFeeV2Instructions` with the
 keeper as fee payer, so the SDK never tries to close the treasury's WSOL account) → **Moatpad `collect_fees`**.
-`collect_fees` unwraps the treasury's WSOL account by closing and re-creating it, then books every unaccounted lamport 50/25/15/10.
+`collect_fees` unwraps the treasury's WSOL account by closing and re-creating it, then books every unaccounted lamport 40/25/15/10/10.
 Because `collect_fees` books whatever arrived, fees claimed by anyone else, or donations, still end up split correctly.
 
 ## 3. Buy CPIs (curve and PumpSwap)
@@ -109,7 +109,7 @@ through the real services and, with `--defend`, attempts step 5. It writes every
 3. `init_coin`. Then, once fees are collected, `prepare_treasury` with the pump volume accounts: confirm the CPI
    into `init_user_volume_accumulator` with the treasury PDA as payer succeeds.
 4. Trade a few times from another wallet. Then `sweep_creator_fee` + `collect_creator_fee_v2` + `collect_fees`, and
-   confirm the 50/25/15/10 buckets equal the claimed lamports.
+   confirm the 40/25/15/10/10 buckets equal the claimed lamports.
 5. Push the price below a manual floor (set short TWAP params) and run `defend` against the **real** pump program.
    Confirm the tokens land in the treasury ATA and the event values match.
 6. Complete a curve (devnet), `graduate`, then repeat steps 4–5 on PumpSwap.

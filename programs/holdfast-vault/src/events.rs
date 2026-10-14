@@ -18,6 +18,7 @@ pub struct FeesCollected {
     pub floor: u64,
     pub holder: u64,
     pub creator: u64,
+    pub platform: u64,
     pub burn: u64,
     pub unwrapped_wsol: u64,
     /// Coin tokens added to the holder pool (sent to the treasury outside buybacks).
@@ -107,6 +108,14 @@ pub struct TreasuryPrepared {
 pub struct CreatorFeesClaimed {
     pub mint: Pubkey,
     pub creator: Pubkey,
+    pub amount: u64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct PlatformFeesSwept {
+    pub mint: Pubkey,
+    pub platform_treasury: Pubkey,
     pub amount: u64,
     pub ts: i64,
 }

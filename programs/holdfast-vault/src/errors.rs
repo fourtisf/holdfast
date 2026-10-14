@@ -92,4 +92,8 @@ pub enum HoldfastError {
     InvalidCreator,
     #[msg("no creator fees to claim")]
     NothingToClaim,
+    #[msg("platform treasury is not set")]
+    PlatformTreasuryNotSet,
+    #[msg("no platform fees to sweep")]
+    NothingToSweep,
 }

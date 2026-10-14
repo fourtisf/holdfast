@@ -102,7 +102,7 @@ src/
 (`src/lib/mocks/`), loaded lazily so they are not part of a normal build's runtime path:
 
 - 36 coins with deterministic 1-minute price paths. The vault mechanism is replayed over each path
-  (50/25/15/10 fee split, 15-minute TWAP ATH, floor = ATH × (1 − trigger), 10% buybacks with cooldown, rounds
+  (40/25/15/10/10 fee split, 15-minute TWAP ATH, floor = ATH × (1 − trigger), 10% buybacks with cooldown, rounds
   every 2 minutes), so cards, chart overlays, vault panel and stats agree. A few coins use sample uploaded
   images, the rest show the mascot.
 - Live trades, vault updates and payout rounds stream over the mock socket; buybacks fire when a coin

@@ -1,6 +1,7 @@
 //! Holdfast vault: one vault per pump.fun coin. The coin's creator fees flow here and are split
-//! 50 / 25 / 15 / 10. They can only leave as floor buybacks, holder payouts, $HOLD buy-and-burn, or
-//! the creator's own 15% claimed by the creator recorded at launch. There is no other withdraw path.
+//! 40 / 25 / 15 / 10 / 10 (floor / holders / creator / platform / burn). They can only leave as floor
+//! buybacks, holder payouts, $HOLD buy-and-burn, the creator's 15% claimed by the creator recorded at
+//! launch, or the platform's 10% swept to the platform treasury. There is no other withdraw path.
 
 #![allow(unexpected_cfgs)]
 
@@ -44,6 +45,10 @@ pub mod holdfast_vault {
 
     pub fn set_paused(ctx: Context<AdminOnly>, paused: bool) -> Result<()> {
         admin::set_paused(ctx, paused)
+    }
+
+    pub fn set_platform_treasury(ctx: Context<AdminOnly>, platform_treasury: Pubkey) -> Result<()> {
+        admin::set_platform_treasury(ctx, platform_treasury)
     }
 
     pub fn transfer_admin(ctx: Context<AdminOnly>, new_admin: Pubkey) -> Result<()> {
@@ -110,5 +115,10 @@ pub mod holdfast_vault {
     // ---- creator -------------------------------------------------------------------------------
     pub fn claim_creator_fees(ctx: Context<ClaimCreatorFees>) -> Result<()> {
         claim_creator_fees::claim_creator_fees(ctx)
+    }
+
+    // ---- platform ------------------------------------------------------------------------------
+    pub fn sweep_platform_fees(ctx: Context<SweepPlatformFees>) -> Result<()> {
+        sweep_platform_fees::sweep_platform_fees(ctx)
     }
 }

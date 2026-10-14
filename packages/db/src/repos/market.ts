@@ -54,7 +54,7 @@ const FLOOR_PRICE = "(COALESCE(v.floor, 0)::float8 * power(10::float8, c.decimal
 const METRICS_SELECT = `
   SELECT ${COIN_COLUMNS}, v.mint AS v_mint, v.floor_sol, v.holder_sol, v.burn_sol, v.holder_tokens, v.ath, v.floor, v.defend_count,
     v.last_defend_ts, v.round_id, v.total_fees, v.total_defended, v.total_paid_sol, v.total_paid_tokens, v.total_burned_sol,
-    v.creator_sol, v.total_creator_claimed, v.slot, v.updated_at,
+    v.creator_sol, v.total_creator_claimed, v.platform_sol, v.total_platform_swept, v.slot, v.updated_at,
     COALESCE(c.last_price, lt.price, 0) AS m_price,
     lt.price AS m_last_trade_price,
     COALESCE(p24.price, ft.price) AS m_price_24h,

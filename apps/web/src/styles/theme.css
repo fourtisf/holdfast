@@ -2,7 +2,8 @@
  * Moatpad design tokens. Everything visual (colors, fonts, radii, shadows) is defined here so the UI
  * can be re-skinned without touching components. The palette follows the brand (brand/README.md):
  * obsidian surfaces, gold for actions and holder payouts, sapphire for the floor (the moat), rose gold
- * for the creator's share, platinum for the ATH and amethyst for buybacks and burns.
+ * for the creator's share, ivory for the Moatpad treasury, platinum for the ATH and amethyst for buybacks
+ * and burns.
  */
 @theme {
   --color-bg: #0a0b0e;
@@ -28,6 +29,8 @@
   --color-payout: #f2c76a;
   /* the creator's share: rose gold, next to the gold of holder payouts */
   --color-creator: #e9a68a;
+  /* the Moatpad treasury's share: ivory */
+  --color-platform: #ddd6c6;
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

@@ -24,12 +24,14 @@ export type CrankAction =
   | { kind: "collect" }
   | { kind: "prepare" }
   | { kind: "defend"; budget: bigint; minTokensOut: bigint }
-  | { kind: "burn" };
+  | { kind: "burn" }
+  | { kind: "sweep" };
 
 export interface CrankMemory {
-  /** unix seconds of the last fee collection / burn this keeper sent for the coin. */
+  /** unix seconds of the last fee collection / burn / platform sweep this keeper sent for the coin. */
   lastCollectAt: number;
   lastBurnAt: number;
+  lastSweepAt: number;
 }
 
 export interface PlanOptions {
@@ -40,6 +42,10 @@ export interface PlanOptions {
   burnThresholdLamports: bigint;
   burnEverySecs: number;
   holdMintSet: boolean;
+  /** The platform share is swept to the treasury once it holds this much, at most once per interval. */
+  platformSweepThresholdLamports: bigint;
+  platformSweepEverySecs: number;
+  platformTreasurySet: boolean;
 }
 
 /** Constant-product quote with the fee taken from the input (pump.fun buy_exact_sol_in / PumpSwap buy_exact_quote_in). */
@@ -99,6 +105,15 @@ export function planCrank(s: CoinChainState, params: ConfigAccount["params"], me
 
   if (canBuy && o.holdMintSet && v.burnSol >= o.burnThresholdLamports && v.burnSol >= MIN_BURN_LAMPORTS && nowSec - memory.lastBurnAt >= o.burnEverySecs) {
     actions.push({ kind: "burn" });
+  }
+
+  if (
+    o.platformTreasurySet &&
+    v.platformSol > 0n &&
+    v.platformSol >= o.platformSweepThresholdLamports &&
+    nowSec - memory.lastSweepAt >= o.platformSweepEverySecs
+  ) {
+    actions.push({ kind: "sweep" });
   }
   return actions;
 }

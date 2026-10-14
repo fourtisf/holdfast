@@ -22,6 +22,9 @@ export interface KeeperConfig {
   burnThresholdLamports: bigint;
   burnSlippageBps: number;
   burnEverySecs: number;
+  /** Sweep a coin's platform share to the treasury once it holds this much (lamports), at most every N seconds. */
+  platformSweepThresholdLamports: bigint;
+  platformSweepEverySecs: number;
   priorityMicroLamports: number;
   payout: PayoutConfig;
 }
@@ -77,6 +80,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     burnThresholdLamports: bigintEnv(env, "KEEPER_BURN_THRESHOLD_LAMPORTS", 100_000_000n),
     burnSlippageBps: int(env, "KEEPER_BURN_SLIPPAGE_BPS", 400),
     burnEverySecs: int(env, "KEEPER_BURN_EVERY_SECS", 3_600),
+    platformSweepThresholdLamports: bigintEnv(env, "KEEPER_PLATFORM_SWEEP_LAMPORTS", 10_000_000n),
+    platformSweepEverySecs: int(env, "KEEPER_PLATFORM_SWEEP_EVERY_SECS", 3_600),
     priorityMicroLamports: int(env, "KEEPER_PRIORITY_MICROLAMPORTS", 50_000),
     payout: {
       minSolLamports: bigintEnv(env, "PAYOUT_MIN_SOL_LAMPORTS", 20_000n),

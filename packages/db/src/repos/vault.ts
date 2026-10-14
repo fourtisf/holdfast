@@ -8,6 +8,8 @@ export interface VaultStateRow {
   holderSol: bigint;
   /** The creator's unclaimed share. */
   creatorSol: bigint;
+  /** The platform's unswept share. */
+  platformSol: bigint;
   burnSol: bigint;
   holderTokens: bigint;
   ath: bigint;
@@ -21,6 +23,7 @@ export interface VaultStateRow {
   totalPaidTokens: bigint;
   totalBurnedSol: bigint;
   totalCreatorClaimed: bigint;
+  totalPlatformSwept: bigint;
   slot: number;
   updatedAt: number;
 }
@@ -33,6 +36,7 @@ export function mapVaultState(r: Record<string, unknown>): VaultStateRow {
     floorSol: big(r.floor_sol),
     holderSol: big(r.holder_sol),
     creatorSol: big(r.creator_sol),
+    platformSol: big(r.platform_sol),
     burnSol: big(r.burn_sol),
     holderTokens: big(r.holder_tokens),
     ath: big(r.ath),
@@ -46,6 +50,7 @@ export function mapVaultState(r: Record<string, unknown>): VaultStateRow {
     totalPaidTokens: big(r.total_paid_tokens),
     totalBurnedSol: big(r.total_burned_sol),
     totalCreatorClaimed: big(r.total_creator_claimed),
+    totalPlatformSwept: big(r.total_platform_swept),
     slot: num(r.slot),
     updatedAt: ms(r.updated_at),
   };
@@ -65,8 +70,8 @@ export async function upsertVaultState(q: Queryable, s: VaultSnapshotInput): Pro
   const res = await q.query(
     `INSERT INTO vault_state AS v (mint, floor_sol, holder_sol, burn_sol, holder_tokens, ath, floor, defend_count, last_defend_ts,
        round_id, total_fees, total_defended, total_paid_sol, total_paid_tokens, total_burned_sol, slot, creator_sol,
-       total_creator_claimed, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, now())
+       total_creator_claimed, platform_sol, total_platform_swept, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, now())
      ON CONFLICT (mint) DO UPDATE SET
        floor_sol = EXCLUDED.floor_sol, holder_sol = EXCLUDED.holder_sol, burn_sol = EXCLUDED.burn_sol,
        holder_tokens = EXCLUDED.holder_tokens, ath = EXCLUDED.ath, floor = EXCLUDED.floor,
@@ -74,7 +79,8 @@ export async function upsertVaultState(q: Queryable, s: VaultSnapshotInput): Pro
        total_fees = EXCLUDED.total_fees, total_defended = EXCLUDED.total_defended,
        total_paid_sol = EXCLUDED.total_paid_sol, total_paid_tokens = EXCLUDED.total_paid_tokens,
        total_burned_sol = EXCLUDED.total_burned_sol, slot = EXCLUDED.slot, creator_sol = EXCLUDED.creator_sol,
-       total_creator_claimed = EXCLUDED.total_creator_claimed, updated_at = now()
+       total_creator_claimed = EXCLUDED.total_creator_claimed, platform_sol = EXCLUDED.platform_sol,
+       total_platform_swept = EXCLUDED.total_platform_swept, updated_at = now()
      WHERE v.slot <= EXCLUDED.slot
      RETURNING mint`,
     [
@@ -96,6 +102,8 @@ export async function upsertVaultState(q: Queryable, s: VaultSnapshotInput): Pro
       s.slot,
       dec(s.creatorSol),
       dec(s.totalCreatorClaimed),
+      dec(s.platformSol),
+      dec(s.totalPlatformSwept),
     ],
   );
   return res.rows.length > 0;
@@ -109,6 +117,7 @@ export interface VaultDelta {
   floorSol?: bigint;
   holderSol?: bigint;
   creatorSol?: bigint;
+  platformSol?: bigint;
   burnSol?: bigint;
   holderTokens?: bigint;
   totalFees?: bigint;
@@ -117,6 +126,7 @@ export interface VaultDelta {
   totalPaidTokens?: bigint;
   totalBurnedSol?: bigint;
   totalCreatorClaimed?: bigint;
+  totalPlatformSwept?: bigint;
   defends?: number;
   lastDefendTs?: number;
   ath?: bigint;
@@ -135,6 +145,7 @@ export async function applyVaultDelta(q: Queryable, mint: string, d: VaultDelta)
        last_defend_ts = CASE WHEN $12::timestamptz IS NULL THEN last_defend_ts ELSE GREATEST(last_defend_ts, $12::timestamptz) END,
        ath = GREATEST(ath, $13), floor = GREATEST(floor, $14), round_id = GREATEST(round_id, $15),
        creator_sol = GREATEST(creator_sol + $16, 0), total_creator_claimed = total_creator_claimed + $17,
+       platform_sol = GREATEST(platform_sol + $18, 0), total_platform_swept = total_platform_swept + $19,
        updated_at = now()
      WHERE mint = $1`,
     [
@@ -155,6 +166,8 @@ export async function applyVaultDelta(q: Queryable, mint: string, d: VaultDelta)
       dec(d.roundId ?? 0n),
       dec(d.creatorSol ?? 0n),
       dec(d.totalCreatorClaimed ?? 0n),
+      dec(d.platformSol ?? 0n),
+      dec(d.totalPlatformSwept ?? 0n),
     ],
   );
 }

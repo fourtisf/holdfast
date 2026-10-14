@@ -298,9 +298,10 @@ describe("vault activity", () => {
         .build(),
     );
     expect(await getVaultState(db, coin.mint)).toMatchObject({
-      floorSol: 500_000n,
+      floorSol: 400_000n,
       holderSol: 250_000n,
       creatorSol: 150_000n,
+      platformSol: 100_000n,
       burnSol: 100_000n,
       holderTokens: 5_000n,
       totalFees: 1_000_000n,
@@ -311,11 +312,15 @@ describe("vault activity", () => {
 
     // prepare_treasury: the treasury's own accounts are paid from the floor bucket
     await h.run(new TxBuilder(305, T0 + 650, wallet()).holdfast([{ name: "TreasuryPrepared", fields: holdfastFields.treasuryPrepared(coin, 100_000n, T0 + 650) }]).build());
-    expect(await getVaultState(db, coin.mint)).toMatchObject({ floorSol: 400_000n, holderSol: 250_000n, burnSol: 100_000n });
+    expect(await getVaultState(db, coin.mint)).toMatchObject({ floorSol: 300_000n, holderSol: 250_000n, burnSol: 100_000n });
 
     // the creator claims its share
     await h.run(new TxBuilder(306, T0 + 660, wallet()).holdfast([{ name: "CreatorFeesClaimed", fields: holdfastFields.creatorFeesClaimed(coin, 150_000n, T0 + 660) }]).build());
-    expect(await getVaultState(db, coin.mint)).toMatchObject({ creatorSol: 0n, totalCreatorClaimed: 150_000n, floorSol: 400_000n, holderSol: 250_000n });
+    expect(await getVaultState(db, coin.mint)).toMatchObject({ creatorSol: 0n, totalCreatorClaimed: 150_000n, floorSol: 300_000n, holderSol: 250_000n });
+
+    // the keeper sweeps the platform share to the Moatpad treasury
+    await h.run(new TxBuilder(307, T0 + 665, wallet()).holdfast([{ name: "PlatformFeesSwept", fields: holdfastFields.platformFeesSwept(coin, 100_000n, T0 + 665) }]).build());
+    expect(await getVaultState(db, coin.mint)).toMatchObject({ platformSol: 0n, totalPlatformSwept: 100_000n, floorSol: 300_000n });
 
     const holder = wallet();
     await insertRound(db, {
@@ -364,6 +369,8 @@ describe("vault activity", () => {
       totalBurnedSol: 0n,
       creatorSol: 0n,
       totalCreatorClaimed: 0n,
+      platformSol: 0n,
+      totalPlatformSwept: 0n,
       slot: 999,
     });
     const fetched: string[] = [];

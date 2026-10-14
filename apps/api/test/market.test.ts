@@ -79,6 +79,8 @@ describe("coins", () => {
       holderSol: 1,
       creatorSol: 0.3,
       creatorClaimedSol: 0.05,
+      platformSol: 0.2,
+      platformSweptSol: 0.07,
       burnSol: 0.1,
       holderTokens: 1000,
       athPrice: expect.closeTo(4e-7, 12),

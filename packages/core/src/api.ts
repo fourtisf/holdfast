@@ -23,7 +23,7 @@ export interface Socials {
 
 /** Live state of a coin's on-chain vault (CoinVault account + treasury balances). */
 export interface VaultSnapshot {
-  /** SOL reserved for floor defence (50% of creator fees, minus buybacks). */
+  /** SOL reserved for floor defence (40% of creator fees, minus buybacks). */
   floorSol: number;
   /** SOL waiting in the holder payout bucket (25% of fees). */
   holderSol: number;
@@ -31,6 +31,9 @@ export interface VaultSnapshot {
   creatorSol: number;
   /** What the creator has claimed so far. */
   creatorClaimedSol: number;
+  /** The Moatpad treasury's share (10% of fees) not yet swept, and what was swept so far. */
+  platformSol: number;
+  platformSweptSol: number;
   /** SOL waiting to buy & burn $MOAT (10% of fees). */
   burnSol: number;
   /** Tokens bought back by the vault and waiting to be paid to holders. */

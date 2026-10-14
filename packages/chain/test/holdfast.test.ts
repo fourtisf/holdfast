@@ -8,6 +8,8 @@ import {
   initializeIx,
   setHoldMintIx,
   setParamsIx,
+  setPlatformTreasuryIx,
+  sweepPlatformFeesIx,
   claimCreatorFeesIx,
   closeRoundIx,
   coinKeys,
@@ -25,7 +27,7 @@ import {
 } from "../src/holdfast.js";
 import { roundOpenedFromLogs, HOLDFAST_PROGRAM_ADDRESS } from "@holdfast/core";
 import { HOLDFAST_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "../src/constants.js";
-import { configPda, treasuryPda, vaultPda } from "../src/pda.js";
+import { bondingCurvePda, configPda, treasuryPda, vaultPda } from "../src/pda.js";
 
 const coder = new BorshCoder(HOLDFAST_IDL);
 const mint = Keypair.generate().publicKey;
@@ -43,8 +45,7 @@ describe("holdfast client", () => {
     const raw = {
       mint,
       creator,
-      bonding_curve: Keypair.generate().publicKey,
-      amm_pool: PublicKey.default,
+      market: bondingCurvePda(mint),
       trigger_bps: 2500,
       token_2022: true,
       venue: 0,
@@ -55,9 +56,10 @@ describe("holdfast client", () => {
       floor_price: new BN("20969245107176141"),
       ath_candidate: zero,
       ath_candidate_since: zero,
-      floor_sol: new BN(5_000_000_000),
+      floor_sol: new BN(4_000_000_000),
       holder_sol: new BN(2_500_000_000),
       creator_sol: new BN(1_500_000_000),
+      platform_sol: new BN(1_000_000_000),
       burn_sol: new BN(1_000_000_000),
       holder_tokens: new BN(42),
       last_defend_ts: new BN(1_760_000_000),
@@ -75,6 +77,7 @@ describe("holdfast client", () => {
       total_paid_tokens: zero,
       total_burn_sol: zero,
       total_creator_claimed: new BN(700),
+      total_platform_swept: new BN(800),
       total_treasury_rent: zero,
       created_at: new BN(1_759_999_000),
     };
@@ -88,7 +91,10 @@ describe("holdfast client", () => {
     expect(v.triggerBps).toBe(2500);
     expect(v.venue).toBe("curve");
     expect(v.ammPool).toBeNull();
-    expect(v.floorSol).toBe(5_000_000_000n);
+    expect(v.bondingCurve.equals(bondingCurvePda(mint))).toBe(true);
+    expect(v.floorSol).toBe(4_000_000_000n);
+    expect(v.platformSol).toBe(1_000_000_000n);
+    expect(v.totalPlatformSwept).toBe(800n);
     expect(v.creator.equals(creator)).toBe(true);
     expect(v.creatorSol).toBe(1_500_000_000n);
     expect(v.totalCreatorClaimed).toBe(700n);
@@ -123,7 +129,7 @@ describe("holdfast client", () => {
   });
 
   it("ignores events of other programs", () => {
-    const line = encodeHoldfastEventLog("FeesCollected", { mint, amount: new BN(1), floor: zero, holder: zero, creator: zero, burn: zero, unwrapped_wsol: zero, tokens: zero, ts: zero });
+    const line = encodeHoldfastEventLog("FeesCollected", { mint, amount: new BN(1), floor: zero, holder: zero, creator: zero, platform: zero, burn: zero, unwrapped_wsol: zero, tokens: zero, ts: zero });
     const other = Keypair.generate().publicKey.toBase58();
     expect(parseHoldfastEvents([`Program ${other} invoke [1]`, line, `Program ${other} success`])).toEqual([]);
   });
@@ -177,6 +183,13 @@ describe("holdfast client", () => {
     // args: trigger (u16) then the creator pubkey
     expect(init.data.subarray(8, 10).readUInt16LE(0)).toBe(2500);
     expect(new PublicKey(init.data.subarray(10, 42)).equals(creator)).toBe(true);
+
+    const platform = Keypair.generate().publicKey;
+    const sweep = sweepPlatformFeesIx(coin, platform);
+    expect(ixName(sweep.data)).toBe("sweep_platform_fees");
+    expect(sweep.keys.find((k) => k.pubkey.equals(platform))).toMatchObject({ isSigner: false, isWritable: true });
+    expect(sweep.keys.some((k) => k.isSigner)).toBe(false); // permissionless
+    expect(ixName(setPlatformTreasuryIx(keeper, platform).data)).toBe("set_platform_treasury");
 
     const claim = claimCreatorFeesIx(coin, creator);
     expect(ixName(claim.data)).toBe("claim_creator_fees");

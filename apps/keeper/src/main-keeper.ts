@@ -49,7 +49,7 @@ async function main() {
         await monitor.keeperBalance(BigInt(keeperInfo?.lamports ?? 0));
         await mapLimit(coins, cfg.coinConcurrency, async (coin) => {
           const key = coin.mint.toBase58();
-          const mem = memory.get(key) ?? { lastCollectAt: 0, lastBurnAt: 0 };
+          const mem = memory.get(key) ?? { lastCollectAt: 0, lastBurnAt: 0, lastSweepAt: 0 };
           memory.set(key, mem);
           try {
             const res = await crankCoin(
@@ -65,6 +65,8 @@ async function main() {
                   ammFeeBpsEstimate: cfg.ammFeeBpsEstimate,
                   burnThresholdLamports: cfg.burnThresholdLamports,
                   burnEverySecs: cfg.burnEverySecs,
+                  platformSweepThresholdLamports: cfg.platformSweepThresholdLamports,
+                  platformSweepEverySecs: cfg.platformSweepEverySecs,
                   defendJitterMs: cfg.defendJitterMs,
                   burnSlippageBps: cfg.burnSlippageBps,
                 },

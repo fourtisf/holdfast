@@ -1,5 +1,6 @@
 /**
- * Admin CLI for the vault program's Config. None of these instructions can move funds.
+ * Admin CLI for the vault program's Config. None of these instructions can move funds; the platform
+ * treasury only decides where the platform's own 10% share is swept.
  *
  *   pnpm --filter @holdfast/keeper admin -- <command> [args] --rpc <url> --signer <keypair.json>
  *
@@ -8,6 +9,7 @@
  *   set-keeper <pubkey> | set-launcher <pubkey>
  *   set-params <params.json>               camelCase fields of ProgramParams (see DEFAULT_PARAMS)
  *   set-hold-mint <mint>                   one-time
+ *   set-platform-treasury <pubkey>         receives the platform share (a multisig vault)
  *   pause | unpause
  *   transfer-admin <pubkey> | accept-admin
  *
@@ -25,6 +27,7 @@ import {
   setLauncherIx,
   setParamsIx,
   setPausedIx,
+  setPlatformTreasuryIx,
   transferAdminIx,
   type ProgramParams,
 } from "@holdfast/chain";
@@ -84,6 +87,9 @@ async function main() {
       break;
     case "set-hold-mint":
       ix = setHoldMintIx(me, key(0));
+      break;
+    case "set-platform-treasury":
+      ix = setPlatformTreasuryIx(me, key(0));
       break;
     case "pause":
     case "unpause":

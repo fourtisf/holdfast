@@ -145,7 +145,10 @@ fn defend_spends_ten_percent_of_the_floor_vault_and_tokens_go_to_holders() {
     assert_eq!(after.defend_count, 1);
     assert_eq!(after.last_defend_ts, env.now());
     // holder SOL, creator and burn buckets untouched
-    assert_eq!((after.holder_sol, after.creator_sol, after.burn_sol), (before.holder_sol, before.creator_sol, before.burn_sol));
+    assert_eq!(
+        (after.holder_sol, after.creator_sol, after.platform_sol, after.burn_sol),
+        (before.holder_sol, before.creator_sol, before.platform_sol, before.burn_sol)
+    );
     // effective price ≤ floor × (1 + tolerance)
     let paid_price = budget as u128 * PRICE_SCALE / bought as u128;
     assert!(paid_price <= after.floor_price * 10_300 / 10_000);
@@ -281,7 +284,7 @@ fn graduation_switches_to_the_canonical_pool_and_defends_there() {
     env.send(&[ix], &[&payer]).unwrap();
     let v = env.vault(&coin.mint);
     assert_eq!(v.venue, VENUE_AMM);
-    assert_eq!(v.amm_pool, pool.address);
+    assert_eq!(v.market, pool.address);
 
     // curve accounts no longer price the coin
     assert_err(&env.update_ath(&coin, None), HoldfastError::WrongPriceAccount);

@@ -31,7 +31,7 @@ describe("creator share", () => {
   it("shows the unclaimed and claimed creator share in the coin's vault", async () => {
     const coin = (await api.app.inject({ method: "GET", url: `/coins/${f.mint}` })).json<CoinDetail>();
     expect(coin.launcher).toBe(f.carol);
-    expect(coin.vault).toMatchObject({ creatorSol: 0.3, creatorClaimedSol: 0.05 });
+    expect(coin.vault).toMatchObject({ creatorSol: 0.3, creatorClaimedSol: 0.05, platformSol: 0.2, platformSweptSol: 0.07 });
   });
 
   it("builds an unsigned claim transaction paid and signed by the creator", async () => {

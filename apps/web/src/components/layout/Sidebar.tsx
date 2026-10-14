@@ -20,7 +20,7 @@ export function Sidebar() {
         <div className="text-xs font-semibold tracking-wider text-muted uppercase">Where creator fees go</div>
         <FeeSplitBar compact className="mt-3" />
         <p className="mt-3 text-xs text-muted">
-          <span className="font-semibold text-fg">15% to the creator,</span> claimed on-chain. The floor and holder funds have no withdraw path.
+          <span className="font-semibold text-fg">The floor and holder funds can never be withdrawn.</span> The creator claims its 15% on-chain.
         </p>
       </div>
 

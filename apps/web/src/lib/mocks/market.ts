@@ -2,7 +2,7 @@
  * In-browser simulated Holdfast market used when NEXT_PUBLIC_USE_MOCKS=1.
  *
  * Every coin gets a deterministic 1-minute price path (seeded by its name), and the vault mechanism is
- * replayed over it: creator fees split 50/25/15/10, ATH from a 15-minute TWAP, floor = ATH × (1 − trigger),
+ * replayed over it: creator fees split 40/25/15/10/10, ATH from a 15-minute TWAP, floor = ATH × (1 − trigger),
  * buybacks of 10% of the floor vault when the price touches the floor (with a cooldown), and payout
  * rounds every 2 minutes. Summary numbers are derived from the same path, so cards, chart and vault
  * panels agree with each other.
@@ -12,6 +12,7 @@ import {
   ROUND_INTERVAL_SECONDS,
   SPLIT_BURN_BPS,
   SPLIT_CREATOR_BPS,
+  SPLIT_PLATFORM_BPS,
   SPLIT_FLOOR_BPS,
   SPLIT_HOLDER_BPS,
   TRIGGER_OPTIONS_BPS,
@@ -241,6 +242,8 @@ interface VaultState {
   holderSol: number;
   creatorSol: number;
   creatorClaimedSol: number;
+  platformSol: number;
+  platformSweptSol: number;
   burnSol: number;
   holderTokens: number;
   athPrice: number;
@@ -332,13 +335,14 @@ function twapAth(closes: number[]): { ath: number[]; peakIndex: number } {
 }
 
 function emptyVault(): VaultState {
-  return { floorSol: 0, holderSol: 0, creatorSol: 0, creatorClaimedSol: 0, burnSol: 0, holderTokens: 0, athPrice: 0, floorPrice: 0, defendCount: 0, lastDefendAt: null, totalDefendedSol: 0 };
+  return { floorSol: 0, holderSol: 0, creatorSol: 0, creatorClaimedSol: 0, platformSol: 0, platformSweptSol: 0, burnSol: 0, holderTokens: 0, athPrice: 0, floorPrice: 0, defendCount: 0, lastDefendAt: null, totalDefendedSol: 0 };
 }
 
 function splitFee(coin: MockCoin, fee: number) {
   coin.vault.floorSol += (fee * SPLIT_FLOOR_BPS) / 10_000;
   coin.vault.holderSol += (fee * SPLIT_HOLDER_BPS) / 10_000;
   coin.vault.creatorSol += (fee * SPLIT_CREATOR_BPS) / 10_000;
+  coin.vault.platformSol += (fee * SPLIT_PLATFORM_BPS) / 10_000;
   coin.vault.burnSol += (fee * SPLIT_BURN_BPS) / 10_000;
 }
 
@@ -351,6 +355,11 @@ function payRound(coin: MockCoin, at: number) {
   coin.vault.holderTokens = 0;
   coin.roundId += 1;
   if (coin.roundId % 5 === 0) coin.vault.burnSol = 0; // burn_hold runs every few rounds
+  if (coin.roundId % 30 === 0) {
+    // the keeper sweeps the platform share about hourly
+    coin.vault.platformSweptSol += coin.vault.platformSol;
+    coin.vault.platformSol = 0;
+  }
   coin.lastRound = {
     roundId: coin.roundId,
     ts: at,
@@ -550,6 +559,8 @@ function vaultSnapshot(coin: MockCoin): VaultSnapshot {
     holderSol: v.holderSol,
     creatorSol: v.creatorSol,
     creatorClaimedSol: v.creatorClaimedSol,
+    platformSol: v.platformSol,
+    platformSweptSol: v.platformSweptSol,
     burnSol: v.burnSol,
     holderTokens: v.holderTokens,
     athPrice: v.athPrice,

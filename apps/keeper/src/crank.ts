@@ -2,6 +2,7 @@ import { PublicKey, type Keypair, type TransactionInstruction } from "@solana/we
 import {
   bondingCurvePda,
   burnHoldIx,
+  sweepPlatformFeesIx,
   canonicalPoolPda,
   collectFeesIx,
   decodeBondingCurve,
@@ -30,7 +31,7 @@ export interface CrankContext {
   pump: PumpGateway;
   keeper: Keypair;
   log: Logger;
-  options: Omit<PlanOptions, "holdMintSet"> & { defendJitterMs: number; burnSlippageBps: number };
+  options: Omit<PlanOptions, "holdMintSet" | "platformTreasurySet"> & { defendJitterMs: number; burnSlippageBps: number };
   /** Called with the fresh vault after any action (DB mirror). */
   onVault?: (coin: CoinKeys, vault: CoinVaultAccount) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
@@ -62,7 +63,11 @@ export async function crankCoin(ctx: CrankContext, coin: CoinKeys, config: Confi
   if (!state) return result;
   result.creatorOk = state.vault.venue === "amm" && state.pool ? state.pool.coinCreator.equals(coin.treasury) : state.curve.creator.equals(coin.treasury);
   const nowSec = Math.floor(ctx.chain.nowMs() / 1000);
-  const actions = planCrank(state, config.params, memory, nowSec, { ...ctx.options, holdMintSet: config.holdMint !== null });
+  const actions = planCrank(state, config.params, memory, nowSec, {
+    ...ctx.options,
+    holdMintSet: config.holdMint !== null,
+    platformTreasurySet: config.platformTreasury !== null,
+  });
   result.actions = actions.map((a) => a.kind);
 
   for (const action of actions) {
@@ -71,6 +76,7 @@ export async function crankCoin(ctx: CrankContext, coin: CoinKeys, config: Confi
       if (sig) result.sent.push({ action: action.kind, sig });
       if (action.kind === "collect") memory.lastCollectAt = nowSec;
       if (action.kind === "burn") memory.lastBurnAt = nowSec;
+      if (action.kind === "sweep") memory.lastSweepAt = nowSec;
     } catch (err) {
       result.errors.push({ action: action.kind, error: (err as Error).message });
       ctx.log.warn({ mint: coin.mint.toBase58(), action: action.kind, err: (err as Error).message }, "crank action failed");
@@ -118,6 +124,9 @@ async function execute(ctx: CrankContext, s: CoinChainState, config: ConfigAccou
       if (!holdMint) return null;
       return send(ctx, [await buildBurn(ctx, s, holdMint)], 500_000);
     }
+    case "sweep":
+      // Permissionless; the program pays only the configured platform treasury.
+      return config.platformTreasury ? send(ctx, [sweepPlatformFeesIx(coin, config.platformTreasury)], 60_000) : null;
   }
 }
 

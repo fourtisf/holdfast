@@ -1,6 +1,6 @@
 "use client";
 
-import { SPLIT_BURN_BPS, SPLIT_CREATOR_BPS, SPLIT_FLOOR_BPS, SPLIT_HOLDER_BPS, type CoinDetail } from "@holdfast/core";
+import { SPLIT_BURN_BPS, SPLIT_CREATOR_BPS, SPLIT_FLOOR_BPS, SPLIT_HOLDER_BPS, SPLIT_PLATFORM_BPS, type CoinDetail } from "@holdfast/core";
 import type { ReactNode } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { ExternalIcon, VaultIcon } from "@/components/ui/icons";
@@ -31,13 +31,13 @@ export function VaultPanel({ coin }: { coin: CoinDetail }) {
       <CardHeader
         title="Floor vault"
         icon={<VaultIcon size={15} />}
-        subtitle="Only the creator's 15% can be withdrawn"
+        subtitle="Floor and holder funds can never be withdrawn"
         action={
           <a
             href={explorerAddressUrl(coin.vaultAddress, SOLANA_CLUSTER)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted hover:text-fg"
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted hover:text-fg"
           >
             On-chain <ExternalIcon size={12} />
           </a>
@@ -61,6 +61,10 @@ export function VaultPanel({ coin }: { coin: CoinDetail }) {
           <div className="text-creator">{formatSol(v.creatorSol)}</div>
           {v.creatorClaimedSol > 0 ? <div className="text-xs font-normal text-muted">{formatSol(v.creatorClaimedSol)} claimed</div> : null}
         </Row>
+        <Row label="Moatpad treasury" hint={`${SPLIT_PLATFORM_BPS / 100}% of fees · swept to the platform treasury`}>
+          <div className="text-platform">{formatSol(v.platformSol)}</div>
+          {v.platformSweptSol > 0 ? <div className="text-xs font-normal text-muted">{formatSol(v.platformSweptSol)} swept</div> : null}
+        </Row>
         <Row label="Burn bucket" hint={`${SPLIT_BURN_BPS / 100}% of fees → buy & burn $MOAT`}>
           <span className="text-vault">{formatSol(v.burnSol)}</span>
         </Row>
@@ -79,7 +83,7 @@ export function VaultPanel({ coin }: { coin: CoinDetail }) {
       </div>
       <div className="border-t border-line px-4 py-2.5 text-[11px] text-faint">
         Fee split: {SPLIT_FLOOR_BPS / 100}% floor · {SPLIT_HOLDER_BPS / 100}% holders · {SPLIT_CREATOR_BPS / 100}% creator ·{" "}
-        {SPLIT_BURN_BPS / 100}% burn
+        {SPLIT_PLATFORM_BPS / 100}% Moatpad · {SPLIT_BURN_BPS / 100}% burn
       </div>
     </Card>
   );

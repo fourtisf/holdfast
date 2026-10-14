@@ -8,10 +8,12 @@ pub const ROUND_SEED: &[u8] = b"round";
 pub const BPS_DENOMINATOR: u64 = 10_000;
 
 /// Creator-fee split. The creator's share accrues in the vault and only the creator recorded at
-/// `init_coin` can claim it (`claim_creator_fees`); the launcher and the admin have no share.
-pub const SPLIT_FLOOR_BPS: u64 = 5_000;
+/// `init_coin` can claim it (`claim_creator_fees`). The platform's share accrues too and can only be
+/// swept to `Config::platform_treasury` (`sweep_platform_fees`).
+pub const SPLIT_FLOOR_BPS: u64 = 4_000;
 pub const SPLIT_HOLDER_BPS: u64 = 2_500;
 pub const SPLIT_CREATOR_BPS: u64 = 1_500;
+pub const SPLIT_PLATFORM_BPS: u64 = 1_000;
 pub const SPLIT_BURN_BPS: u64 = 1_000;
 
 /// floor = ATH × (1 − trigger). Fixed at launch.

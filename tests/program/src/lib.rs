@@ -100,6 +100,8 @@ pub struct Env {
     pub payer: Keypair,
     /// The coin creator of every coin `prepare_coin` makes.
     pub creator: Keypair,
+    /// Platform treasury wallet (funded, so tiny sweeps stay rent-safe); set with `set_platform_treasury`.
+    pub platform: Keypair,
     /// Mock pump "global" account (byte 0 = misbehaviour mode).
     pub pump_global: Pubkey,
     pub amm_global_config: Pubkey,
@@ -115,7 +117,8 @@ impl Env {
         let launcher = Keypair::new();
         let payer = Keypair::new();
         let creator = Keypair::new();
-        for kp in [&admin, &keeper, &launcher, &payer, &creator] {
+        let platform = Keypair::new();
+        for kp in [&admin, &keeper, &launcher, &payer, &creator, &platform] {
             svm.airdrop(&kp.pubkey(), 1_000 * SOL).unwrap();
         }
 
@@ -130,6 +133,7 @@ impl Env {
             launcher,
             payer,
             creator,
+            platform,
             pump_global: Pubkey::new_unique(),
             amm_global_config: Pubkey::new_unique(),
             fee_recipient: Pubkey::new_unique(),
@@ -471,6 +475,32 @@ impl Env {
             },
             holdfast_vault::instruction::ClaimCreatorFees {},
         )
+    }
+
+    pub fn set_platform_treasury(&mut self, platform_treasury: Pubkey) -> TxResult {
+        let admin = self.admin.insecure_clone();
+        let ix = self.admin_ix(&admin.pubkey(), holdfast_vault::instruction::SetPlatformTreasury { platform_treasury });
+        self.send(&[ix], &[&admin])
+    }
+
+    pub fn sweep_platform_fees_ix(&self, coin: &Coin, platform_treasury: &Pubkey) -> Instruction {
+        ix(
+            holdfast_vault::accounts::SweepPlatformFees {
+                config: config_pda(),
+                vault: coin.vault,
+                treasury: coin.treasury,
+                platform_treasury: *platform_treasury,
+                system_program: SYSTEM_PROGRAM,
+            },
+            holdfast_vault::instruction::SweepPlatformFees {},
+        )
+    }
+
+    /// Permissionless: the payer cranks it, the platform treasury receives.
+    pub fn sweep_platform_fees(&mut self, coin: &Coin) -> TxResult {
+        let payer = self.payer.insecure_clone();
+        let ix = self.sweep_platform_fees_ix(coin, &self.platform.pubkey());
+        self.send(&[ix], &[&payer])
     }
 
     pub fn claim_creator_fees(&mut self, coin: &Coin) -> TxResult {

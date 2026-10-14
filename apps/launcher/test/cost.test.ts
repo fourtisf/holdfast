@@ -19,7 +19,7 @@ const r = DEFAULT_RENT;
 
 describe("account sizes", () => {
   it("match the on-chain layouts", () => {
-    expect(COIN_VAULT_SIZE).toBe(731); // 8 + CoinVault::INIT_SPACE (IDL)
+    expect(COIN_VAULT_SIZE).toBe(715); // 8 + CoinVault::INIT_SPACE (IDL)
     expect(PUMP_BONDING_CURVE_SIZE).toBe(166);
     expect(TOKEN_2022_ATA_SIZE).toBe(170); // 165 + account type + ImmutableOwner TLV
     expect(SPL_TOKEN_ACCOUNT_SIZE).toBe(165);
@@ -54,7 +54,7 @@ describe("computeLaunchCost", () => {
     expect(cost.exceedsSpecFee).toBe(true);
     expect(cost.launchFee).toBe(cost.consumed + cost.floatTotal);
     expect(cost.requiredLamports).toBe(cost.launchFee);
-    expect(formatSol(cost.consumed)).toBe("0.015849300");
+    expect(formatSol(cost.consumed)).toBe("0.015737940");
   });
 
   it("stays within the spec's 0.015 SOL for realistic metadata (an IPFS URI)", () => {

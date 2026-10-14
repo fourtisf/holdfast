@@ -36,7 +36,10 @@ fn burn_buys_hold_with_the_burn_bucket_and_burns_it() {
     assert!(env.mint_supply(&hold) < supply_before);
     assert_eq!(env.token_balance(&ata(&coin.treasury, &hold, &TOKEN_2022_PROGRAM)), 0);
     // other buckets untouched
-    assert_eq!((v.floor_sol, v.holder_sol, v.creator_sol), (v_before.floor_sol, v_before.holder_sol, v_before.creator_sol));
+    assert_eq!(
+        (v.floor_sol, v.holder_sol, v.creator_sol, v.platform_sol),
+        (v_before.floor_sol, v_before.holder_sol, v_before.creator_sol, v_before.platform_sol)
+    );
 }
 
 #[test]

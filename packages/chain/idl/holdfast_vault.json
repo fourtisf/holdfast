@@ -1902,6 +1902,147 @@
       ]
     },
     {
+      "name": "set_platform_treasury",
+      "discriminator": [
+        157,
+        196,
+        254,
+        208,
+        26,
+        219,
+        147,
+        129
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "platform_treasury",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "sweep_platform_fees",
+      "discriminator": [
+        190,
+        168,
+        25,
+        182,
+        75,
+        123,
+        135,
+        189
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.mint",
+                "account": "CoinVault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.mint",
+                "account": "CoinVault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "platform_treasury",
+          "writable": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "transfer_admin",
       "discriminator": [
         42,
@@ -2171,6 +2312,19 @@
       ]
     },
     {
+      "name": "PlatformFeesSwept",
+      "discriminator": [
+        11,
+        134,
+        55,
+        195,
+        74,
+        64,
+        122,
+        35
+      ]
+    },
+    {
       "name": "RoundClosed",
       "discriminator": [
         45,
@@ -2435,6 +2589,16 @@
       "code": 6044,
       "name": "NothingToClaim",
       "msg": "no creator fees to claim"
+    },
+    {
+      "code": 6045,
+      "name": "PlatformTreasuryNotSet",
+      "msg": "platform treasury is not set"
+    },
+    {
+      "code": 6046,
+      "name": "NothingToSweep",
+      "msg": "no platform fees to sweep"
     }
   ],
   "types": [
@@ -2519,14 +2683,10 @@
             "type": "pubkey"
           },
           {
-            "name": "bonding_curve",
-            "type": "pubkey"
-          },
-          {
-            "name": "amm_pool",
+            "name": "market",
             "docs": [
-              "Canonical PumpSwap pool once graduated (default key before). Its token accounts are read from",
-              "the pool itself on every use."
+              "Where the coin trades for `venue`: its pump.fun bonding curve until `graduate`, then the",
+              "canonical PumpSwap pool (whose token accounts are read from the pool itself on every use)."
             ],
             "type": "pubkey"
           },
@@ -2591,6 +2751,13 @@
             "name": "creator_sol",
             "docs": [
               "The creator's unclaimed share."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "platform_sol",
+            "docs": [
+              "The platform's share, waiting for `sweep_platform_fees`."
             ],
             "type": "u64"
           },
@@ -2678,6 +2845,10 @@
             "type": "u64"
           },
           {
+            "name": "total_platform_swept",
+            "type": "u64"
+          },
+          {
             "name": "total_treasury_rent",
             "docs": [
               "Rent the treasury paid (out of the floor bucket) for its own accounts in `prepare_treasury`."
@@ -2726,6 +2897,13 @@
             "type": "pubkey"
           },
           {
+            "name": "platform_treasury",
+            "docs": [
+              "Receives the platform share (`sweep_platform_fees`). Default key until the admin sets it."
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "params",
             "type": {
               "defined": {
@@ -2746,7 +2924,7 @@
             "type": {
               "array": [
                 "u8",
-                64
+                32
               ]
             }
           }
@@ -2836,6 +3014,10 @@
           },
           {
             "name": "creator",
+            "type": "u64"
+          },
+          {
+            "name": "platform",
             "type": "u64"
           },
           {
@@ -3118,6 +3300,30 @@
           {
             "name": "paid_bitmap",
             "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlatformFeesSwept",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "platform_treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
           }
         ]
       }

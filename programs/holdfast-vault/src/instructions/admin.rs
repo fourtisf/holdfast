@@ -28,6 +28,7 @@ pub fn initialize(ctx: Context<Initialize>, keeper: Pubkey, launcher: Pubkey, pa
     config.keeper = keeper;
     config.launcher = launcher;
     config.hold_mint = Pubkey::default();
+    config.platform_treasury = Pubkey::default();
     config.params = params;
     config.paused = false;
     config.bump = ctx.bumps.config;
@@ -54,6 +55,13 @@ pub fn set_launcher(ctx: Context<AdminOnly>, launcher: Pubkey) -> Result<()> {
 pub fn set_params(ctx: Context<AdminOnly>, params: Params) -> Result<()> {
     params.validate()?;
     ctx.accounts.config.params = params;
+    Ok(())
+}
+
+/// Where the platform share goes. Moves no funds itself; `sweep_platform_fees` pays only this address.
+pub fn set_platform_treasury(ctx: Context<AdminOnly>, platform_treasury: Pubkey) -> Result<()> {
+    require!(platform_treasury != Pubkey::default(), HoldfastError::PlatformTreasuryNotSet);
+    ctx.accounts.config.platform_treasury = platform_treasury;
     Ok(())
 }
 

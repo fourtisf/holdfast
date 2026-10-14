@@ -504,6 +504,7 @@ class TxRun {
           d.floorSol = add(d.floorSol, e.floor);
           d.holderSol = add(d.holderSol, e.holder);
           d.creatorSol = add(d.creatorSol, e.creator ?? 0n);
+          d.platformSol = add(d.platformSol, e.platform ?? 0n);
           d.burnSol = add(d.burnSol, e.burn);
           d.totalFees = add(d.totalFees, e.amount);
           // Coin tokens swept into the holder pool alongside the SOL fees.
@@ -561,6 +562,12 @@ class TxRun {
           const d = delta(mint);
           d.creatorSol = add(d.creatorSol, -e.amount);
           d.totalCreatorClaimed = add(d.totalCreatorClaimed, e.amount);
+          break;
+        }
+        case "PlatformFeesSwept": {
+          const d = delta(mint);
+          d.platformSol = add(d.platformSol, -e.amount);
+          d.totalPlatformSwept = add(d.totalPlatformSwept, e.amount);
           break;
         }
         case "HoldBurned": {

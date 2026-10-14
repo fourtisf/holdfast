@@ -94,6 +94,8 @@ export interface World {
   db: Db;
   keeper: Keypair;
   launcher: Keypair;
+  /** The config's platform treasury (a funded wallet). */
+  platformTreasury: PublicKey;
   pumpGlobal: PublicKey;
   feeRecipient: PublicKey;
   pump: PumpGateway;
@@ -155,16 +157,19 @@ export async function createWorld(params: Partial<Record<string, number>> = {}):
     min_round_interval_secs: 60,
     ...params,
   };
+  const platformTreasury = Keypair.generate().publicKey;
+  airdrop(platformTreasury, SOL);
   const configData = await coder.accounts.encode("Config", {
     admin: keeper.publicKey,
     pending_admin: PublicKey.default,
     keeper: keeper.publicKey,
     launcher: launcher.publicKey,
     hold_mint: PublicKey.default,
+    platform_treasury: platformTreasury,
     params: configParams,
     paused: false,
     bump: PublicKey.findProgramAddressSync([Buffer.from("config")], HOLDFAST_PROGRAM_ID)[1],
-    reserved: Array(64).fill(0),
+    reserved: Array(32).fill(0),
   });
   setRaw(svm, configPda(), HOLDFAST_PROGRAM_ID, configData);
 
@@ -186,6 +191,7 @@ export async function createWorld(params: Partial<Record<string, number>> = {}):
     db,
     keeper,
     launcher,
+    platformTreasury,
     pumpGlobal,
     feeRecipient,
     pump: null as unknown as PumpGateway,

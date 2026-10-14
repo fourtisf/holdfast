@@ -27,6 +27,7 @@ export async function mirrorVault(db: Db, coin: CoinKeys, v: CoinVaultAccount, s
     floorSol: v.floorSol,
     holderSol: v.holderSol,
     creatorSol: v.creatorSol,
+    platformSol: v.platformSol,
     burnSol: v.burnSol,
     holderTokens: v.holderTokens,
     ath: v.athPrice,
@@ -40,6 +41,7 @@ export async function mirrorVault(db: Db, coin: CoinKeys, v: CoinVaultAccount, s
     totalPaidTokens: v.totalPaidTokens,
     totalBurnedSol: v.totalBurnSol,
     totalCreatorClaimed: v.totalCreatorClaimed,
+    totalPlatformSwept: v.totalPlatformSwept,
     slot,
   });
 }

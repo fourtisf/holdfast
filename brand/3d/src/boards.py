@@ -46,7 +46,7 @@ background:radial-gradient(700px 400px at 34% 50%,{v["glow"]},transparent 70%),l
 .t .wm{{font-size:96px;line-height:1}} .t h2{{font:300 34px SoraL;margin:22px 0 14px;color:#e8e6df}} .t p{{font:300 20px SoraL;color:#8d94a3;margin:0}} .t b{{color:#e9bf62;font-weight:300}}
 </style></head><body><div class="b"><img src="{img(v["hero"])}" width="380">
 <div class="t"><div class="wm" style="{v["wm"]}">MOAT</div><h2>Every coin gets a moat.</h2>
-<p><b>50%</b> floor vault &nbsp;·&nbsp; <b>25%</b> to holders every 2 min &nbsp;·&nbsp; <b>15%</b> creator &nbsp;·&nbsp; <b>10%</b> buyback &amp; burn</p></div></div></body></html>'''
+<p><b>40%</b> floor vault &nbsp;·&nbsp; <b>25%</b> to holders &nbsp;·&nbsp; <b>15%</b> creator &nbsp;·&nbsp; <b>10%</b> treasury &nbsp;·&nbsp; <b>10%</b> burn</p></div></div></body></html>'''
 
 def overview():
     cells = "".join(f'''<div class="cell"><img src="{img(v["hero"])}" width="380"><div class="lk"><img src="{img(v["token"])}" width="70"><span style="{v["wm"]};font-size:46px">MOAT</span></div><div class="nm">{i + 1:02d} · {v["name"]}</div></div>''' for i, v in enumerate(V))

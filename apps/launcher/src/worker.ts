@@ -625,7 +625,7 @@ export class LaunchWorker {
 
   /**
    * The leftover goes back to the sender, unless the sender is an empty account it cannot make
-   * rent-exempt: then it is a donation to the coin's own treasury (booked as fees 50/25/15/10).
+   * rent-exempt: then it is a donation to the coin's own treasury (booked as fees 40/25/15/10/10).
    */
   private leftoverToTreasury(leftover: bigint, senderBalance: bigint, rent: RentFn): boolean {
     return leftover > 0n && senderBalance === 0n && leftover < rent(SYSTEM_ACCOUNT_SIZE);

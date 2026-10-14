@@ -4,9 +4,10 @@
 
 | Invariant | Enforced in | Test |
 |---|---|---|
-| No withdraw: SOL leaves only via `defend` / `payout` / `burn_hold` / `claim_creator_fees` | instruction set (no other transfer out of the treasury); IDL instruction list pinned | `no_withdraw.rs::the_instruction_set_has_no_withdraw`, `admin_and_keeper_powers_cannot_move_funds`, `lamports_are_conserved_across_a_random_lifecycle` |
+| No withdraw: SOL leaves only via `defend` / `payout` / `burn_hold` / `claim_creator_fees` / `sweep_platform_fees` | instruction set (no other transfer out of the treasury); IDL instruction list pinned | `no_withdraw.rs::the_instruction_set_has_no_withdraw`, `admin_and_keeper_powers_cannot_move_funds`, `lamports_are_conserved_across_a_random_lifecycle` |
 | The creator claim moves only `creator_sol`, only to the recorded creator, signed by it | `claim_creator_fees` (`has_one = creator`, post-check), `init_coin` (creator is a wallet, written once) | `creator.rs`, `no_withdraw.rs::the_creator_claim_cannot_reach_the_other_buckets` |
-| Buckets ≤ treasury lamports − rent; fees split exactly 50/25/15/10 | `collect_fees`, post-checks in `defend` / `payout` / `burn_hold` | `coin_and_fees.rs`, conservation test |
+| The platform sweep moves only `platform_sol`, only to the configured platform treasury | `sweep_platform_fees` (`has_one = platform_treasury`, post-check); `set_platform_treasury` (admin, never the default key) | `platform.rs`, `no_withdraw.rs::the_platform_sweep_cannot_reach_the_other_buckets` |
+| Buckets ≤ treasury lamports − rent; fees split exactly 40/25/15/10/10 | `collect_fees`, post-checks in `defend` / `payout` / `burn_hold` | `coin_and_fees.rs`, conservation test |
 | Payout ≤ committed pot ≤ holder bucket; each index paid once | `open_round`, `payout` (bitmap) | `payouts.rs` |
 | Payouts only to regular wallets (system-owned, no data, on-curve) | `treasury::is_regular_wallet` (ed25519 point check via `sol_curve_validate_point`) | `only_regular_wallets_receive_payouts` |
 | `trigger_bps ∈ {15, 25, 35}%`, immutable; `hold_mint` set once | `init_coin`, `set_hold_mint`; no setter exists | `every_trigger_option_and_nothing_else`, `hold_mint_can_be_set_only_once` |

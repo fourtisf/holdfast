@@ -7,6 +7,7 @@ pub mod init_coin;
 pub mod prepare_treasury;
 pub mod price;
 pub mod rounds;
+pub mod sweep_platform_fees;
 
 pub use admin::*;
 pub use burn_hold::*;
@@ -17,3 +18,4 @@ pub use init_coin::*;
 pub use prepare_treasury::*;
 pub use price::*;
 pub use rounds::*;
+pub use sweep_platform_fees::*;

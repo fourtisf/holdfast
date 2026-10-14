@@ -44,6 +44,8 @@ function crankCtx(w: World): CrankContext {
       ammFeeBpsEstimate: 100,
       burnThresholdLamports: 100_000_000n,
       burnEverySecs: 3_600,
+      platformSweepThresholdLamports: 10_000_000n,
+      platformSweepEverySecs: 3_600,
       defendJitterMs: 0,
       burnSlippageBps: 400,
     },
@@ -84,7 +86,7 @@ async function holder(w: World, coin: CoinKeys, amount: bigint, ageMs: number, l
 
 /** Crank every 30s for `secs` (keeper cadence). */
 async function crankFor(w: World, coin: CoinKeys, secs: number) {
-  const memory = { lastCollectAt: 0, lastBurnAt: 0 };
+  const memory = { lastCollectAt: 0, lastBurnAt: 0, lastSweepAt: 0 };
   const config = await loadProgramConfig(w.chain);
   const ctx = crankCtx(w);
   for (let t = 0; t <= secs; t += 40) {
@@ -109,11 +111,14 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     const prepared = w.chain.events.find((e) => e.name === "TreasuryPrepared");
     expect(prepared).toMatchObject({ tokenAccount: true, wsolAccount: true, rentPaid: PREPARE_RENT });
     expect(v.totalTreasuryRent).toBe(PREPARE_RENT);
-    // 50 / 25 / 15 / 10
-    expect(v.floorSol).toBe(5n * SOL - PREPARE_RENT);
+    // 40 / 25 / 15 / 10 / 10, and the keeper already swept the platform's 10% to the treasury
+    expect(v.floorSol).toBe(4n * SOL - PREPARE_RENT);
     expect(v.holderSol).toBe(2_500_000_000n);
     expect(v.creatorSol).toBe(1_500_000_000n);
     expect(v.burnSol).toBe(SOL);
+    expect(v.platformSol + v.totalPlatformSwept).toBe(SOL);
+    expect(v.totalPlatformSwept).toBe(SOL);
+    expect(w.lamports(w.platformTreasury)).toBe(2n * SOL); // airdropped 1 SOL + the sweep
     expect(v.athPrice).toBeGreaterThan(0n);
     expect(v.floorPrice).toBe((v.athPrice * 7_500n) / 10_000n);
 
@@ -123,7 +128,7 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     await crankFor(w, coin, 0);
     v = await vaultOf(w, coin);
     expect(v.defendCount).toBe(1n);
-    const floorBefore = 5n * SOL - PREPARE_RENT;
+    const floorBefore = 4n * SOL - PREPARE_RENT;
     expect(v.floorSol).toBe(floorBefore - floorBefore / 10n);
     expect(v.holderTokens).toBeGreaterThan(0n);
     expect(w.chain.events.some((e) => e.name === "Defended")).toBe(true);

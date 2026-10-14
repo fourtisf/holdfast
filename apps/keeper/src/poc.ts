@@ -226,7 +226,7 @@ async function main() {
         return { creatorVault: vault.toBase58(), sig: await transfer(payer, vault, Math.round(seedFees * LAMPORTS_PER_SOL)) };
       });
     }
-    await step("keeper collects fees into the vault (50 / 25 / 15 / 10)", () =>
+    await step("keeper collects fees into the vault (40 / 25 / 15 / 10 / 10)", () =>
       until(
         "fees in the vault",
         async () => {

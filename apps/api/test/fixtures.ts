@@ -118,6 +118,8 @@ export async function seedMarket(db: Db): Promise<MarketFixture> {
     totalBurnedSol: 0n,
     creatorSol: 300_000_000n,
     totalCreatorClaimed: 50_000_000n,
+    platformSol: 200_000_000n,
+    totalPlatformSwept: 70_000_000n,
     slot: 200,
   });
   await insertFloorPoint(db, mint, { ts: NOW - 2 * DAY, ath: solPerTokenToFixed(2e-7), floor: solPerTokenToFixed(1.5e-7) });

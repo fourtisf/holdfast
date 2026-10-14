@@ -66,7 +66,7 @@ pub fn init_coin(ctx: Context<InitCoin>, trigger_bps: u16, creator: Pubkey) -> R
     vault.mint = ctx.accounts.mint.key();
     vault.creator = creator;
     vault.token_2022 = ctx.accounts.token_program.key() == anchor_spl::token_2022::ID;
-    vault.bonding_curve = ctx.accounts.bonding_curve.key();
+    vault.market = ctx.accounts.bonding_curve.key();
     vault.trigger_bps = trigger_bps;
     vault.venue = VENUE_CURVE;
     vault.bump = ctx.bumps.vault;
@@ -79,7 +79,7 @@ pub fn init_coin(ctx: Context<InitCoin>, trigger_bps: u16, creator: Pubkey) -> R
         treasury: ctx.accounts.treasury.key(),
         creator,
         trigger_bps,
-        bonding_curve: vault.bonding_curve,
+        bonding_curve: vault.market,
         ts: now,
     });
     Ok(())

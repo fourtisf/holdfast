@@ -8,6 +8,7 @@ export function vaultSnapshotFromAccount(mint: string, v: CoinVaultAccount, slot
     floorSol: v.floorSol,
     holderSol: v.holderSol,
     creatorSol: v.creatorSol,
+    platformSol: v.platformSol,
     burnSol: v.burnSol,
     holderTokens: v.holderTokens,
     ath: v.athPrice,
@@ -21,6 +22,7 @@ export function vaultSnapshotFromAccount(mint: string, v: CoinVaultAccount, slot
     totalPaidTokens: v.totalPaidTokens,
     totalBurnedSol: v.totalBurnSol,
     totalCreatorClaimed: v.totalCreatorClaimed,
+    totalPlatformSwept: v.totalPlatformSwept,
     slot,
   };
 }

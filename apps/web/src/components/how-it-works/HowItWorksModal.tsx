@@ -43,8 +43,9 @@ const STEPS: Step[] = [
     title: "Creator fees go to the coin's own vault",
     body: (
       <>
-        Every trade pays a creator fee. On Moatpad it lands in an on-chain vault owned by the coin. Most of it works for the coin: the floor and the holders.
-        The creator earns <b className="text-fg">15%</b>, which only the creator&apos;s wallet can claim; nothing else can be withdrawn.
+        Every trade pays a creator fee. On Moatpad it lands in an on-chain vault owned by the coin, and most of it works for the coin: the floor and the
+        holders. The creator earns <b className="text-fg">15%</b> (only the creator&apos;s wallet can claim it) and the Moatpad treasury{" "}
+        <b className="text-fg">10%</b>. The floor and holder funds can never be withdrawn.
       </>
     ),
     visual: <FeeSplitBar />,

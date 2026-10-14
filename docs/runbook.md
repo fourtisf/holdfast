@@ -4,7 +4,7 @@ How to take Moatpad from a fresh checkout to a mainnet launch, and how to operat
 assume the repository root, a filled-in `.env` (see `.env.example`) and the toolchain from the README.
 
 Nothing in this runbook can move vault funds. The program has no withdraw path besides each coin creator's claim of its
-own 15% share; every admin power is listed in
+own 15% share and the sweep of the platform's 10% to the configured platform treasury; every admin power is listed in
 [program.md](program.md) and pinned by `tests/program/tests/no_withdraw.rs`. The keys below protect *liveness*
 (who can crank, launch, pause, upgrade), not custody. Program upgrades are the exception: an upgrade can change
 everything, which is why the upgrade authority goes to a multisig or is frozen.
@@ -95,11 +95,14 @@ Do not deploy to mainnet without an external audit of `programs/holdfast-vault`.
    ([pump-integration.md §5](pump-integration.md)).
    Decide on the emergency pause ([decisions #15](decisions.md)): it can freeze outflows, so it is only acceptable
    behind the multisig.
-4. **$MOAT.** Launch $MOAT (through Moatpad itself, or on pump.fun), then set it once from the multisig:
+4. **Platform treasury.** Create a Squads vault for Moatpad's revenue, send it ≥ 0.001 SOL (so the first sweep is
+   rent-safe), then propose `pnpm --filter @holdfast/keeper admin -- set-platform-treasury <VAULT> --print --as
+   <SQUADS_VAULT> --rpc $RPC`. Until it is set, each coin's 10% platform share accrues in its vault.
+5. **$MOAT.** Launch $MOAT (through Moatpad itself, or on pump.fun), then set it once from the multisig:
    `pnpm --filter @holdfast/keeper admin -- set-hold-mint <HOLD_MINT> --print --as <SQUADS_VAULT> --rpc $RPC`
    gives the instruction to propose. Until then each coin's burn bucket accrues and nothing is lost.
-5. **Lookup table.** `pnpm --filter @holdfast/launcher alt create` against mainnet; set `LAUNCHER_LOOKUP_TABLE`.
-6. **Services.** Fill `.env` for mainnet: `SOLANA_RPC_URL`, `HELIUS_WEBHOOK_SECRET`, `DEPOSIT_MASTER_SECRET`,
+6. **Lookup table.** `pnpm --filter @holdfast/launcher alt create` against mainnet; set `LAUNCHER_LOOKUP_TABLE`.
+7. **Services.** Fill `.env` for mainnet: `SOLANA_RPC_URL`, `HELIUS_WEBHOOK_SECRET`, `DEPOSIT_MASTER_SECRET`,
    `LAUNCHER_ADDRESS`, `METADATA_STORAGE=pinata` and its keys, `ADMIN_TOKEN`, `REPORT_SALT`,
    `MODERATION_BLOCKLIST_FILE`, `MODERATION_IMAGE_WEBHOOK_URL` with `MODERATION_IMAGE_FAIL_CLOSED=true`,
    `KEEPER_MIN_BALANCE_LAMPORTS`, the alert sinks, `CORS_ORIGIN`, and the web build args (`NEXT_PUBLIC_API_URL`,
@@ -107,11 +110,11 @@ Do not deploy to mainnet without an external audit of `programs/holdfast-vault`.
    `NEXT_PUBLIC_SITE_URL`). Keep `PAYOUT_MAX_FEE_BPS` at its default (200) so rounds never cost more than they pay.
    Register the indexer's webhook URL (`/webhooks/helius`, raw transactions) for the program and the launcher.
    On a single server, [deploy/](../deploy/README.md) sets this up behind Caddy with HTTPS.
-7. **Fund** the keeper and launcher wallets. Run `pnpm --filter @holdfast/launcher cost -- --atomic --ipfs` and
+8. **Fund** the keeper and launcher wallets. Run `pnpm --filter @holdfast/launcher cost -- --atomic --ipfs` and
    check the quote is 0.015 SOL.
-8. **Smoke test on mainnet** with a small real launch from a team wallet: deposit, go live, buy, fees collected,
+9. **Smoke test on mainnet** with a small real launch from a team wallet: deposit, go live, buy, fees collected,
    first payout round, verify page green (`/coin/<mint>/round/<id>`). Only then announce.
-9. **Legal sign-off** on holder revenue sharing (SPEC §7.6, [decisions #22](decisions.md)) before the public launch.
+10. **Legal sign-off** on holder revenue sharing (SPEC §7.6, [decisions #22](decisions.md)) before the public launch.
 
 ## 4. Monitoring
 

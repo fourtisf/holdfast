@@ -54,10 +54,12 @@ pub struct Config {
     pub launcher: Pubkey,
     /// $HOLD mint. Default key until set; immutable afterwards.
     pub hold_mint: Pubkey,
+    /// Receives the platform share (`sweep_platform_fees`). Default key until the admin sets it.
+    pub platform_treasury: Pubkey,
     pub params: Params,
     pub paused: bool,
     pub bump: u8,
-    pub reserved: [u8; 64],
+    pub reserved: [u8; 32],
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq, InitSpace)]
@@ -72,10 +74,9 @@ pub struct CoinVault {
     pub mint: Pubkey,
     /// Claims the creator bucket. Written once in `init_coin`; no instruction updates it.
     pub creator: Pubkey,
-    pub bonding_curve: Pubkey,
-    /// Canonical PumpSwap pool once graduated (default key before). Its token accounts are read from
-    /// the pool itself on every use.
-    pub amm_pool: Pubkey,
+    /// Where the coin trades for `venue`: its pump.fun bonding curve until `graduate`, then the
+    /// canonical PumpSwap pool (whose token accounts are read from the pool itself on every use).
+    pub market: Pubkey,
     /// 1500 / 2500 / 3500. Written once in `init_coin`; no instruction updates it.
     pub trigger_bps: u16,
     /// The mint's token program: Token-2022 (pump.fun `create_v2`) or SPL Token (see `token_program_id`).
@@ -95,6 +96,8 @@ pub struct CoinVault {
     pub holder_sol: u64,
     /// The creator's unclaimed share.
     pub creator_sol: u64,
+    /// The platform's share, waiting for `sweep_platform_fees`.
+    pub platform_sol: u64,
     pub burn_sol: u64,
     /// Bought-back tokens in the treasury token account, waiting for payout rounds.
     pub holder_tokens: u64,
@@ -118,6 +121,7 @@ pub struct CoinVault {
     pub total_paid_tokens: u64,
     pub total_burn_sol: u64,
     pub total_creator_claimed: u64,
+    pub total_platform_swept: u64,
     /// Rent the treasury paid (out of the floor bucket) for its own accounts in `prepare_treasury`.
     pub total_treasury_rent: u64,
     pub created_at: i64,
@@ -131,6 +135,7 @@ impl CoinVault {
         self.floor_sol
             .checked_add(self.holder_sol)
             .and_then(|v| v.checked_add(self.creator_sol))
+            .and_then(|v| v.checked_add(self.platform_sol))
             .and_then(|v| v.checked_add(self.burn_sol))
             .ok_or_else(|| error!(HoldfastError::MathOverflow))
     }

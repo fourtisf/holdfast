@@ -189,10 +189,11 @@ export const holdfastFields = {
   feesCollected: (c: CoinFixture, amount: bigint, ts: number, tokens = 0n) => ({
     mint: pk(c.mint),
     amount: bn(amount),
-    // 50 / 25 / 15 / 10, dust to the floor (as the program does)
-    floor: bn(amount - amount / 4n - (amount * 15n) / 100n - amount / 10n),
+    // 40 / 25 / 15 / 10 / 10, dust to the floor (as the program does)
+    floor: bn(amount - amount / 4n - (amount * 15n) / 100n - amount / 10n - amount / 10n),
     holder: bn(amount / 4n),
     creator: bn((amount * 15n) / 100n),
+    platform: bn(amount / 10n),
     burn: bn(amount / 10n),
     unwrapped_wsol: bn(0),
     tokens: bn(tokens),
@@ -201,6 +202,12 @@ export const holdfastFields = {
   creatorFeesClaimed: (c: CoinFixture, amount: bigint, ts: number, creator = FIXTURE_CREATOR) => ({
     mint: pk(c.mint),
     creator: pk(creator),
+    amount: bn(amount),
+    ts: bn(ts),
+  }),
+  platformFeesSwept: (c: CoinFixture, amount: bigint, ts: number, platformTreasury = FIXTURE_CREATOR) => ({
+    mint: pk(c.mint),
+    platform_treasury: pk(platformTreasury),
     amount: bn(amount),
     ts: bn(ts),
   }),

@@ -36,6 +36,8 @@ export interface CoinVaultAccount {
   holderSol: bigint;
   /** The creator's unclaimed share. */
   creatorSol: bigint;
+  /** The platform's share, waiting for `sweep_platform_fees`. */
+  platformSol: bigint;
   burnSol: bigint;
   holderTokens: bigint;
   lastDefendTs: number;
@@ -54,6 +56,7 @@ export interface CoinVaultAccount {
   totalPaidTokens: bigint;
   totalBurnSol: bigint;
   totalCreatorClaimed: bigint;
+  totalPlatformSwept: bigint;
   /** Rent the treasury paid (from the floor bucket) for its own accounts in `prepare_treasury`. */
   totalTreasuryRent: bigint;
   createdAt: number;
@@ -64,6 +67,8 @@ export interface ConfigAccount {
   keeper: PublicKey;
   launcher: PublicKey;
   holdMint: PublicKey | null;
+  /** Receives the platform share; null until the admin sets it. */
+  platformTreasury: PublicKey | null;
   paused: boolean;
   params: {
     defendCooldownSecs: number;
@@ -118,13 +123,15 @@ export function decodeCoinVault(data: Buffer): CoinVaultAccount {
     triggerBps: num(r.trigger_bps),
     tokenProgram: r.token_2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID,
     venue: num(r.venue) === VENUE_AMM ? "amm" : "curve",
-    bondingCurve: key(r.bonding_curve),
-    ammPool: optKey(r.amm_pool),
+    // one on-chain `market` field: the bonding curve until graduation, then the PumpSwap pool
+    bondingCurve: num(r.venue) === VENUE_AMM ? bondingCurvePda(key(r.mint)) : key(r.market),
+    ammPool: num(r.venue) === VENUE_AMM ? key(r.market) : null,
     athPrice: big(r.ath_price),
     floorPrice: big(r.floor_price),
     floorSol: big(r.floor_sol),
     holderSol: big(r.holder_sol),
     creatorSol: big(r.creator_sol),
+    platformSol: big(r.platform_sol),
     burnSol: big(r.burn_sol),
     holderTokens: big(r.holder_tokens),
     lastDefendTs: num(r.last_defend_ts),
@@ -141,6 +148,7 @@ export function decodeCoinVault(data: Buffer): CoinVaultAccount {
     totalPaidTokens: big(r.total_paid_tokens),
     totalBurnSol: big(r.total_burn_sol),
     totalCreatorClaimed: big(r.total_creator_claimed),
+    totalPlatformSwept: big(r.total_platform_swept),
     totalTreasuryRent: big(r.total_treasury_rent),
     createdAt: num(r.created_at),
   };
@@ -154,6 +162,7 @@ export function decodeConfig(data: Buffer): ConfigAccount {
     keeper: key(r.keeper),
     launcher: key(r.launcher),
     holdMint: optKey(r.hold_mint),
+    platformTreasury: optKey(r.platform_treasury),
     paused: Boolean(r.paused),
     params: {
       defendCooldownSecs: num(p.defend_cooldown_secs),
@@ -200,12 +209,14 @@ export type HoldfastEvent =
       floor: bigint;
       holder: bigint;
       creator: bigint;
+      platform: bigint;
       burn: bigint;
       unwrappedWsol: bigint;
       tokens: bigint;
       ts: number;
     }
   | { name: "CreatorFeesClaimed"; mint: PublicKey; creator: PublicKey; amount: bigint; ts: number }
+  | { name: "PlatformFeesSwept"; mint: PublicKey; platformTreasury: PublicKey; amount: bigint; ts: number }
   | { name: "AthUpdated"; mint: PublicKey; twap: bigint; ath: bigint; floor: bigint; ts: number }
   | { name: "Graduated"; mint: PublicKey; pool: PublicKey; coinCreator: PublicKey; ts: number }
   | { name: "Defended"; mint: PublicKey; solSpent: bigint; tokensBought: bigint; spotPrice: bigint; floorPrice: bigint; venue: number; ts: number }
@@ -337,6 +348,15 @@ export function initCoinIx(coin: CoinKeys, launcher: PublicKey, triggerBps: numb
       systemProgram: SYSTEM_PROGRAM_ID,
     },
     { trigger_bps: triggerBps, creator },
+  );
+}
+
+/** Permissionless: sends the coin's whole platform bucket to `platformTreasury` (must equal the config's). */
+export function sweepPlatformFeesIx(coin: Pick<CoinKeys, "mint" | "vault" | "treasury">, platformTreasury: PublicKey): TransactionInstruction {
+  return buildIx(
+    "sweep_platform_fees",
+    { config: configPda(), vault: coin.vault, treasury: coin.treasury, platformTreasury, systemProgram: SYSTEM_PROGRAM_ID },
+    {},
   );
 }
 
@@ -592,6 +612,8 @@ export const setKeeperIx = (admin: PublicKey, keeper: PublicKey) => buildIx("set
 export const setLauncherIx = (admin: PublicKey, launcher: PublicKey) => buildIx("set_launcher", adminAccounts(admin), { launcher });
 export const setParamsIx = (admin: PublicKey, params: ProgramParams) => buildIx("set_params", adminAccounts(admin), { params: paramsArg(params) });
 export const setPausedIx = (admin: PublicKey, paused: boolean) => buildIx("set_paused", adminAccounts(admin), { paused });
+export const setPlatformTreasuryIx = (admin: PublicKey, platformTreasury: PublicKey) =>
+  buildIx("set_platform_treasury", adminAccounts(admin), { platform_treasury: platformTreasury });
 export const transferAdminIx = (admin: PublicKey, newAdmin: PublicKey) => buildIx("transfer_admin", adminAccounts(admin), { new_admin: newAdmin });
 export const acceptAdminIx = (newAdmin: PublicKey) => buildIx("accept_admin", { newAdmin, config: configPda() }, {});
 export const setHoldMintIx = (admin: PublicKey, holdMint: PublicKey) => buildIx("set_hold_mint", { ...adminAccounts(admin), holdMint }, {});

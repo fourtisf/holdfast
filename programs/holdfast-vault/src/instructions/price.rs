@@ -10,8 +10,7 @@ use crate::venue;
 /// Price accounts of a coin's current venue: the bonding curve, or the PumpSwap pool plus its two
 /// token accounts (checked against the pool's own data in `venue::pool_price`).
 pub fn vault_spot_price(vault: &CoinVault, price_account: &AccountInfo, base: Option<&AccountInfo>, quote: Option<&AccountInfo>) -> Result<u128> {
-    let expected = if vault.venue == VENUE_CURVE { vault.bonding_curve } else { vault.amm_pool };
-    require_keys_eq!(price_account.key(), expected, HoldfastError::WrongPriceAccount);
+    require_keys_eq!(price_account.key(), vault.market, HoldfastError::WrongPriceAccount);
     venue::spot_price(vault.venue, price_account, base, quote)
 }
 
@@ -67,8 +66,8 @@ pub fn update_ath(ctx: Context<UpdateAth>) -> Result<()> {
 pub struct Graduate<'info> {
     #[account(mut, seeds = [VAULT_SEED, vault.mint.as_ref()], bump = vault.bump)]
     pub vault: Box<Account<'info, CoinVault>>,
-    /// CHECK: the coin's bonding curve (stored at init).
-    #[account(address = vault.bonding_curve)]
+    /// CHECK: the coin's bonding curve: `vault.market` while the venue is still the curve (checked below).
+    #[account(address = vault.market)]
     pub bonding_curve: UncheckedAccount<'info>,
     /// CHECK: must be the canonical PumpSwap pool PDA for the mint; validated in the handler.
     pub pool: UncheckedAccount<'info>,
@@ -87,8 +86,8 @@ pub fn graduate(ctx: Context<Graduate>) -> Result<()> {
     require_keys_eq!(pool.quote_mint, WSOL_MINT, HoldfastError::UnsupportedQuote);
 
     vault.venue = VENUE_AMM;
-    vault.amm_pool = ctx.accounts.pool.key();
+    vault.market = ctx.accounts.pool.key();
 
-    emit!(Graduated { mint: vault.mint, pool: vault.amm_pool, coin_creator: pool.coin_creator, ts: Clock::get()?.unix_timestamp });
+    emit!(Graduated { mint: vault.mint, pool: vault.market, coin_creator: pool.coin_creator, ts: Clock::get()?.unix_timestamp });
     Ok(())
 }

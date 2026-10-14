@@ -26,6 +26,9 @@ const opts: PlanOptions = {
   burnThresholdLamports: 100_000_000n,
   burnEverySecs: 3_600,
   holdMintSet: true,
+  platformSweepThresholdLamports: 10_000_000n,
+  platformSweepEverySecs: 3_600,
+  platformTreasurySet: true,
 };
 
 const VTOK = 1_073_000_000_000_000n;
@@ -51,6 +54,7 @@ function state(v: Partial<CoinVaultAccount> = {}, curve: { vsol?: bigint; comple
     floorSol: 6_000_000_000n,
     holderSol: 0n,
     creatorSol: 0n,
+    platformSol: 0n,
     burnSol: 0n,
     holderTokens: 0n,
     lastDefendTs: 0,
@@ -68,6 +72,7 @@ function state(v: Partial<CoinVaultAccount> = {}, curve: { vsol?: bigint; comple
     totalPaidTokens: 0n,
     totalBurnSol: 0n,
     totalCreatorClaimed: 0n,
+    totalPlatformSwept: 0n,
     totalTreasuryRent: 0n,
     createdAt: NOW - 10_000,
     ...v,
@@ -94,7 +99,12 @@ function state(v: Partial<CoinVaultAccount> = {}, curve: { vsol?: bigint; comple
   };
 }
 
-const mem = (over: Partial<{ lastCollectAt: number; lastBurnAt: number }> = {}) => ({ lastCollectAt: NOW, lastBurnAt: NOW, ...over });
+const mem = (over: Partial<{ lastCollectAt: number; lastBurnAt: number; lastSweepAt: number }> = {}) => ({
+  lastCollectAt: NOW,
+  lastBurnAt: NOW,
+  lastSweepAt: NOW,
+  ...over,
+});
 const kinds = (s: CoinChainState, m = mem(), o = opts) => planCrank(s, params, m, NOW, o).map((a) => a.kind);
 
 describe("planCrank", () => {
@@ -157,6 +167,16 @@ describe("planCrank", () => {
     expect(kinds(s, mem({ lastBurnAt: NOW - 60 }))).toEqual([]);
     expect(kinds(s, mem({ lastBurnAt: 0 }), { ...opts, holdMintSet: false })).toEqual([]);
     expect(kinds(state({ lastObservationTs: NOW, burnSol: 50_000_000n }), mem({ lastBurnAt: 0 }))).toEqual([]);
+  });
+
+  it("sweeps the platform share above the threshold, once the treasury is set, at most once per interval", () => {
+    const s = state({ lastObservationTs: NOW, platformSol: 20_000_000n });
+    expect(kinds(s, mem({ lastSweepAt: 0 }))).toEqual(["sweep"]);
+    expect(kinds(s, mem({ lastSweepAt: NOW - 60 }))).toEqual([]);
+    expect(kinds(s, mem({ lastSweepAt: 0 }), { ...opts, platformTreasurySet: false })).toEqual([]);
+    expect(kinds(state({ lastObservationTs: NOW, platformSol: 5_000_000n }), mem({ lastSweepAt: 0 }))).toEqual([]);
+    // no token accounts needed: it is a plain SOL transfer
+    expect(kinds(state({ lastObservationTs: NOW, floorSol: 0n, platformSol: 20_000_000n }, {}, false, BARE), mem({ lastSweepAt: 0 }))).toEqual(["sweep"]);
   });
 });
 

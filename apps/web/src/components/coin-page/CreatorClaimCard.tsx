@@ -77,7 +77,7 @@ export function CreatorClaimCard({ coin }: { coin: CoinDetail }) {
             View transaction <ExternalIcon size={12} />
           </a>
         ) : null}
-        <p className="mt-2 text-[11px] text-faint">Fees reach the vault every couple of minutes. Floor and holder funds stay locked; only this share can be withdrawn.</p>
+        <p className="mt-2 text-[11px] text-faint">Fees reach the vault every couple of minutes. The floor and holder funds stay locked in the vault.</p>
       </div>
     </Card>
   );

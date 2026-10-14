@@ -96,7 +96,7 @@ pub fn defend<'info>(ctx: Context<'_, '_, 'info, 'info, Defend<'info>>, min_toke
         mint,
         user: ctx.accounts.treasury.key(),
         user_token_account: ctx.accounts.treasury_token_account.key(),
-        market: if venue == VENUE_CURVE { vault.bonding_curve } else { vault.amm_pool },
+        market: vault.market,
         user_quote_account: ctx.accounts.treasury_wsol_account.key(),
         pool_base_account,
         pool_quote_account,

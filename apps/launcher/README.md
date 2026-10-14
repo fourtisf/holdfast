@@ -33,7 +33,7 @@ and run `alt sync` after pump.fun SDK upgrades):
 - **The deposit ends at exactly 0 lamports.** No rent reserve has to sit on it and no refund transaction is needed, so a
   typical launch costs **0.015 SOL flat** (see below).
 - A leftover that an emptied sender wallet could not receive (below rent-exempt) goes to the coin's own treasury. There it
-  is booked as fees (50/25/15/10).
+  is booked as fees (40/25/15/10/10).
 - A transaction that would not fit one packet (a URI over ≈ 137 bytes plus a dev buy) uses the split flow right away.
   So does a launch whose atomic attempt was rejected `LAUNCHER_ATOMIC_ATTEMPTS` times, if its deposit covers the split
   flow; otherwise it is refunded.

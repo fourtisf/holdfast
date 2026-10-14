@@ -44,8 +44,8 @@ for _ in range(95):
 
 
 def page(variant):
-    stats = ('<div class="stats"><span><b>50%</b> floor vault</span><i></i><span><b>25%</b> to holders</span><i></i>'
-             '<span><b>15%</b> creator</span><i></i><span><b>10%</b> buy &amp; burn</span></div>') if variant == "full" else ""
+    stats = ('<div class="stats"><span><b>40%</b> floor</span><i></i><span><b>25%</b> holders</span><i></i>'
+             '<span><b>15%</b> creator</span><i></i><span><b>10%</b> treasury</span><i></i><span><b>10%</b> burn</span></div>') if variant == "full" else ""
     top = 118 if variant == "full" else 142
     floor_y = CY + CH / 2 + 22
     return f'''<!doctype html><html><head><style>
