@@ -407,3 +407,66 @@ export function parsePumpEvents(source: PumpEventSource): DecodedPumpEvent[] {
   }
   return out;
 }
+
+// ---- creator changes (pump.fun admin actions that can divert creator fees) ------------------------
+
+export interface CreatorChangeEvent {
+  program: PumpProgram;
+  name: string;
+  mint: string;
+  /** The creator the event sets, when it carries one. */
+  newCreator: string | null;
+}
+
+/** Events through which pump.fun's admins (or migrations) re-point a coin's creator / creator fees. */
+const CREATOR_CHANGE_EVENTS: Record<PumpProgram, Record<string, { mint: string; creator: string | null }>> = {
+  pump: {
+    SetCreatorEvent: { mint: "mint", creator: "creator" },
+    AdminCtoEvent: { mint: "mint", creator: "new_creator" },
+    MigrateBondingCurveCreatorEvent: { mint: "mint", creator: "new_creator" },
+    SetMetaplexCreatorEvent: { mint: "mint", creator: "creator" },
+  },
+  pump_amm: {
+    AdminCtoPoolEvent: { mint: "base_mint", creator: "new_coin_creator" },
+    MigratePoolCoinCreatorEvent: { mint: "base_mint", creator: "new_coin_creator" },
+    SetBondingCurveCoinCreatorEvent: { mint: "base_mint", creator: "coin_creator" },
+    SetMetaplexCoinCreatorEvent: { mint: "base_mint", creator: "coin_creator" },
+  },
+};
+
+function decodeRaw(program: PumpProgram, bytes: Uint8Array): { name: string; data: Raw } | null {
+  try {
+    return coderFor(program).events.decode(Buffer.from(bytes).toString("base64")) as { name: string; data: Raw } | null;
+  } catch {
+    return null;
+  }
+}
+
+/** Creator-change events in a transaction (cpi and log forms, deduplicated). */
+export function creatorChangeEvents(source: PumpEventSource): CreatorChangeEvent[] {
+  const out: CreatorChangeEvent[] = [];
+  const seen = new Set<string>();
+  const consider = (program: PumpProgram, bytes: Uint8Array) => {
+    const id = `${program}:${Buffer.from(bytes).toString("base64")}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    const decoded = decodeRaw(program, bytes);
+    const fields = decoded ? CREATOR_CHANGE_EVENTS[program][decoded.name] : undefined;
+    if (!decoded || !fields) return;
+    out.push({ program, name: decoded.name, mint: key(decoded.data[fields.mint]), newCreator: fields.creator && decoded.data[fields.creator] ? key(decoded.data[fields.creator]) : null });
+  };
+  for (const ix of source.instructions ?? []) {
+    const program = pumpProgramOf(ix.programId);
+    if (program && startsWith(ix.data, EVENT_IX_TAG_LE)) consider(program, ix.data.subarray(EVENT_IX_TAG_LE.length));
+  }
+  for (const log of programDataLogs(source.logMessages ?? [])) {
+    const program = pumpProgramOf(log.programId);
+    if (!program) continue;
+    try {
+      consider(program, Buffer.from(log.data, "base64"));
+    } catch {
+      // not base64
+    }
+  }
+  return out;
+}

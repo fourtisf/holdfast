@@ -3,6 +3,8 @@ import { classifyMovements, fixedToSolPerToken, tradePrice, type OwnerMovement, 
 import {
   ammSpotAfter,
   canonicalPoolPda,
+  creatorChangeEvents,
+  type CreatorChangeEvent,
   curveSpotAfter,
   parsePumpEvents,
   postCompleteSpotAfter,
@@ -73,6 +75,11 @@ export interface ProcessDeps {
   isRegularWallet?: (address: string) => boolean;
   /** Extra addresses excluded for every coin (launcher hot wallet, ...). */
   globalExclusions?: readonly ExcludedWallet[];
+  /**
+   * A pump.fun admin action re-pointed the creator (fees) of one of our coins. `toTreasury` is true
+   * when the new creator is still the coin's treasury (harmless).
+   */
+  onCreatorChange?: (e: CreatorChangeEvent & { sig: string; treasury: string; toTreasury: boolean }) => void | Promise<void>;
 }
 
 export type ProcessResult =
@@ -163,8 +170,22 @@ export async function processTransaction(tx: ParsedTx, deps: ProcessDeps): Promi
   }
   for (const e of holdfast) candidateMints.add(e.mint.toBase58());
 
+  const changes = creatorChangeEvents({ logMessages: tx.logMessages, instructions: invokedInstructions(tx) });
+  for (const c of changes) candidateMints.add(c.mint);
+
   const coins = await getCoins(db, [...candidateMints]);
   if (pools.size) for (const c of await findCoinsByVenue(db, [...pools])) coins.set(c.mint, c);
+  if (deps.onCreatorChange) {
+    for (const c of changes) {
+      const coin = coins.get(c.mint);
+      if (!coin) continue;
+      try {
+        await deps.onCreatorChange({ ...c, sig: tx.signature, treasury: coin.treasury, toTreasury: c.newCreator === coin.treasury });
+      } catch (err) {
+        log.warn({ err, mint: c.mint }, "creator change hook failed");
+      }
+    }
+  }
   const registering = holdfast.filter((e) => e.name === "CoinInitialized" && !coins.has(e.mint.toBase58()));
   if (coins.size === 0 && registering.length === 0) {
     await markProcessed(db, tx.signature, tx.slot);

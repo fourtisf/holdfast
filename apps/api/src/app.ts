@@ -6,6 +6,7 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import { ZodError } from "zod";
+import { Metrics } from "@holdfast/ops";
 import type { Db } from "@holdfast/db";
 import type { ApiConfig } from "./config.js";
 import type { ApiContext } from "./context.js";
@@ -89,6 +90,17 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   mkdirSync(deps.config.metadataDir, { recursive: true });
   await app.register(fastifyStatic, { root: deps.config.metadataDir, prefix: "/metadata/", decorateReply: false, maxAge: "365d", immutable: true });
   await app.register(websocket, { options: { maxPayload: 4096 } });
+
+  // Prometheus: requests by route template and status class.
+  const metrics = new Metrics();
+  const requests = metrics.counter("api_requests_total", "HTTP requests by route and status class");
+  const latency = metrics.counter("api_request_seconds_total", "Summed request handling time by route");
+  app.addHook("onResponse", async (req, reply) => {
+    const route = req.routeOptions.url ?? "unmatched";
+    requests.inc({ route, status: `${Math.floor(reply.statusCode / 100)}xx` });
+    latency.inc({ route }, reply.elapsedTime / 1000);
+  });
+  app.get("/metrics", async (_req, reply) => reply.type("text/plain; version=0.0.4; charset=utf-8").send(metrics.render()));
 
   app.get("/healthz", async () => {
     await deps.db.query("SELECT 1");

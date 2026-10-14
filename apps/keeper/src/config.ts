@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Keypair } from "@solana/web3.js";
 import { RENT_EXEMPT_MIN_LAMPORTS } from "@holdfast/core";
 
@@ -93,6 +94,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
 }
 
 export function loadKeypair(path: string): Keypair {
-  const bytes = JSON.parse(readFileSync(path, "utf8")) as number[];
+  // Relative to where `pnpm … start` ran (INIT_CWD, normally the repo root), like the other services.
+  const bytes = JSON.parse(readFileSync(resolve(process.env.INIT_CWD ?? process.cwd(), path), "utf8")) as number[];
   return Keypair.fromSecretKey(Uint8Array.from(bytes));
 }

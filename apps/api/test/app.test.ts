@@ -40,3 +40,17 @@ describe("cross-cutting", () => {
     expect(c).toMatchObject({ port: 4100, corsOrigin: "*", publicMetadataBaseUrl: "https://cdn.example/meta" });
   });
 });
+
+describe("GET /metrics", () => {
+  it("counts requests by route template and status class", async () => {
+    const db = await freshDb();
+    const api = await makeApi(db);
+    await api.app.inject({ method: "GET", url: "/healthz" });
+    await api.app.inject({ method: "GET", url: "/coins/not-a-mint" });
+    const text = (await api.app.inject({ method: "GET", url: "/metrics" })).body;
+    expect(text).toContain('holdfast_api_requests_total{route="/healthz",status="2xx"} 1');
+    expect(text).toContain('holdfast_api_requests_total{route="/coins/:mint",status="4xx"} 1');
+    await api.app.close();
+    await db.close();
+  });
+});

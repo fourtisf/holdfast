@@ -10,6 +10,10 @@ export interface WebhookServerOptions {
   process: (tx: ParsedTx) => Promise<ProcessResult>;
   logger?: FastifyBaseLogger | boolean;
   bodyLimit?: number;
+  /** Prometheus text for GET /metrics. */
+  metrics?: () => string;
+  /** GET /healthz (503 when not ok). */
+  health?: () => Promise<{ ok: boolean; [k: string]: unknown }>;
 }
 
 function sameSecret(given: string | undefined, expected: string): boolean {
@@ -29,7 +33,14 @@ export function buildWebhookServer(opts: WebhookServerOptions): FastifyInstance 
     bodyLimit: opts.bodyLimit ?? 20 * 1024 * 1024,
   });
 
-  app.get("/healthz", async () => ({ ok: true }));
+  app.get("/healthz", async (_req, reply) => {
+    const h = opts.health ? await opts.health().catch((err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : String(err) })) : { ok: true };
+    return reply.code(h.ok ? 200 : 503).send(h);
+  });
+  if (opts.metrics) {
+    const render = opts.metrics;
+    app.get("/metrics", async (_req, reply) => reply.type("text/plain; version=0.0.4; charset=utf-8").send(render()));
+  }
 
   app.post("/webhooks/helius", async (req, reply) => {
     if (!opts.secret || !sameSecret(req.headers.authorization, opts.secret)) {

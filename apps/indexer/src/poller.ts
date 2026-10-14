@@ -43,6 +43,8 @@ export interface PollerOptions {
   maxPages?: number;
   /** Transactions fetched in parallel (processing itself is sequential, in chain order). */
   fetchConcurrency?: number;
+  /** Called after every completed tick (health / metrics). */
+  onTick?: (r: TickResult) => void;
 }
 
 export interface TickResult {
@@ -167,6 +169,7 @@ export class Poller {
       if (this.stopped) return;
       this.running = this.tick()
         .then((r) => {
+          this.opts.onTick?.(r);
           if (r.processed || r.failed) this.opts.log.info(r, "poll tick");
         })
         .catch((err) => this.opts.log.error({ err }, "poll tick failed"));

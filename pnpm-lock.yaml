@@ -47,6 +47,9 @@ importers:
       '@holdfast/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@holdfast/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
       '@pump-fun/pump-sdk':
         specifier: 4.1.0
         version: 4.1.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
@@ -102,6 +105,9 @@ importers:
       '@holdfast/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@holdfast/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
       '@solana/web3.js':
         specifier: ^1.98.4
         version: 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
@@ -145,6 +151,9 @@ importers:
       '@holdfast/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@holdfast/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
       '@pump-fun/pump-sdk':
         specifier: 4.1.0
         version: 4.1.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
@@ -197,6 +206,9 @@ importers:
       '@holdfast/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@holdfast/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
       '@pump-fun/pump-sdk':
         specifier: 4.1.0
         version: 4.1.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
@@ -376,6 +388,18 @@ importers:
       tsx:
         specifier: ^4.20.6
         version: 4.23.15
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.30.2)(terser@5.51.2)(tsx@4.23.15)
+
+  packages/ops:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.5
+        version: 22.20.5
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

@@ -40,6 +40,11 @@ export interface CrankResult {
   actions: CrankAction["kind"][];
   sent: { action: CrankAction["kind"]; sig: string }[];
   errors: { action: CrankAction["kind"]; error: string }[];
+  /**
+   * False when pump.fun no longer pays this coin's creator fees to its treasury (an admin
+   * `set_creator` / CTO / fee-sharing change): the vault would stop receiving fees. Null if unknown.
+   */
+  creatorOk: boolean | null;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -52,9 +57,10 @@ export async function loadProgramConfig(chain: KeeperChain): Promise<ConfigAccou
 
 /** One crank pass over a coin: read state, plan, execute each action independently. */
 export async function crankCoin(ctx: CrankContext, coin: CoinKeys, config: ConfigAccount, memory: CrankMemory): Promise<CrankResult> {
-  const result: CrankResult = { actions: [], sent: [], errors: [] };
+  const result: CrankResult = { actions: [], sent: [], errors: [], creatorOk: null };
   const state = await loadCoinState(ctx.chain, coin);
   if (!state) return result;
+  result.creatorOk = state.vault.venue === "amm" && state.pool ? state.pool.coinCreator.equals(coin.treasury) : state.curve.creator.equals(coin.treasury);
   const nowSec = Math.floor(ctx.chain.nowMs() / 1000);
   const actions = planCrank(state, config.params, memory, nowSec, { ...ctx.options, holdMintSet: config.holdMint !== null });
   result.actions = actions.map((a) => a.kind);

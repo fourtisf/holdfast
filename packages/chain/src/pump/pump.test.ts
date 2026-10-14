@@ -181,3 +181,25 @@ describe("PumpSwap prices", () => {
     expect(tradeAmounts(sell)).toMatchObject({ isBuy: false, sol: 400_000n, tokens: 1_000_000_000n });
   });
 });
+
+describe("creator change events", () => {
+  it("finds pump.fun admin events that re-point a coin's creator fees", async () => {
+    const { creatorChangeEvents, encodePumpEvent, emitCpiData, programDataLog, PUMP_PROGRAM_ID, PUMP_AMM_PROGRAM_ID } = await import("../index.js");
+    const mint = "So11111111111111111111111111111111111111112";
+    const creator = "11111111111111111111111111111112";
+    const cto = encodePumpEvent("pump", "AdminCtoEvent", { mint, new_creator: creator, timestamp: 1 });
+    const pool = encodePumpEvent("pump_amm", "AdminCtoPoolEvent", { base_mint: mint, new_coin_creator: creator, timestamp: 2 });
+    const trade = encodePumpEvent("pump", "TradeEvent", { mint, timestamp: 3 });
+    const found = creatorChangeEvents({
+      instructions: [
+        { programId: PUMP_PROGRAM_ID.toBase58(), data: emitCpiData(cto), outerIndex: 0 },
+        { programId: PUMP_PROGRAM_ID.toBase58(), data: emitCpiData(trade), outerIndex: 0 },
+      ],
+      logMessages: [`Program ${PUMP_AMM_PROGRAM_ID.toBase58()} invoke [1]`, programDataLog(pool), `Program ${PUMP_AMM_PROGRAM_ID.toBase58()} success`, programDataLog(cto)],
+    });
+    expect(found).toEqual([
+      { program: "pump", name: "AdminCtoEvent", mint, newCreator: creator },
+      { program: "pump_amm", name: "AdminCtoPoolEvent", mint, newCreator: creator },
+    ]);
+  });
+});

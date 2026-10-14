@@ -44,10 +44,18 @@ export interface ApiConfig {
   moderation: ModerationConfig;
 }
 
+/**
+ * Relative paths in .env are relative to where the services are started from: pnpm's INIT_CWD (the
+ * directory `pnpm --filter … start` ran in, normally the repo root), else the process cwd.
+ */
+export function resolveFromLaunchDir(path: string, env: NodeJS.ProcessEnv = process.env): string {
+  return resolve(env.INIT_CWD ?? process.cwd(), path);
+}
+
 /** MODERATION_BLOCKLIST_FILE adds terms to the built-in list (one per line, # comments). */
 export function moderationListsFromEnv(env: NodeJS.ProcessEnv, read: (path: string) => string = (p) => readFileSync(p, "utf8")): ModerationLists {
   const file = env.MODERATION_BLOCKLIST_FILE;
-  return file ? withExtraBlocked(DEFAULT_MODERATION_LISTS, parseBlocklist(read(resolve(file)))) : DEFAULT_MODERATION_LISTS;
+  return file ? withExtraBlocked(DEFAULT_MODERATION_LISTS, parseBlocklist(read(resolveFromLaunchDir(file, env)))) : DEFAULT_MODERATION_LISTS;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -59,7 +67,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     host: env.API_HOST ?? "0.0.0.0",
     rpcUrl: env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com",
     corsOrigin: env.CORS_ORIGIN ?? "http://localhost:3000",
-    metadataDir: resolve(env.METADATA_STORE ?? "./data/metadata"),
+    metadataDir: resolveFromLaunchDir(env.METADATA_STORE ?? "./data/metadata", env),
     publicMetadataBaseUrl,
     rateLimitPerMinute: Number(env.API_RATE_LIMIT_PER_MINUTE ?? 600),
     statsIntervalMs: Number(env.API_STATS_INTERVAL_MS ?? 10_000),

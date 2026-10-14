@@ -399,6 +399,26 @@ describe("vault activity", () => {
   });
 });
 
+describe("pump.fun admin creator changes", () => {
+  it("reports a creator change of a Holdfast coin to the hook (and flags a harmless one)", async () => {
+    await db.close();
+    const seen: { name: string; mint: string; toTreasury: boolean }[] = [];
+    h = await harness({ onCreatorChange: (e) => void seen.push({ name: e.name, mint: e.mint, toTreasury: e.toTreasury }) });
+    db = h.db;
+    const c = coinFixture();
+    await h.run(launchTx(c, { launcher: wallet(), depositor: wallet(), slot: 100, ts: T0, devBuy: 1n }));
+    const thief = wallet();
+    await h.run(new TxBuilder(200, T0 + 60, wallet()).pumpEvents([{ name: "AdminCtoEvent", fields: { mint: c.mint, new_creator: thief, timestamp: T0 + 60 } }]).build());
+    await h.run(new TxBuilder(201, T0 + 61, wallet()).pumpEvents([{ name: "SetCreatorEvent", fields: { mint: c.mint, creator: c.treasury, timestamp: T0 + 61 } }]).build());
+    // other coins' admin events are none of our business
+    await h.run(new TxBuilder(202, T0 + 62, wallet()).pumpEvents([{ name: "AdminCtoEvent", fields: { mint: wallet(), new_creator: thief, timestamp: T0 + 62 } }]).build());
+    expect(seen).toEqual([
+      { name: "AdminCtoEvent", mint: c.mint, toTreasury: false },
+      { name: "SetCreatorEvent", mint: c.mint, toTreasury: true },
+    ]);
+  });
+});
+
 describe("graduation and PumpSwap", () => {
   it("migration marks the coin graduated; pool trades are indexed as pumpswap", async () => {
     const a = wallet();

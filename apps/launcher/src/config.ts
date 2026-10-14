@@ -32,9 +32,14 @@ function int(name: string, v: string | undefined, fallback: number, min = 0): nu
   return n;
 }
 
+/** Relative .env paths resolve against pnpm's INIT_CWD (where `pnpm … start` ran), else the cwd. */
+export function resolveFromLaunchDir(path: string, env: NodeJS.ProcessEnv = process.env): string {
+  return resolve(env.INIT_CWD ?? process.cwd(), path);
+}
+
 /** Solana CLI keypair: a JSON array of 64 numbers, inline or in a file. */
 export function loadKeypair(source: string, read: (path: string) => string = (p) => readFileSync(p, "utf8")): Keypair {
-  const text = source.trim().startsWith("[") ? source : read(resolve(source));
+  const text = source.trim().startsWith("[") ? source : read(resolveFromLaunchDir(source));
   let bytes: unknown;
   try {
     bytes = JSON.parse(text);
@@ -76,12 +81,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read?: (path: s
     ...DEFAULT_SETTINGS,
     masterSecret: parseMasterSecret(env.DEPOSIT_MASTER_SECRET),
     launcher: loadKeypair(env.LAUNCHER_KEYPAIR, read),
-    metadata: { storeDir: resolve(store), publicBaseUrl, siteUrl },
+    metadata: { storeDir: resolveFromLaunchDir(store, env), publicBaseUrl, siteUrl },
     metadataLocation: plan.metadata,
     lookupTable,
     atomicAttempts: int("LAUNCHER_ATOMIC_ATTEMPTS", env.LAUNCHER_ATOMIC_ATTEMPTS, DEFAULT_SETTINGS.atomicAttempts),
     moderation: env.MODERATION_BLOCKLIST_FILE
-      ? withExtraBlocked(DEFAULT_MODERATION_LISTS, parseBlocklist((read ?? ((p: string) => readFileSync(p, "utf8")))(resolve(env.MODERATION_BLOCKLIST_FILE))))
+      ? withExtraBlocked(DEFAULT_MODERATION_LISTS, parseBlocklist((read ?? ((p: string) => readFileSync(p, "utf8")))(resolveFromLaunchDir(env.MODERATION_BLOCKLIST_FILE, env))))
       : DEFAULT_MODERATION_LISTS,
     priority: plan.priority,
     devBuySlippageBps: plan.devBuySlippageBps,
