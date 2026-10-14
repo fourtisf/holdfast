@@ -51,8 +51,10 @@ function Field({
   children,
   htmlFor,
   aside,
+  optional = false,
 }: {
   label: string;
+  optional?: boolean;
   hint?: ReactNode;
   error?: string;
   children: ReactNode;
@@ -64,6 +66,7 @@ function Field({
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <label htmlFor={htmlFor} className="text-sm font-semibold text-fg">
           {label}
+          {optional ? <span className="ml-1.5 text-xs font-normal text-faint">optional</span> : null}
         </label>
         {aside}
       </div>
@@ -212,6 +215,7 @@ export function CreateView() {
             </div>
             <Field
               label="Description"
+              optional
               htmlFor="description"
               error={shown.description}
               aside={
@@ -230,7 +234,7 @@ export function CreateView() {
                 className={cn(inputClass, "h-auto resize-none py-2.5", border("description"))}
               />
             </Field>
-            <Field label="Image">
+            <Field label="Image" optional>
               <ImageDrop
                 onUploaded={(url, localPreview) => {
                   set("imageUrl", url);
@@ -247,7 +251,7 @@ export function CreateView() {
                   ["website", "Website", "yourcoin.fun", <GlobeIcon key="w" size={14} />],
                 ] as const
               ).map(([key, label, placeholder, icon]) => (
-                <Field key={key} label={label} htmlFor={key} error={shown[key]}>
+                <Field key={key} label={label} optional htmlFor={key} error={shown[key]}>
                   <div className="relative">
                     <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-faint">{icon}</span>
                     <input
