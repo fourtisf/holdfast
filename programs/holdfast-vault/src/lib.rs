@@ -66,6 +66,10 @@ pub mod holdfast_vault {
         collect_fees::collect_fees(ctx)
     }
 
+    pub fn prepare_treasury(ctx: Context<PrepareTreasury>) -> Result<()> {
+        prepare_treasury::prepare_treasury(ctx)
+    }
+
     pub fn update_ath(ctx: Context<UpdateAth>) -> Result<()> {
         price::update_ath(ctx)
     }

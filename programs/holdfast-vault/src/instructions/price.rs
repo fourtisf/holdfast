@@ -8,16 +8,10 @@ use crate::state::{CoinVault, Config, Observation};
 use crate::venue;
 
 /// Price accounts of a coin's current venue: the bonding curve, or the PumpSwap pool plus its two
-/// token accounts.
+/// token accounts (checked against the pool's own data in `venue::pool_price`).
 pub fn vault_spot_price(vault: &CoinVault, price_account: &AccountInfo, base: Option<&AccountInfo>, quote: Option<&AccountInfo>) -> Result<u128> {
-    match vault.venue {
-        VENUE_CURVE => require_keys_eq!(price_account.key(), vault.bonding_curve, HoldfastError::WrongPriceAccount),
-        _ => {
-            require_keys_eq!(price_account.key(), vault.amm_pool, HoldfastError::WrongPriceAccount);
-            let ok = base.map(|a| a.key()) == Some(vault.amm_pool_base_account) && quote.map(|a| a.key()) == Some(vault.amm_pool_quote_account);
-            require!(ok, HoldfastError::WrongPriceAccount);
-        }
-    }
+    let expected = if vault.venue == VENUE_CURVE { vault.bonding_curve } else { vault.amm_pool };
+    require_keys_eq!(price_account.key(), expected, HoldfastError::WrongPriceAccount);
     venue::spot_price(vault.venue, price_account, base, quote)
 }
 
@@ -94,8 +88,6 @@ pub fn graduate(ctx: Context<Graduate>) -> Result<()> {
 
     vault.venue = VENUE_AMM;
     vault.amm_pool = ctx.accounts.pool.key();
-    vault.amm_pool_base_account = pool.pool_base_token_account;
-    vault.amm_pool_quote_account = pool.pool_quote_token_account;
 
     emit!(Graduated { mint: vault.mint, pool: vault.amm_pool, coin_creator: pool.coin_creator, ts: Clock::get()?.unix_timestamp });
     Ok(())

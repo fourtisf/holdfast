@@ -556,12 +556,7 @@ export class FakeChain implements LaunchChain {
         debit(acc.launcher!, reserve - treasury);
         credit(acc.treasury!, reserve - treasury);
       }
-      if (!get(acc.treasury_token_account!)?.token) {
-        create(acc.treasury_token_account!, TOKEN_2022_ATA_SIZE, TOKEN_2022_PROGRAM_ID, acc.launcher!, { mint: mint.toBase58(), owner: acc.treasury!.toBase58(), amount: 0n });
-      }
-      if (!get(acc.treasury_wsol_account!)?.token) {
-        create(acc.treasury_wsol_account!, SPL_TOKEN_ACCOUNT_SIZE, TOKEN_PROGRAM_ID, acc.launcher!, { mint: WSOL_MINT.toBase58(), owner: acc.treasury!.toBase58(), amount: 0n });
-      }
+      // The treasury's token accounts and volume accumulators come later (prepare_treasury).
       return;
     }
 

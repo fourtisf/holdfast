@@ -175,6 +175,14 @@ export const holdfastFields = {
     bonding_curve: pk(c.bondingCurve),
     ts: bn(ts),
   }),
+  treasuryPrepared: (c: CoinFixture, rentPaid: bigint, ts: number) => ({
+    mint: pk(c.mint),
+    rent_paid: bn(rentPaid),
+    token_account: true,
+    wsol_account: true,
+    volume_accumulator_program: pk("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"),
+    ts: bn(ts),
+  }),
   feesCollected: (c: CoinFixture, amount: bigint, ts: number, tokens = 0n) => ({
     mint: pk(c.mint),
     amount: bn(amount),

@@ -1,8 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::Token;
-use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
+use anchor_spl::token_interface::{Mint, TokenInterface};
 
 use crate::constants::*;
 use crate::errors::HoldfastError;
@@ -12,7 +10,9 @@ use crate::treasury::rent_exempt_minimum;
 use crate::venue::read_curve;
 
 /// Registers a pump.fun coin whose creator is this program's treasury PDA. Runs right after
-/// pump.fun `create_v2(creator = treasury)` in the launch flow.
+/// pump.fun `create_v2(creator = treasury)` in the launch flow. Only the vault and the treasury's
+/// rent reserve are paid here; the treasury's token accounts and pump volume accumulators are created
+/// later by `prepare_treasury`, out of the coin's own fees.
 #[derive(Accounts)]
 pub struct InitCoin<'info> {
     #[account(mut)]
@@ -28,27 +28,7 @@ pub struct InitCoin<'info> {
     /// CHECK: pump.fun bonding curve PDA of `mint`; contents validated in the handler.
     #[account(seeds = [b"bonding-curve", mint.key().as_ref()], bump, seeds::program = PUMP_PROGRAM_ID)]
     pub bonding_curve: UncheckedAccount<'info>,
-    #[account(
-        init_if_needed,
-        payer = launcher,
-        associated_token::mint = mint,
-        associated_token::authority = treasury,
-        associated_token::token_program = token_program,
-    )]
-    pub treasury_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(
-        init_if_needed,
-        payer = launcher,
-        associated_token::mint = wsol_mint,
-        associated_token::authority = treasury,
-        associated_token::token_program = wsol_token_program,
-    )]
-    pub treasury_wsol_account: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(address = WSOL_MINT)]
-    pub wsol_mint: Box<InterfaceAccount<'info, Mint>>,
     pub token_program: Interface<'info, TokenInterface>,
-    pub wsol_token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 

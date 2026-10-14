@@ -3,6 +3,7 @@ pub mod burn_hold;
 pub mod collect_fees;
 pub mod defend;
 pub mod init_coin;
+pub mod prepare_treasury;
 pub mod price;
 pub mod rounds;
 
@@ -11,5 +12,6 @@ pub use burn_hold::*;
 pub use collect_fees::*;
 pub use defend::*;
 pub use init_coin::*;
+pub use prepare_treasury::*;
 pub use price::*;
 pub use rounds::*;

@@ -84,4 +84,8 @@ pub enum HoldfastError {
     MathOverflow,
     #[msg("only the pending admin can accept")]
     NotPendingAdmin,
+    #[msg("treasury account missing: run prepare_treasury first")]
+    TreasuryAccountMissing,
+    #[msg("wrong pump volume accumulator accounts")]
+    InvalidVolumeAccounts,
 }

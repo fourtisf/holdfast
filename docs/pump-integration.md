@@ -71,7 +71,8 @@ How the vault uses them (`programs/holdfast-vault/src/venue.rs`, `swap.rs`):
 - PumpSwap buys need WSOL. The program wraps exactly the budget into the treasury's WSOL account (`sync_native`), then
   unwraps any change afterwards (close + re-create).
 - `init_user_volume_accumulator` (payer ≠ user, user is not a signer) pre-creates the treasury's accumulators, so buybacks
-  never pay rent. The launcher creates the curve one and the keeper creates the AMM one at graduation.
+  never pay rent inside the swap. The vault's own `prepare_treasury` calls it (payer = treasury, signed by the program,
+  rent from the floor bucket) for the curve before the first buyback and for PumpSwap after graduation.
 
 ## 4. Reading prices straight from reserves
 
@@ -101,7 +102,8 @@ are tested.
 
 1. Deploy `holdfast_vault` to devnet and run `initialize` from the upgrade authority.
 2. `create_v2` with `creator = treasuryPda(mint)`. Read the bonding curve and confirm `creator` at offset 49.
-3. `init_coin` and `init_user_volume_accumulator(user = treasury)`.
+3. `init_coin`. Then, once fees are collected, `prepare_treasury` with the pump volume accounts: confirm the CPI
+   into `init_user_volume_accumulator` with the treasury PDA as payer succeeds.
 4. Trade a few times from another wallet. Then `sweep_creator_fee` + `collect_creator_fee_v2` + `collect_fees`, and
    confirm the 60/30/10 buckets equal the claimed lamports.
 5. Push the price below a manual floor (set short TWAP params) and run `defend` against the **real** pump program.

@@ -138,9 +138,8 @@ export function computeLaunchCost(rent: RentFn, opts: LaunchCostOptions = {}): L
     account("pump_curve_token_account", "pump.fun curve token account (Token-2022 ATA)", TOKEN_2022_ATA_SIZE),
     account("holdfast_vault", "Holdfast CoinVault", COIN_VAULT_SIZE),
     account("treasury_rent", "Holdfast treasury PDA rent-exempt reserve", SYSTEM_ACCOUNT_SIZE),
-    account("treasury_token_account", "treasury token account (Token-2022 ATA)", TOKEN_2022_ATA_SIZE),
-    account("treasury_wsol_account", "treasury WSOL account (SPL Token ATA)", SPL_TOKEN_ACCOUNT_SIZE),
-    account("treasury_volume_accumulator", "pump.fun UserVolumeAccumulator of the treasury", PUMP_USER_VOLUME_ACCUMULATOR_SIZE),
+    // The treasury's token / WSOL accounts and pump volume accumulators are not part of a launch: the
+    // vault program's `prepare_treasury` creates them later, paid from the coin's own floor bucket.
     { key: "fee_create", label: "tx A fee (2 signatures + priority)", lamports: txFee("create", priority) },
     { key: "fee_init", label: "tx B fee (2 signatures + priority)", lamports: txFee("init", priority) },
     { key: "fee_refund", label: "refund tx fee (1 signature + priority)", lamports: txFee("refund", priority) },
@@ -176,24 +175,24 @@ export function computeLaunchCost(rent: RentFn, opts: LaunchCostOptions = {}): L
   };
 }
 
-/** Holdfast-side rent the launcher pays in tx B and is reimbursed for by the deposit in the same tx. */
+/** Holdfast-side rent the launcher pays in `init_coin` and is reimbursed for by the deposit in the same tx. */
 export interface InitRentInput {
   treasuryLamports: bigint;
-  treasuryTokenAccountExists: boolean;
-  treasuryWsolAccountExists: boolean;
-  treasuryAccumulatorExists: boolean;
 }
 
 export function initReimbursement(rent: RentFn, s: InitRentInput): { lamports: bigint; items: CostItem[] } {
   const items: CostItem[] = [{ key: "holdfast_vault", label: "CoinVault", bytes: COIN_VAULT_SIZE, lamports: rent(COIN_VAULT_SIZE) }];
   const reserve = rent(SYSTEM_ACCOUNT_SIZE);
   if (s.treasuryLamports < reserve) items.push({ key: "treasury_rent", label: "treasury rent-exempt top-up", lamports: reserve - s.treasuryLamports });
-  if (!s.treasuryTokenAccountExists) items.push({ key: "treasury_token_account", label: "treasury token account", bytes: TOKEN_2022_ATA_SIZE, lamports: rent(TOKEN_2022_ATA_SIZE) });
-  if (!s.treasuryWsolAccountExists) items.push({ key: "treasury_wsol_account", label: "treasury WSOL account", bytes: SPL_TOKEN_ACCOUNT_SIZE, lamports: rent(SPL_TOKEN_ACCOUNT_SIZE) });
-  if (!s.treasuryAccumulatorExists) {
-    items.push({ key: "treasury_volume_accumulator", label: "treasury volume accumulator", bytes: PUMP_USER_VOLUME_ACCUMULATOR_SIZE, lamports: rent(PUMP_USER_VOLUME_ACCUMULATOR_SIZE) });
-  }
   return { lamports: sum(items), items };
+}
+
+/**
+ * Rent `prepare_treasury` takes from a coin's floor bucket once the coin earns fees: the treasury's
+ * token account, WSOL account and pump.fun volume accumulator (and later PumpSwap's).
+ */
+export function treasuryPrepareCost(rent: RentFn): bigint {
+  return rent(TOKEN_2022_ATA_SIZE) + rent(SPL_TOKEN_ACCOUNT_SIZE) + rent(PUMP_USER_VOLUME_ACCUMULATOR_SIZE);
 }
 
 export const formatSol = (lamports: bigint): string => {

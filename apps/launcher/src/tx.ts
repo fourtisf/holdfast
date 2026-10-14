@@ -4,9 +4,10 @@
  * A  create:  compute budget + pump.fun `create_v2(name, symbol, uri, creator = treasury PDA,
  *             is_mayhem_mode = false)`; fee payer and `user` = deposit; signers: deposit, mint.
  * B  init:    compute budget + System transfer deposit → launcher (rent reimbursement) + Holdfast
- *             `init_coin(trigger_bps)` (payer: launcher) + pump `init_user_volume_accumulator`
- *             (payer: launcher, user: treasury); fee payer = deposit; signers: deposit, launcher.
- *             The launcher's balance is unchanged by B: it is reimbursed in the same transaction.
+ *             `init_coin(trigger_bps)` (payer: launcher); fee payer = deposit; signers: deposit,
+ *             launcher. The launcher's balance is unchanged by B: it is reimbursed in the same
+ *             transaction. (The treasury's token accounts and pump volume accumulator are created
+ *             later by the vault's `prepare_treasury`, paid from the coin's own fees.)
  * C  devBuy:  compute budget + [deposit ATA create (idempotent), pump `buy_v3`] (SDK) + sender ATA
  *             create (idempotent, payer deposit) + `transfer_checked` of exactly the bought amount
  *             + close of the deposit ATA + (optional) pump `close_user_volume_accumulator`;
@@ -72,20 +73,17 @@ export interface InitTxParams {
   launcher: PublicKey;
   mint: PublicKey;
   triggerBps: number;
-  /** Rent the launcher pays inside `init_coin` + the accumulator (see cost.ts `initReimbursement`). */
+  /** Rent the launcher pays inside `init_coin` (see cost.ts `initReimbursement`). */
   reimburseLamports: bigint;
-  /** False when the treasury's pump volume accumulator already exists (the init would fail). */
-  initTreasuryAccumulator: boolean;
   recent: RecentBlockhash;
   priority: PriorityConfig;
 }
 
-export async function buildInitTx(p: InitTxParams): Promise<Transaction> {
+export function buildInitTx(p: InitTxParams): Transaction {
   const coin = coinKeys(p.mint, TOKEN_2022_PROGRAM_ID);
   const ixs = computeBudgetIxs(p.priority.units.init, p.priority.microLamports);
   if (p.reimburseLamports > 0n) ixs.push(SystemProgram.transfer({ fromPubkey: p.deposit, toPubkey: p.launcher, lamports: p.reimburseLamports }));
   ixs.push(initCoinIx(coin, p.launcher, p.triggerBps));
-  if (p.initTreasuryAccumulator) ixs.push(await PUMP_SDK.initUserVolumeAccumulator({ payer: p.launcher, user: coin.treasury }));
   return newTx(p.deposit, p.recent, ixs);
 }
 

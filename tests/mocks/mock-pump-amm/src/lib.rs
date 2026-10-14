@@ -10,6 +10,7 @@ use anchor_lang::solana_program::{
     account_info::AccountInfo, entrypoint::ProgramResult, program::invoke, program::invoke_signed, program_error::ProgramError,
     pubkey::Pubkey,
 };
+use anchor_lang::solana_program::sysvar::Sysvar;
 use anchor_spl::token_2022::spl_token_2022;
 
 anchor_lang::declare_id!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
@@ -41,7 +42,38 @@ pub fn quote_buy(spendable: u64, base_reserve: u64, effective_quote: u64) -> (u6
     (net, lp, protocol, creator, base_out)
 }
 
+pub const INIT_USER_VOLUME_ACCUMULATOR: [u8; 8] = [94, 6, 202, 115, 255, 96, 232, 183];
+pub const USER_VOLUME_ACCUMULATOR_SIZE: u64 = 137;
+
+/// `init_user_volume_accumulator`: payer (signer), user, user_volume_accumulator, system_program,
+/// event_authority, program. Creates the 137-byte PDA `["user_volume_accumulator", user]`, paid by `payer`.
+fn init_user_volume_accumulator(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    if accounts.len() < 6 {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+    let (payer, user, accumulator, system_program) = (&accounts[0], &accounts[1], &accounts[2], &accounts[3]);
+    if !payer.is_signer {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    let (expected, bump) = Pubkey::find_program_address(&[b"user_volume_accumulator", user.key.as_ref()], program_id);
+    if *accumulator.key != expected {
+        return Err(ProgramError::InvalidSeeds);
+    }
+    if accumulator.owner == program_id {
+        return Err(ProgramError::AccountAlreadyInitialized);
+    }
+    let lamports = anchor_lang::solana_program::rent::Rent::get()?.minimum_balance(USER_VOLUME_ACCUMULATOR_SIZE as usize);
+    invoke_signed(
+        &anchor_lang::solana_program::system_instruction::create_account(payer.key, accumulator.key, lamports, USER_VOLUME_ACCUMULATOR_SIZE, program_id),
+        &[payer.clone(), accumulator.clone(), system_program.clone()],
+        &[&[b"user_volume_accumulator", user.key.as_ref(), &[bump]]],
+    )
+}
+
 pub fn process_instruction(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
+    if data.len() >= 8 && data[..8] == INIT_USER_VOLUME_ACCUMULATOR {
+        return init_user_volume_accumulator(program_id, accounts);
+    }
     if data.len() < 8 || data[..8] != BUY_EXACT_QUOTE_IN {
         return Err(ProgramError::InvalidInstructionData);
     }

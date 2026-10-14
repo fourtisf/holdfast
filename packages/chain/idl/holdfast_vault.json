@@ -465,6 +465,7 @@
         {
           "name": "treasury_wsol_account",
           "writable": true,
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -524,6 +525,7 @@
         },
         {
           "name": "treasury_token_account",
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -1041,133 +1043,7 @@
           }
         },
         {
-          "name": "treasury_token_account",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "account",
-                "path": "treasury"
-              },
-              {
-                "kind": "account",
-                "path": "token_program"
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                140,
-                151,
-                37,
-                143,
-                78,
-                36,
-                137,
-                241,
-                187,
-                61,
-                16,
-                41,
-                20,
-                142,
-                13,
-                131,
-                11,
-                90,
-                19,
-                153,
-                218,
-                255,
-                16,
-                132,
-                4,
-                142,
-                123,
-                216,
-                219,
-                233,
-                248,
-                89
-              ]
-            }
-          }
-        },
-        {
-          "name": "treasury_wsol_account",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "account",
-                "path": "treasury"
-              },
-              {
-                "kind": "account",
-                "path": "wsol_token_program"
-              },
-              {
-                "kind": "account",
-                "path": "wsol_mint"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                140,
-                151,
-                37,
-                143,
-                78,
-                36,
-                137,
-                241,
-                187,
-                61,
-                16,
-                41,
-                20,
-                142,
-                13,
-                131,
-                11,
-                90,
-                19,
-                153,
-                218,
-                255,
-                16,
-                132,
-                4,
-                142,
-                123,
-                216,
-                219,
-                233,
-                248,
-                89
-              ]
-            }
-          }
-        },
-        {
-          "name": "wsol_mint",
-          "address": "So11111111111111111111111111111111111111112"
-        },
-        {
           "name": "token_program"
-        },
-        {
-          "name": "wsol_token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
           "name": "system_program",
@@ -1496,7 +1372,11 @@
         },
         {
           "name": "treasury_token_account",
+          "docs": [
+            "Only needed for token payouts (it exists whenever `holder_tokens > 0`)."
+          ],
           "writable": true,
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -1575,6 +1455,115 @@
           }
         }
       ]
+    },
+    {
+      "name": "prepare_treasury",
+      "discriminator": [
+        245,
+        192,
+        249,
+        36,
+        120,
+        41,
+        93,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "treasury_token_account",
+          "writable": true
+        },
+        {
+          "name": "treasury_wsol_account",
+          "writable": true
+        },
+        {
+          "name": "wsol_mint",
+          "address": "So11111111111111111111111111111111111111112"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "wsol_token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "volume_program",
+          "optional": true
+        },
+        {
+          "name": "user_volume_accumulator",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "volume_event_authority",
+          "optional": true
+        }
+      ],
+      "args": []
     },
     {
       "name": "set_hold_mint",
@@ -2094,6 +2083,19 @@
         109,
         178
       ]
+    },
+    {
+      "name": "TreasuryPrepared",
+      "discriminator": [
+        65,
+        26,
+        116,
+        187,
+        137,
+        216,
+        203,
+        11
+      ]
     }
   ],
   "errors": [
@@ -2301,6 +2303,16 @@
       "code": 6040,
       "name": "NotPendingAdmin",
       "msg": "only the pending admin can accept"
+    },
+    {
+      "code": 6041,
+      "name": "TreasuryAccountMissing",
+      "msg": "treasury account missing: run prepare_treasury first"
+    },
+    {
+      "code": 6042,
+      "name": "InvalidVolumeAccounts",
+      "msg": "wrong pump volume accumulator accounts"
     }
   ],
   "types": [
@@ -2384,16 +2396,9 @@
           {
             "name": "amm_pool",
             "docs": [
-              "Canonical PumpSwap pool once graduated (default key before)."
+              "Canonical PumpSwap pool once graduated (default key before). Its token accounts are read from",
+              "the pool itself on every use."
             ],
-            "type": "pubkey"
-          },
-          {
-            "name": "amm_pool_base_account",
-            "type": "pubkey"
-          },
-          {
-            "name": "amm_pool_quote_account",
             "type": "pubkey"
           },
           {
@@ -2501,7 +2506,7 @@
                     "name": "Observation"
                   }
                 },
-                32
+                16
               ]
             }
           },
@@ -2534,17 +2539,15 @@
             "type": "u64"
           },
           {
-            "name": "created_at",
-            "type": "i64"
+            "name": "total_treasury_rent",
+            "docs": [
+              "Rent the treasury paid (out of the floor bucket) for its own accounts in `prepare_treasury`."
+            ],
+            "type": "u64"
           },
           {
-            "name": "reserved",
-            "type": {
-              "array": [
-                "u8",
-                64
-              ]
-            }
+            "name": "created_at",
+            "type": "i64"
           }
         ]
       }
@@ -3013,6 +3016,44 @@
           {
             "name": "recipient_count",
             "type": "u32"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TreasuryPrepared",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_paid",
+            "docs": [
+              "Lamports the treasury paid from the floor bucket."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "token_account",
+            "type": "bool"
+          },
+          {
+            "name": "wsol_account",
+            "type": "bool"
+          },
+          {
+            "name": "volume_accumulator_program",
+            "docs": [
+              "pump or pump_amm program whose volume accumulator was created (default key: none)."
+            ],
+            "type": "pubkey"
           },
           {
             "name": "ts",

@@ -1,6 +1,7 @@
 //! Acceptance: "there is no way to take SOL out of the vault except the three allowed paths".
 
 use anchor_lang::prelude::Pubkey;
+use holdfast_vault::constants::PUMP_PROGRAM_ID;
 use holdfast_vault_tests::*;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
@@ -18,6 +19,7 @@ const EXPECTED_INSTRUCTIONS: &[&str] = &[
     "initialize",
     "open_round",
     "payout",
+    "prepare_treasury",
     "set_hold_mint",
     "set_keeper",
     "set_launcher",
@@ -93,7 +95,7 @@ fn payouts_cannot_reach_the_floor_or_burn_buckets() {
 #[test]
 fn lamports_are_conserved_across_a_random_lifecycle() {
     let mut env = Env::ready();
-    let coin = env.launch(2_500);
+    let coin = env.launch_bare(2_500);
     let rent = env.svm.minimum_balance_for_rent_exemption(0);
     let mut seed: u64 = 0x5eed;
     let mut rand = move |n: u64| {
@@ -109,6 +111,7 @@ fn lamports_are_conserved_across_a_random_lifecycle() {
     let mut round_id = 0u64;
 
     env.collect(&coin, 5 * SOL).unwrap();
+    env.prepare_treasury(&coin, Some(PUMP_PROGRAM_ID)).unwrap();
     env.establish_ath(&coin);
     for step in 0..120 {
         match rand(6) {
@@ -151,7 +154,7 @@ fn lamports_are_conserved_across_a_random_lifecycle() {
         assert!(treasury - rent >= v.floor_sol + v.holder_sol + v.burn_sol, "step {step}: buckets exceed treasury");
         assert_eq!(
             treasury - rent,
-            v.total_fees - v.total_defended_sol - v.total_paid_sol - v.total_burn_sol,
+            v.total_fees - v.total_defended_sol - v.total_paid_sol - v.total_burn_sol - v.total_treasury_rent,
             "step {step}: lamports not explained by fees − allowed outflows"
         );
         assert_eq!(env.token_balance(&coin.treasury_ata), v.holder_tokens, "step {step}: token pool mismatch");

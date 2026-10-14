@@ -6,7 +6,7 @@
  *         ├─(expired, nothing arrived)──► expired                                          │ (N failures, vault never initialized)
  *         └─(expired / late / underpaid)──► refunding ──► refunded                         └────► refunding ──► failed
  *
- * `creating` runs: tx A (pump create_v2) → tx B (init_coin + treasury accumulator + reimbursement)
+ * `creating` runs: tx A (pump create_v2) → tx B (init_coin + reimbursement)
  * → tx C (dev buy, optional) → coins row → refund of everything left → live. Each step first checks
  * the chain (bonding curve / vault / sender token account exist?) so a crash or retry never repeats
  * an effect, every send is preceded by a DB write that bumps `updated_at`, and a launch in
@@ -370,29 +370,16 @@ export class LaunchWorker {
       step = "register";
       await this.registerCoin(form, coin, deposit.publicKey, sender, meta.uri, l.createSig, false);
 
-      // B: init_coin + treasury volume accumulator, rent reimbursed to the launcher.
+      // B: init_coin, rent reimbursed to the launcher.
       step = "init";
       if (!(await this.chain.accountExists(coin.vault))) {
-        const treasuryAccumulator = pump.userVolumeAccumulatorPda(coin.treasury);
-        const [treasuryLamports, tokenExists, wsolExists, accumulatorExists] = await Promise.all([
-          this.chain.getBalance(coin.treasury),
-          this.chain.accountExists(coin.treasuryTokenAccount),
-          this.chain.accountExists(coin.treasuryWsolAccount),
-          this.chain.accountExists(treasuryAccumulator),
-        ]);
-        const reimbursement = initReimbursement(rent, {
-          treasuryLamports,
-          treasuryTokenAccountExists: tokenExists,
-          treasuryWsolAccountExists: wsolExists,
-          treasuryAccumulatorExists: accumulatorExists,
-        });
-        const tx = await buildInitTx({
+        const reimbursement = initReimbursement(rent, { treasuryLamports: await this.chain.getBalance(coin.treasury) });
+        const tx = buildInitTx({
           deposit: deposit.publicKey,
           launcher: this.s.launcher.publicKey,
           mint: mint.publicKey,
           triggerBps: form.triggerBps,
           reimburseLamports: reimbursement.lamports,
-          initTreasuryAccumulator: !accumulatorExists,
           recent: await this.chain.latestBlockhash(),
           priority: this.s.priority,
         });

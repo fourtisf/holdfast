@@ -88,3 +88,15 @@ pub struct HoldBurned {
     pub hold_burned: u64,
     pub ts: i64,
 }
+
+#[event]
+pub struct TreasuryPrepared {
+    pub mint: Pubkey,
+    /// Lamports the treasury paid from the floor bucket.
+    pub rent_paid: u64,
+    pub token_account: bool,
+    pub wsol_account: bool,
+    /// pump or pump_amm program whose volume accumulator was created (default key: none).
+    pub volume_accumulator_program: Pubkey,
+    pub ts: i64,
+}

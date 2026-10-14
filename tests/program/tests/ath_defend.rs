@@ -39,16 +39,16 @@ fn update_ath_is_keeper_only_and_rate_limited() {
     assert!(env.send(&[ix], &[&rando]).is_err());
 
     env.update_ath(&coin, None).unwrap();
-    env.advance(10);
+    env.advance(30);
     assert_err(&env.update_ath(&coin, None), HoldfastError::ObservationTooSoon);
-    env.advance(20);
+    env.advance(10);
     env.update_ath(&coin, None).unwrap();
 
     // wrong price account
     let keeper = env.keeper.insecure_clone();
     let mut ix = env.update_ath_ix(&coin, &keeper.pubkey(), None);
     ix.accounts[3] = AccountMeta::new_readonly(env.pump_global, false);
-    env.advance(30);
+    env.advance(40);
     assert_err(&env.send(&[ix], &[&keeper]), HoldfastError::WrongPriceAccount);
 }
 
@@ -60,16 +60,16 @@ fn a_short_pump_barely_moves_the_ath() {
     let base_ath = env.vault(&coin.mint).ath_price;
     let (vtok, vsol) = env.curve_reserves(&coin.mint);
 
-    // attacker pumps 5× for a single 30s sample, then dumps back
+    // attacker pumps 5× for a single 40s sample, then dumps back
     env.set_curve_reserves(&coin.mint, vtok, vsol * 5);
     env.update_ath(&coin, None).unwrap();
-    env.advance(30);
+    env.advance(40);
     env.set_curve_reserves(&coin.mint, vtok, vsol);
     env.sample_for(&coin, None, 120);
 
     let ath = env.vault(&coin.mint).ath_price;
-    // one 30s sample of 5× inside a 600s window lifts the TWAP by at most 4 × 30/600 = 20%, not 400%
-    assert!(ath <= base_ath * 121 / 100, "ath {ath} vs base {base_ath}");
+    // one 40s sample of 5× inside a 600s window lifts the TWAP by at most 4 × 40/600 ≈ 27%, not 400%
+    assert!(ath <= base_ath * 127 / 100, "ath {ath} vs base {base_ath}");
 }
 
 #[test]
@@ -312,4 +312,36 @@ fn pool_price_uses_signed_virtual_quote_reserves() {
     env.send(&[ix], &[&payer]).unwrap();
     env.sample_for(&coin, Some(&pool), 630);
     assert_eq!(env.vault(&coin.mint).ath_price, 40 * SOL as u128 * PRICE_SCALE / 100_000_000_000_000);
+}
+
+#[test]
+fn a_lazily_prepared_treasury_defends_on_the_curve_and_after_graduation() {
+    let mut env = Env::ready();
+    let coin = env.launch_bare(2_500);
+    env.collect(&coin, 10 * SOL).unwrap();
+    env.establish_ath(&coin);
+    env.dump_price(&coin, 7_000);
+    // the treasury has no token accounts yet: defend cannot run
+    assert!(env.defend(&coin, None).is_err());
+
+    env.prepare_treasury(&coin, Some(PUMP_PROGRAM_ID)).unwrap();
+    let before = env.vault(&coin.mint);
+    env.defend(&coin, None).expect("curve defend");
+    let after = env.vault(&coin.mint);
+    assert_eq!(before.floor_sol - after.floor_sol, before.floor_sol / 10, "no rent inside the buyback");
+    assert!(after.holder_tokens > 0);
+
+    // graduation: PumpSwap needs its own accumulator, prepared the same way
+    env.set_curve_complete(&coin.mint);
+    let pool = env.set_pool(&coin.mint, &coin.treasury, 200_000_000_000_000, 85 * SOL, 0);
+    let payer = env.payer.insecure_clone();
+    let ix = env.graduate_ix(&coin, &pool);
+    env.send(&[ix], &[&payer]).unwrap();
+    let amm_accumulator = user_volume_accumulator_pda(&coin.treasury, &PUMP_AMM_PROGRAM_ID);
+    assert!(!env.exists(&amm_accumulator));
+    let before = env.vault(&coin.mint);
+    env.prepare_treasury(&coin, Some(PUMP_AMM_PROGRAM_ID)).unwrap();
+    let after = env.vault(&coin.mint);
+    assert_eq!(env.svm.get_account(&amm_accumulator).unwrap().owner, PUMP_AMM_PROGRAM_ID);
+    assert_eq!(before.floor_sol - after.floor_sol, env.svm.minimum_balance_for_rent_exemption(137));
 }

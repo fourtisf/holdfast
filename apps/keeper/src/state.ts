@@ -1,5 +1,6 @@
 import type { PublicKey } from "@solana/web3.js";
 import {
+  userVolumeAccumulatorPda,
   bondingCurveSpot,
   canonicalPoolPda,
   decodeBondingCurve,
@@ -32,6 +33,18 @@ export interface CoinChainState {
   /** Spot price on the coin's current venue (fixed point, same as on-chain). */
   spot: bigint;
   priceAccounts: PriceAccounts;
+  /** The treasury's lazily created accounts (`prepare_treasury`); the accumulator is the current venue's. */
+  treasury: TreasuryAccounts;
+}
+
+export interface TreasuryAccounts {
+  tokenAccount: boolean;
+  wsolAccount: boolean;
+  volumeAccumulator: boolean;
+}
+
+export function treasuryReady(t: TreasuryAccounts): boolean {
+  return t.tokenAccount && t.wsolAccount && t.volumeAccumulator;
 }
 
 export async function loadPool(chain: KeeperChain, mint: PublicKey): Promise<PoolView | null> {
@@ -44,12 +57,23 @@ export async function loadPool(chain: KeeperChain, mint: PublicKey): Promise<Poo
   return { ...pool, address, baseAmount: decodeTokenAccount(base.data).amount, quoteAmount: decodeTokenAccount(quote.data).amount };
 }
 
+/** Which of the treasury's lazily created accounts exist; the accumulator is `venue`'s. */
+export async function loadTreasuryAccounts(chain: KeeperChain, coin: CoinKeys, venue: "curve" | "amm"): Promise<TreasuryAccounts> {
+  const [tokenAccount, wsolAccount, accumulator] = await chain.getAccounts([
+    coin.treasuryTokenAccount,
+    coin.treasuryWsolAccount,
+    userVolumeAccumulatorPda(coin.treasury, venue),
+  ]);
+  return { tokenAccount: tokenAccount !== null, wsolAccount: wsolAccount !== null, volumeAccumulator: accumulator !== null };
+}
+
 export async function loadCoinState(chain: KeeperChain, coin: CoinKeys): Promise<CoinChainState | null> {
   const [vaultInfo, curveInfo] = await chain.getAccounts([coin.vault, coin.bondingCurve]);
   if (!vaultInfo || !curveInfo) return null;
   const vault = decodeCoinVault(vaultInfo.data);
   const curve = decodeBondingCurve(curveInfo.data);
   const pool = vault.venue === "amm" || curve.complete ? await loadPool(chain, coin.mint) : null;
+  const treasury = await loadTreasuryAccounts(chain, coin, vault.venue);
 
   if (vault.venue === "amm") {
     if (!pool) throw new Error(`vault ${coin.vault.toBase58()} is on PumpSwap but its pool is missing`);
@@ -60,7 +84,8 @@ export async function loadCoinState(chain: KeeperChain, coin: CoinKeys): Promise
       pool,
       spot: poolSpot(pool, pool.baseAmount, pool.quoteAmount),
       priceAccounts: { priceAccount: pool.address, poolBaseAccount: pool.poolBaseTokenAccount, poolQuoteAccount: pool.poolQuoteTokenAccount },
+      treasury,
     };
   }
-  return { coin, vault, curve, pool, spot: bondingCurveSpot(curve), priceAccounts: { priceAccount: coin.bondingCurve } };
+  return { coin, vault, curve, pool, spot: bondingCurveSpot(curve), priceAccounts: { priceAccount: coin.bondingCurve }, treasury };
 }

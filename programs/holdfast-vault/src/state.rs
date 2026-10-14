@@ -72,10 +72,9 @@ pub struct CoinVault {
     pub mint: Pubkey,
     pub token_program: Pubkey,
     pub bonding_curve: Pubkey,
-    /// Canonical PumpSwap pool once graduated (default key before).
+    /// Canonical PumpSwap pool once graduated (default key before). Its token accounts are read from
+    /// the pool itself on every use.
     pub amm_pool: Pubkey,
-    pub amm_pool_base_account: Pubkey,
-    pub amm_pool_quote_account: Pubkey,
     /// 1500 / 2500 / 3500. Written once in `init_coin`; no instruction updates it.
     pub trigger_bps: u16,
     pub venue: u8,
@@ -115,8 +114,11 @@ pub struct CoinVault {
     pub total_paid_tokens: u64,
     pub total_burn_sol: u64,
     pub total_hold_burned: u64,
+    /// Rent the treasury paid (out of the floor bucket) for its own accounts in `prepare_treasury`.
+    pub total_treasury_rent: u64,
     pub created_at: i64,
-    pub reserved: [u8; 64],
+    // No reserved padding: every byte here is launch rent (≈ 6960 lamports). Future fields are added
+    // with a realloc migration.
 }
 
 impl CoinVault {

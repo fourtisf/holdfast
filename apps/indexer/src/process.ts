@@ -534,6 +534,12 @@ class TxRun {
           d.totalBurnedSol = add(d.totalBurnedSol, e.solSpent);
           break;
         }
+        case "TreasuryPrepared": {
+          // Rent of the treasury's own token accounts / volume accumulator, paid from the floor bucket.
+          const d = delta(mint);
+          d.floorSol = add(d.floorSol, -e.rentPaid);
+          break;
+        }
       }
       this.notify({ kind: "vault", mint });
     }

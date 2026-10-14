@@ -6,7 +6,8 @@ use solana_signer::Signer;
 #[test]
 fn init_coin_registers_a_pump_coin_whose_creator_is_the_treasury() {
     let mut env = Env::ready();
-    let coin = env.launch(2_500);
+    let launcher_before = env.lamports(&env.launcher.pubkey());
+    let coin = env.launch_bare(2_500);
     let v = env.vault(&coin.mint);
     assert_eq!(v.mint, coin.mint);
     assert_eq!(v.trigger_bps, 2_500);
@@ -15,13 +16,93 @@ fn init_coin_registers_a_pump_coin_whose_creator_is_the_treasury() {
     assert_eq!(v.token_program, TOKEN_2022_PROGRAM);
     assert_eq!((v.floor_sol, v.holder_sol, v.burn_sol, v.holder_tokens), (0, 0, 0, 0));
     assert_eq!((v.ath_price, v.floor_price), (0, 0));
-    // treasury exists, rent exempt, system owned; token + WSOL accounts exist
+    // treasury exists, rent exempt, system owned
     let treasury = env.svm.get_account(&coin.treasury).unwrap();
     assert_eq!(treasury.owner, SYSTEM_PROGRAM);
     assert!(treasury.data.is_empty());
     assert_eq!(treasury.lamports, env.svm.minimum_balance_for_rent_exemption(0));
-    assert!(env.svm.get_account(&coin.treasury_ata).is_some());
-    assert!(env.svm.get_account(&coin.treasury_wsol).is_some());
+    // no treasury token accounts yet: those are paid later, out of the coin's own fees
+    assert!(!env.exists(&coin.treasury_ata));
+    assert!(!env.exists(&coin.treasury_wsol));
+    // the launcher pays exactly the vault and the treasury's rent reserve (plus the tx fee)
+    let vault_len = env.account_data(&coin.vault).len();
+    assert!(vault_len <= 730, "CoinVault is {vault_len} bytes: launch rent budget is ≈ 730");
+    let rent = env.svm.minimum_balance_for_rent_exemption(vault_len) + env.svm.minimum_balance_for_rent_exemption(0);
+    assert_eq!(launcher_before - env.lamports(&env.launcher.pubkey()), rent + 5_000);
+}
+
+#[test]
+fn first_fees_are_booked_without_treasury_token_accounts() {
+    let mut env = Env::ready();
+    let coin = env.launch_bare(2_500);
+    env.collect(&coin, SOL).unwrap();
+    let v = env.vault(&coin.mint);
+    assert_eq!((v.floor_sol, v.holder_sol, v.burn_sol), (600_000_000, 300_000_000, 100_000_000));
+    // a SOL-only payout round works without the treasury token account too
+    env.open_round(&coin, 1, v.holder_sol, 0, 1).unwrap();
+    let wallet = Keypair::new().pubkey();
+    env.payout(&coin, 1, vec![PayoutEntry { index: 0, sol: v.holder_sol, tokens: 0 }], &[(wallet, None)]).unwrap();
+    assert_eq!(env.lamports(&wallet), v.holder_sol);
+}
+
+#[test]
+fn prepare_treasury_creates_its_accounts_out_of_the_floor_bucket() {
+    let mut env = Env::ready();
+    let coin = env.launch_bare(2_500);
+    let accumulator = user_volume_accumulator_pda(&coin.treasury, &PUMP_PROGRAM_ID);
+    let rent = |env: &Env, len: usize| env.svm.minimum_balance_for_rent_exemption(len);
+
+    // nothing in the floor bucket yet
+    assert_err(&env.prepare_treasury(&coin, Some(PUMP_PROGRAM_ID)), HoldfastError::FloorVaultTooSmall);
+
+    // the floor bucket must still fund one minimum buyback step (10 × 0.001 SOL) after paying
+    let cost = rent(&env, 170) + rent(&env, 165) + rent(&env, 137);
+    let fee = (cost + 9_000_000) * 10 / 6 + 10;
+    env.collect(&coin, fee).unwrap();
+    assert!(env.vault(&coin.mint).floor_sol < cost + 10_000_000);
+    assert_err(&env.prepare_treasury(&coin, Some(PUMP_PROGRAM_ID)), HoldfastError::FloorVaultTooSmall);
+
+    env.collect(&coin, SOL).unwrap();
+    let before = env.vault(&coin.mint);
+    env.prepare_treasury(&coin, Some(PUMP_PROGRAM_ID)).unwrap();
+    let after = env.vault(&coin.mint);
+    assert!(env.exists(&coin.treasury_ata) && env.exists(&coin.treasury_wsol) && env.exists(&accumulator));
+    assert_eq!(env.svm.get_account(&accumulator).unwrap().owner, PUMP_PROGRAM_ID);
+    assert_eq!(env.token_balance(&coin.treasury_ata), 0);
+    assert_eq!(before.floor_sol - after.floor_sol, cost);
+    assert_eq!(after.total_treasury_rent, cost);
+    assert_eq!((after.holder_sol, after.burn_sol), (before.holder_sol, before.burn_sol));
+    let reserve = rent(&env, 0);
+    assert_eq!(env.lamports(&coin.treasury) - reserve, after.floor_sol + after.holder_sol + after.burn_sol);
+
+    // idempotent
+    env.prepare_treasury(&coin, Some(PUMP_PROGRAM_ID)).unwrap();
+    assert_eq!(env.vault(&coin.mint).floor_sol, after.floor_sol);
+}
+
+#[test]
+fn prepare_treasury_rejects_foreign_volume_accounts() {
+    let mut env = Env::ready();
+    let coin = env.launch_bare(2_500);
+    env.collect(&coin, SOL).unwrap();
+    let payer = env.payer.insecure_clone();
+
+    // a program other than pump / pump_amm
+    let mut ix = env.prepare_treasury_ix(&coin, Some(PUMP_PROGRAM_ID));
+    let n = ix.accounts.len();
+    ix.accounts[n - 3].pubkey = SYSTEM_PROGRAM;
+    assert_err(&env.send(&[ix], &[&payer]), HoldfastError::InvalidVolumeAccounts);
+
+    // someone else's accumulator
+    let mut ix = env.prepare_treasury_ix(&coin, Some(PUMP_PROGRAM_ID));
+    ix.accounts[n - 2].pubkey = user_volume_accumulator_pda(&payer.pubkey(), &PUMP_PROGRAM_ID);
+    assert_err(&env.send(&[ix], &[&payer]), HoldfastError::InvalidVolumeAccounts);
+
+    // not the treasury's ATA
+    let mut ix = env.prepare_treasury_ix(&coin, None);
+    ix.accounts[3].pubkey = Keypair::new().pubkey();
+    assert!(env.send(&[ix], &[&payer]).is_err());
+    assert_eq!(env.vault(&coin.mint).total_treasury_rent, 0);
 }
 
 #[test]

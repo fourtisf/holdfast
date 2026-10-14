@@ -13,6 +13,8 @@ use crate::treasury::{spendable_lamports, treasury_seeds, unwrap_wsol, WsolAccou
 /// Permissionless. Books every lamport that reached the treasury since the last call (pump.fun creator
 /// fees claimed by the keeper's `collect_creator_fee_v2` / PumpSwap `collect_coin_creator_fee`, or any
 /// donation) into the 60/30/10 buckets, and adds coin tokens sent to the treasury to the holder pool.
+/// The treasury's token accounts are optional: they only exist once `prepare_treasury` ran (or someone
+/// created one to send tokens), and a coin's first fees are booked without them.
 #[derive(Accounts)]
 pub struct CollectFees<'info> {
     #[account(mut, seeds = [VAULT_SEED, vault.mint.as_ref()], bump = vault.bump)]
@@ -25,7 +27,7 @@ pub struct CollectFees<'info> {
         associated_token::authority = treasury,
         associated_token::token_program = wsol_token_program,
     )]
-    pub treasury_wsol_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub treasury_wsol_account: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
     #[account(address = vault.mint)]
     pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
@@ -33,7 +35,7 @@ pub struct CollectFees<'info> {
         associated_token::authority = treasury,
         associated_token::token_program = token_program,
     )]
-    pub treasury_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub treasury_token_account: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
     #[account(address = vault.token_program)]
     pub token_program: Interface<'info, TokenInterface>,
     #[account(address = WSOL_MINT)]
@@ -48,10 +50,10 @@ pub fn collect_fees(ctx: Context<CollectFees>) -> Result<()> {
     let bump = [ctx.accounts.vault.treasury_bump];
     let seeds = treasury_seeds(&mint, &bump);
 
-    let unwrapped_wsol = ctx.accounts.treasury_wsol_account.amount;
-    if unwrapped_wsol > 0 {
+    let unwrapped_wsol = ctx.accounts.treasury_wsol_account.as_ref().map_or(0, |a| a.amount);
+    if let Some(wsol) = ctx.accounts.treasury_wsol_account.as_ref().filter(|a| a.amount > 0) {
         let treasury = ctx.accounts.treasury.to_account_info();
-        let wsol_account = ctx.accounts.treasury_wsol_account.to_account_info();
+        let wsol_account = wsol.to_account_info();
         let wsol_mint = ctx.accounts.wsol_mint.to_account_info();
         let token_program = ctx.accounts.wsol_token_program.to_account_info();
         let ata_program = ctx.accounts.associated_token_program.to_account_info();
@@ -71,10 +73,15 @@ pub fn collect_fees(ctx: Context<CollectFees>) -> Result<()> {
 
     let vault = &mut ctx.accounts.vault;
     // Coin tokens that reached the treasury other than through a buyback (e.g. a donation) join the holder pool.
-    let token_balance = ctx.accounts.treasury_token_account.amount;
-    require!(token_balance >= vault.holder_tokens, HoldfastError::InvariantViolation);
-    let tokens = token_balance - vault.holder_tokens;
-    vault.holder_tokens = token_balance;
+    let tokens = match ctx.accounts.treasury_token_account.as_ref() {
+        Some(account) => {
+            require!(account.amount >= vault.holder_tokens, HoldfastError::InvariantViolation);
+            let tokens = account.amount - vault.holder_tokens;
+            vault.holder_tokens = account.amount;
+            tokens
+        }
+        None => 0,
+    };
 
     let available = spendable_lamports(&ctx.accounts.treasury.to_account_info())?;
     let accounted = vault.accounted_lamports()?;

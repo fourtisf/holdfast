@@ -15,6 +15,8 @@ const log = pino({ level: "silent" });
 const coder = new BorshCoder(HOLDFAST_IDL);
 const ixName = (data: Buffer) => coder.instruction.decode(data)?.name;
 const HOUR = 3_600_000;
+/** Rent prepare_treasury takes from the floor bucket: Token-2022 ATA (170 B) + WSOL ATA (165 B) + pump accumulator (137 B). */
+const prepareRent = (w: World) => [170n, 165n, 137n].reduce((s, len) => s + w.svm.minimumBalanceForRentExemption(len), 0n);
 
 const payoutCfg: PayoutConfig = {
   minSolLamports: 20_000n,
@@ -82,9 +84,9 @@ async function crankFor(w: World, coin: CoinKeys, secs: number) {
   const memory = { lastCollectAt: 0, lastBurnAt: 0 };
   const config = await loadProgramConfig(w.chain);
   const ctx = crankCtx(w);
-  for (let t = 0; t <= secs; t += 30) {
+  for (let t = 0; t <= secs; t += 40) {
     await crankCoin(ctx, coin, config, memory);
-    w.advance(30);
+    w.advance(40);
   }
 }
 
@@ -94,11 +96,17 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     const coin = await w.launch(2500);
     await registerCoin(w, coin);
 
+    // the launch created no treasury token accounts: the coin pays for them out of its first fees
+    expect(w.lamports(coin.treasuryTokenAccount)).toBe(0n);
     // creator fees reach the treasury (what pump.fun's collect_creator_fee_v2 does)
     w.airdrop(coin.treasury, 10n * SOL);
     await crankFor(w, coin, 660);
     let v = await vaultOf(w, coin);
-    expect(v.floorSol).toBe(6n * SOL);
+    const PREPARE_RENT = prepareRent(w);
+    const prepared = w.chain.events.find((e) => e.name === "TreasuryPrepared");
+    expect(prepared).toMatchObject({ tokenAccount: true, wsolAccount: true, rentPaid: PREPARE_RENT });
+    expect(v.totalTreasuryRent).toBe(PREPARE_RENT);
+    expect(v.floorSol).toBe(6n * SOL - PREPARE_RENT);
     expect(v.holderSol).toBe(3n * SOL);
     expect(v.burnSol).toBe(SOL);
     expect(v.athPrice).toBeGreaterThan(0n);
@@ -110,7 +118,8 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     await crankFor(w, coin, 0);
     v = await vaultOf(w, coin);
     expect(v.defendCount).toBe(1n);
-    expect(v.floorSol).toBe(6n * SOL - 600_000_000n);
+    const floorBefore = 6n * SOL - PREPARE_RENT;
+    expect(v.floorSol).toBe(floorBefore - floorBefore / 10n);
     expect(v.holderTokens).toBeGreaterThan(0n);
     expect(w.chain.events.some((e) => e.name === "Defended")).toBe(true);
 

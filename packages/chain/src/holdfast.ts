@@ -7,7 +7,7 @@ import { BorshCoder, EventParser, type Idl } from "@coral-xyz/anchor";
 import BN from "bn.js";
 import { PublicKey, TransactionInstruction, type AccountMeta } from "@solana/web3.js";
 
-import { ASSOCIATED_TOKEN_PROGRAM_ID, HOLDFAST_PROGRAM_ID, PUMP_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, WSOL_MINT } from "./constants.js";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, HOLDFAST_PROGRAM_ID, PUMP_AMM_PROGRAM_ID, PUMP_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, WSOL_MINT } from "./constants.js";
 import { associatedTokenAddress, bondingCurvePda, configPda, roundPda, treasuryPda, vaultPda } from "./pda.js";
 
 const require = createRequire(import.meta.url);
@@ -28,8 +28,6 @@ export interface CoinVaultAccount {
   venue: "curve" | "amm";
   bondingCurve: PublicKey;
   ammPool: PublicKey | null;
-  ammPoolBaseAccount: PublicKey | null;
-  ammPoolQuoteAccount: PublicKey | null;
   athPrice: bigint;
   floorPrice: bigint;
   floorSol: bigint;
@@ -53,6 +51,8 @@ export interface CoinVaultAccount {
   totalPaidTokens: bigint;
   totalBurnSol: bigint;
   totalHoldBurned: bigint;
+  /** Rent the treasury paid (from the floor bucket) for its own accounts in `prepare_treasury`. */
+  totalTreasuryRent: bigint;
   createdAt: number;
 }
 
@@ -116,8 +116,6 @@ export function decodeCoinVault(data: Buffer): CoinVaultAccount {
     venue: num(r.venue) === VENUE_AMM ? "amm" : "curve",
     bondingCurve: key(r.bonding_curve),
     ammPool: optKey(r.amm_pool),
-    ammPoolBaseAccount: optKey(r.amm_pool_base_account),
-    ammPoolQuoteAccount: optKey(r.amm_pool_quote_account),
     athPrice: big(r.ath_price),
     floorPrice: big(r.floor_price),
     floorSol: big(r.floor_sol),
@@ -139,6 +137,7 @@ export function decodeCoinVault(data: Buffer): CoinVaultAccount {
     totalPaidTokens: big(r.total_paid_tokens),
     totalBurnSol: big(r.total_burn_sol),
     totalHoldBurned: big(r.total_hold_burned),
+    totalTreasuryRent: big(r.total_treasury_rent),
     createdAt: num(r.created_at),
   };
 }
@@ -197,7 +196,17 @@ export type HoldfastEvent =
   | { name: "RoundOpened"; mint: PublicKey; roundId: bigint; solPot: bigint; tokenPot: bigint; snapshotHash: Uint8Array; recipientCount: number; ts: number }
   | { name: "PayoutBatch"; mint: PublicKey; roundId: bigint; recipients: number; sol: bigint; tokens: bigint; ts: number }
   | { name: "RoundClosed"; mint: PublicKey; roundId: bigint; solPaid: bigint; tokensPaid: bigint; ts: number }
-  | { name: "HoldBurned"; mint: PublicKey; solSpent: bigint; holdBurned: bigint; ts: number };
+  | { name: "HoldBurned"; mint: PublicKey; solSpent: bigint; holdBurned: bigint; ts: number }
+  | {
+      name: "TreasuryPrepared";
+      mint: PublicKey;
+      rentPaid: bigint;
+      tokenAccount: boolean;
+      wsolAccount: boolean;
+      /** pump / pump_amm program whose volume accumulator was created (default key: none). */
+      volumeAccumulatorProgram: PublicKey;
+      ts: number;
+    };
 
 function camel(s: string): string {
   return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
@@ -307,26 +316,65 @@ export function initCoinIx(coin: CoinKeys, launcher: PublicKey, triggerBps: numb
       vault: coin.vault,
       treasury: coin.treasury,
       bondingCurve: coin.bondingCurve,
-      treasuryTokenAccount: coin.treasuryTokenAccount,
-      treasuryWsolAccount: coin.treasuryWsolAccount,
       tokenProgram: coin.tokenProgram,
-      ...commonPrograms,
+      systemProgram: SYSTEM_PROGRAM_ID,
     },
     { trigger_bps: triggerBps },
   );
 }
 
-export function collectFeesIx(coin: CoinKeys): TransactionInstruction {
+/** Which of the treasury's lazily created accounts exist (see `prepare_treasury`). */
+export interface TreasuryAccountsState {
+  tokenAccount: boolean;
+  wsolAccount: boolean;
+}
+
+/** `existing`: pass only the treasury token accounts that exist (both default to present). */
+export function collectFeesIx(coin: CoinKeys, existing: TreasuryAccountsState = { tokenAccount: true, wsolAccount: true }): TransactionInstruction {
   return buildIx(
     "collect_fees",
     {
       vault: coin.vault,
       treasury: coin.treasury,
-      treasuryWsolAccount: coin.treasuryWsolAccount,
+      treasuryWsolAccount: existing.wsolAccount ? coin.treasuryWsolAccount : null,
       mint: coin.mint,
-      treasuryTokenAccount: coin.treasuryTokenAccount,
+      treasuryTokenAccount: existing.tokenAccount ? coin.treasuryTokenAccount : null,
       tokenProgram: coin.tokenProgram,
       ...commonPrograms,
+    },
+    {},
+  );
+}
+
+/** pump.fun (curve) or PumpSwap (amm) user volume accumulator of `user`. */
+export function userVolumeAccumulatorPda(user: PublicKey, venue: "curve" | "amm"): PublicKey {
+  const program = venue === "curve" ? PUMP_PROGRAM_ID : PUMP_AMM_PROGRAM_ID;
+  return PublicKey.findProgramAddressSync([Buffer.from("user_volume_accumulator"), user.toBuffer()], program)[0];
+}
+
+function eventAuthorityPda(program: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync([Buffer.from("__event_authority")], program)[0];
+}
+
+/**
+ * Permissionless: creates the treasury's missing token / WSOL accounts and, with `volumeVenue`, its
+ * pump.fun or PumpSwap volume accumulator. Rent comes out of the floor bucket.
+ */
+export function prepareTreasuryIx(coin: CoinKeys, volumeVenue: "curve" | "amm" | null): TransactionInstruction {
+  const program = volumeVenue === null ? null : volumeVenue === "curve" ? PUMP_PROGRAM_ID : PUMP_AMM_PROGRAM_ID;
+  return buildIx(
+    "prepare_treasury",
+    {
+      vault: coin.vault,
+      treasury: coin.treasury,
+      mint: coin.mint,
+      treasuryTokenAccount: coin.treasuryTokenAccount,
+      treasuryWsolAccount: coin.treasuryWsolAccount,
+      tokenProgram: coin.tokenProgram,
+      ...commonPrograms,
+      volumeProgram: program,
+      userVolumeAccumulator: volumeVenue === null ? null : userVolumeAccumulatorPda(coin.treasury, volumeVenue),
+      volumeEventAuthority: program === null ? null : eventAuthorityPda(program),
     },
     {},
   );
@@ -396,6 +444,7 @@ export interface PayoutIxEntry {
 
 export function payoutIx(coin: CoinKeys, keeper: PublicKey, roundId: bigint, entries: PayoutIxEntry[]): TransactionInstruction {
   const remaining: AccountMeta[] = [];
+  const withTokens = entries.some((e) => e.tokens > 0n);
   for (const e of entries) {
     remaining.push({ pubkey: e.wallet, isSigner: false, isWritable: true });
     if (e.tokens > 0n) {
@@ -412,7 +461,8 @@ export function payoutIx(coin: CoinKeys, keeper: PublicKey, roundId: bigint, ent
       round: roundPda(coin.mint, roundId),
       treasury: coin.treasury,
       mint: coin.mint,
-      treasuryTokenAccount: coin.treasuryTokenAccount,
+      // only token payouts need it (it may not exist yet on a coin that never bought back)
+      treasuryTokenAccount: withTokens ? coin.treasuryTokenAccount : null,
       tokenProgram: coin.tokenProgram,
       systemProgram: SYSTEM_PROGRAM_ID,
     },
@@ -491,7 +541,7 @@ export const DEFAULT_PARAMS: ProgramParams = {
   maxDefendsPerHour: 6,
   defendPriceToleranceBps: 300,
   twapWindowSecs: 600,
-  twapMinSampleIntervalSecs: 30,
+  twapMinSampleIntervalSecs: 40,
   twapMaxGapSecs: 120,
   athConfirmSecs: 0,
   maxBurnSlippageBps: 500,

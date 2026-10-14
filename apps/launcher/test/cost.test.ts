@@ -9,6 +9,7 @@ import {
   initReimbursement,
   priorityFee,
   rentFromChain,
+  treasuryPrepareCost,
   txFee,
   type PriorityConfig,
 } from "@holdfast/chain";
@@ -18,7 +19,7 @@ const r = DEFAULT_RENT;
 
 describe("account sizes", () => {
   it("match the on-chain layouts", () => {
-    expect(COIN_VAULT_SIZE).toBe(1234); // 8 + CoinVault::INIT_SPACE (IDL)
+    expect(COIN_VAULT_SIZE).toBe(730); // 8 + CoinVault::INIT_SPACE (IDL)
     expect(PUMP_BONDING_CURVE_SIZE).toBe(166);
     expect(TOKEN_2022_ATA_SIZE).toBe(170); // 165 + account type + ImmutableOwner TLV
     expect(SPL_TOKEN_ACCOUNT_SIZE).toBe(165);
@@ -42,11 +43,8 @@ describe("computeLaunchCost", () => {
       pump_mint: r(pumpMintSize(32, 13, 200)),
       pump_bonding_curve: 2_046_240n,
       pump_curve_token_account: 2_074_080n,
-      holdfast_vault: 9_479_520n,
+      holdfast_vault: r(COIN_VAULT_SIZE),
       treasury_rent: 890_880n,
-      treasury_token_account: 2_074_080n,
-      treasury_wsol_account: 2_039_280n,
-      treasury_volume_accumulator: 1_844_400n,
       fee_create: 10_000n + 12_500n,
       fee_init: 10_000n + 12_500n,
       fee_refund: 5_000n + 100n,
@@ -56,7 +54,16 @@ describe("computeLaunchCost", () => {
     expect(cost.exceedsSpecFee).toBe(true);
     expect(cost.launchFee).toBe(cost.consumed + cost.floatTotal);
     expect(cost.requiredLamports).toBe(cost.launchFee);
-    expect(formatSol(cost.consumed)).toBe("0.025307940");
+    expect(formatSol(cost.consumed)).toBe("0.015842340");
+  });
+
+  it("stays within the spec's 0.015 SOL for realistic metadata (an IPFS URI)", () => {
+    const cost = computeLaunchCost(r, { nameBytes: 12, symbolBytes: 5, uriBytes: 80 });
+    expect(cost.consumed).toBeLessThanOrEqual(LAUNCH_FEE_LAMPORTS);
+  });
+
+  it("the launch no longer pre-pays the treasury's token accounts (prepare_treasury does, from fees)", () => {
+    expect(treasuryPrepareCost(r)).toBe(r(170) + r(165) + r(137));
   });
 
   it("charges the spec's 0.015 SOL when the real cost is lower (max)", () => {
@@ -106,12 +113,9 @@ describe("rentFromChain", () => {
 });
 
 describe("initReimbursement", () => {
-  it("is exactly the rent init_coin + the accumulator make the launcher pay", () => {
-    const fresh = initReimbursement(r, { treasuryLamports: 0n, treasuryTokenAccountExists: false, treasuryWsolAccountExists: false, treasuryAccumulatorExists: false });
-    expect(fresh.lamports).toBe(r(COIN_VAULT_SIZE) + r(0) + r(170) + r(165) + r(137));
-    const partial = initReimbursement(r, { treasuryLamports: 100_000n, treasuryTokenAccountExists: true, treasuryWsolAccountExists: false, treasuryAccumulatorExists: true });
-    expect(partial.lamports).toBe(r(COIN_VAULT_SIZE) + (r(0) - 100_000n) + r(165));
-    const funded = initReimbursement(r, { treasuryLamports: 5_000_000n, treasuryTokenAccountExists: true, treasuryWsolAccountExists: true, treasuryAccumulatorExists: true });
-    expect(funded.lamports).toBe(r(COIN_VAULT_SIZE));
+  it("is exactly the rent init_coin makes the launcher pay", () => {
+    expect(initReimbursement(r, { treasuryLamports: 0n }).lamports).toBe(r(COIN_VAULT_SIZE) + r(0));
+    expect(initReimbursement(r, { treasuryLamports: 100_000n }).lamports).toBe(r(COIN_VAULT_SIZE) + (r(0) - 100_000n));
+    expect(initReimbursement(r, { treasuryLamports: 5_000_000n }).lamports).toBe(r(COIN_VAULT_SIZE));
   });
 });

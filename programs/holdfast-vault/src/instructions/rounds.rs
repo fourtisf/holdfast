@@ -86,13 +86,14 @@ pub struct Payout<'info> {
     pub treasury: SystemAccount<'info>,
     #[account(mint::token_program = token_program)]
     pub mint: Box<InterfaceAccount<'info, Mint>>,
+    /// Only needed for token payouts (it exists whenever `holder_tokens > 0`).
     #[account(
         mut,
         associated_token::mint = mint,
         associated_token::authority = treasury,
         associated_token::token_program = token_program,
     )]
-    pub treasury_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub treasury_token_account: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
     #[account(address = vault.token_program)]
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
@@ -136,11 +137,12 @@ pub fn payout<'info>(ctx: Context<'_, '_, 'info, 'info, Payout<'info>>, round_id
             require_keys_eq!(*token_account.owner, ctx.accounts.token_program.key(), HoldfastError::InvalidRecipientTokenAccount);
             let (ta_mint, ta_owner, _) = read_token_account(token_account)?;
             require!(ta_mint == mint && ta_owner == wallet.key(), HoldfastError::InvalidRecipientTokenAccount);
+            let from = ctx.accounts.treasury_token_account.as_ref().ok_or(HoldfastError::TreasuryAccountMissing)?;
             token_interface::transfer_checked(
                 CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
                     TransferChecked {
-                        from: ctx.accounts.treasury_token_account.to_account_info(),
+                        from: from.to_account_info(),
                         mint: ctx.accounts.mint.to_account_info(),
                         to: token_account.clone(),
                         authority: treasury.clone(),

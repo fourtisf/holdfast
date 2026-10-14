@@ -45,7 +45,7 @@ pub fn default_params() -> Params {
         max_defends_per_hour: 6,
         defend_price_tolerance_bps: 300,
         twap_window_secs: 600,
-        twap_min_sample_interval_secs: 30,
+        twap_min_sample_interval_secs: 40,
         twap_max_gap_secs: 120,
         ath_confirm_secs: 0,
         max_burn_slippage_bps: 500,
@@ -362,13 +362,60 @@ impl Env {
         )
     }
 
-    /// Simulates pump.fun `create_v2(creator = treasury)` and registers the coin.
+    /// Simulates pump.fun `create_v2(creator = treasury)`, registers the coin, and gives the treasury
+    /// the accounts `prepare_treasury` would create (written directly, so the buckets stay untouched).
     pub fn launch(&mut self, trigger_bps: u16) -> Coin {
+        let coin = self.launch_bare(trigger_bps);
+        self.provision_treasury(&coin);
+        coin
+    }
+
+    /// Launch exactly as the launcher does it: `init_coin` only, no treasury token accounts yet.
+    pub fn launch_bare(&mut self, trigger_bps: u16) -> Coin {
         let coin = self.prepare_coin(trigger_bps);
         let launcher = self.launcher.insecure_clone();
         let ix = self.init_coin_ix(&coin, &launcher.pubkey());
         self.send(&[ix], &[&launcher]).expect("init_coin");
         coin
+    }
+
+    /// Writes the treasury's token account, WSOL account and pump volume accumulator.
+    pub fn provision_treasury(&mut self, coin: &Coin) {
+        self.set_ata(&coin.treasury, &coin.mint, TOKEN_2022_PROGRAM, 0);
+        self.set_ata(&coin.treasury, &WSOL_MINT, TOKEN_PROGRAM, 0);
+        self.set_raw(user_volume_accumulator_pda(&coin.treasury, &PUMP_PROGRAM_ID), PUMP_PROGRAM_ID, vec![0u8; 137]);
+    }
+
+    pub fn exists(&self, key: &Pubkey) -> bool {
+        self.svm.get_account(key).is_some_and(|a| a.lamports > 0)
+    }
+
+    /// `volume_program`: also create the treasury's volume accumulator of pump (curve) or pump_amm.
+    pub fn prepare_treasury_ix(&self, coin: &Coin, volume_program: Option<Pubkey>) -> Instruction {
+        ix(
+            holdfast_vault::accounts::PrepareTreasury {
+                vault: coin.vault,
+                treasury: coin.treasury,
+                mint: coin.mint,
+                treasury_token_account: coin.treasury_ata,
+                treasury_wsol_account: coin.treasury_wsol,
+                wsol_mint: WSOL_MINT,
+                token_program: TOKEN_2022_PROGRAM,
+                wsol_token_program: TOKEN_PROGRAM,
+                associated_token_program: ATA_PROGRAM,
+                system_program: SYSTEM_PROGRAM,
+                volume_program,
+                user_volume_accumulator: volume_program.map(|p| user_volume_accumulator_pda(&coin.treasury, &p)),
+                volume_event_authority: volume_program.map(|p| Pubkey::find_program_address(&[b"__event_authority"], &p).0),
+            },
+            holdfast_vault::instruction::PrepareTreasury {},
+        )
+    }
+
+    pub fn prepare_treasury(&mut self, coin: &Coin, volume_program: Option<Pubkey>) -> TxResult {
+        let payer = self.payer.insecure_clone();
+        let ix = self.prepare_treasury_ix(coin, volume_program);
+        self.send(&[ix], &[&payer])
     }
 
     /// Mint + bonding curve (creator = treasury) at the standard pump.fun starting reserves.
@@ -399,12 +446,7 @@ impl Env {
                 vault: coin.vault,
                 treasury: coin.treasury,
                 bonding_curve: coin.bonding_curve,
-                treasury_token_account: coin.treasury_ata,
-                treasury_wsol_account: coin.treasury_wsol,
-                wsol_mint: WSOL_MINT,
                 token_program: TOKEN_2022_PROGRAM,
-                wsol_token_program: TOKEN_PROGRAM,
-                associated_token_program: ATA_PROGRAM,
                 system_program: SYSTEM_PROGRAM,
             },
             holdfast_vault::instruction::InitCoin { trigger_bps: coin.trigger_bps },
@@ -416,9 +458,9 @@ impl Env {
             holdfast_vault::accounts::CollectFees {
                 vault: coin.vault,
                 treasury: coin.treasury,
-                treasury_wsol_account: coin.treasury_wsol,
+                treasury_wsol_account: self.exists(&coin.treasury_wsol).then_some(coin.treasury_wsol),
                 mint: coin.mint,
-                treasury_token_account: coin.treasury_ata,
+                treasury_token_account: self.exists(&coin.treasury_ata).then_some(coin.treasury_ata),
                 token_program: TOKEN_2022_PROGRAM,
                 wsol_mint: WSOL_MINT,
                 wsol_token_program: TOKEN_PROGRAM,
@@ -460,13 +502,14 @@ impl Env {
         self.send(&[ix], &[&keeper])
     }
 
-    /// Samples the price every 30s for `secs` (keeper cadence), letting the TWAP settle.
+    /// Samples the price every `twap_min_sample_interval_secs` for `secs` (keeper cadence), letting the TWAP settle.
     pub fn sample_for(&mut self, coin: &Coin, pool: Option<&Pool>, secs: i64) {
+        let step = self.config().params.twap_min_sample_interval_secs as i64;
         let mut elapsed = 0;
         while elapsed <= secs {
             self.update_ath(coin, pool).expect("update_ath");
-            self.advance(30);
-            elapsed += 30;
+            self.advance(step);
+            elapsed += step;
         }
     }
 
@@ -598,7 +641,7 @@ impl Env {
                 round: round_pda(&coin.mint, round_id),
                 treasury: coin.treasury,
                 mint: coin.mint,
-                treasury_token_account: coin.treasury_ata,
+                treasury_token_account: self.exists(&coin.treasury_ata).then_some(coin.treasury_ata),
                 token_program: TOKEN_2022_PROGRAM,
                 system_program: SYSTEM_PROGRAM,
             },
@@ -667,8 +710,8 @@ impl Env {
 
     /// Establishes ATH at the current price via TWAP sampling.
     pub fn establish_ath(&mut self, coin: &Coin) {
-        let window = self.config().params.twap_window_secs as i64;
-        self.sample_for(coin, None, window + 30);
+        let params = self.config().params;
+        self.sample_for(coin, None, (params.twap_window_secs + params.twap_min_sample_interval_secs) as i64);
         assert!(self.vault(&coin.mint).ath_price > 0, "ATH should be set");
     }
 
@@ -724,6 +767,9 @@ pub fn round_pda(mint: &Pubkey, round_id: u64) -> Pubkey {
 }
 pub fn bonding_curve_pda(mint: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"bonding-curve", mint.as_ref()], &PUMP_PROGRAM_ID).0
+}
+pub fn user_volume_accumulator_pda(user: &Pubkey, program: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"user_volume_accumulator", user.as_ref()], program).0
 }
 pub fn creator_vault_pda(creator: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"creator-vault", creator.as_ref()], &PUMP_PROGRAM_ID).0

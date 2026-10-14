@@ -1,16 +1,28 @@
 import { DEFEND_STEP_BPS, PRICE_SCALE } from "@holdfast/core";
-import type { ConfigAccount } from "@holdfast/chain";
+import { DEFAULT_RENT, PUMP_USER_VOLUME_ACCUMULATOR_SIZE, SPL_TOKEN_ACCOUNT_SIZE, TOKEN_2022_ATA_SIZE, type ConfigAccount } from "@holdfast/chain";
 
-import type { CoinChainState } from "./state.js";
+import { treasuryReady, type CoinChainState, type TreasuryAccounts } from "./state.js";
 
 /** Mirrors programs/holdfast-vault/src/constants.rs. */
 export const MIN_DEFEND_LAMPORTS = 1_000_000n;
 export const MIN_BURN_LAMPORTS = 10_000_000n;
+/** `prepare_treasury` leaves at least one minimum buyback step in the floor bucket. */
+export const MIN_FLOOR_AFTER_PREPARE = (MIN_DEFEND_LAMPORTS * 10_000n) / BigInt(DEFEND_STEP_BPS);
+
+/** Rent `prepare_treasury` takes from the floor bucket for the accounts still missing. */
+export function prepareCost(t: TreasuryAccounts, rent = DEFAULT_RENT): bigint {
+  return (
+    (t.tokenAccount ? 0n : rent(TOKEN_2022_ATA_SIZE)) +
+    (t.wsolAccount ? 0n : rent(SPL_TOKEN_ACCOUNT_SIZE)) +
+    (t.volumeAccumulator ? 0n : rent(PUMP_USER_VOLUME_ACCUMULATOR_SIZE))
+  );
+}
 
 export type CrankAction =
   | { kind: "graduate" }
   | { kind: "update_ath" }
   | { kind: "collect" }
+  | { kind: "prepare" }
   | { kind: "defend"; budget: bigint; minTokensOut: bigint }
   | { kind: "burn" };
 
@@ -65,10 +77,16 @@ export function planCrank(s: CoinChainState, params: ConfigAccount["params"], me
     actions.push({ kind: "update_ath" });
   }
 
+  // The treasury's token accounts and volume accumulator are created once the coin's own floor bucket
+  // can pay for them (and still fund a buyback); buybacks and burns need them.
+  const ready = treasuryReady(s.treasury);
+  if (!ready && v.floorSol > prepareCost(s.treasury) + MIN_FLOOR_AFTER_PREPARE) actions.push({ kind: "prepare" });
+  const canBuy = ready || actions.some((a) => a.kind === "prepare");
+
   const budget = (v.floorSol * BigInt(DEFEND_STEP_BPS)) / 10_000n;
   const cooledDown = v.defendCount === 0n || nowSec - v.lastDefendTs >= params.defendCooldownSecs;
   const windowDefends = nowSec - v.hourWindowStart >= 3_600 ? 0 : v.hourWindowDefends;
-  if (v.floorPrice > 0n && s.spot <= v.floorPrice && budget >= MIN_DEFEND_LAMPORTS && cooledDown && windowDefends < params.maxDefendsPerHour) {
+  if (canBuy && v.floorPrice > 0n && s.spot <= v.floorPrice && budget >= MIN_DEFEND_LAMPORTS && cooledDown && windowDefends < params.maxDefendsPerHour) {
     const expected =
       v.venue === "amm" && s.pool
         ? quoteBuy(budget, s.pool.quoteAmount + s.pool.virtualQuoteReserves, s.pool.baseAmount, o.ammFeeBpsEstimate)
@@ -79,7 +97,7 @@ export function planCrank(s: CoinChainState, params: ConfigAccount["params"], me
     }
   }
 
-  if (o.holdMintSet && v.burnSol >= o.burnThresholdLamports && v.burnSol >= MIN_BURN_LAMPORTS && nowSec - memory.lastBurnAt >= o.burnEverySecs) {
+  if (canBuy && o.holdMintSet && v.burnSol >= o.burnThresholdLamports && v.burnSol >= MIN_BURN_LAMPORTS && nowSec - memory.lastBurnAt >= o.burnEverySecs) {
     actions.push({ kind: "burn" });
   }
   return actions;

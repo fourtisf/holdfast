@@ -27,7 +27,7 @@ const form = defaultForm();
 /** Rent tx A pays (pump mint + curve + curve token account). */
 const createRent = rent(pumpMintSize(utf8Len(form.name), utf8Len(form.ticker), metadataUriLength("https://api.holdfast.test/metadata"))) + rent(PUMP_BONDING_CURVE_SIZE) + rent(TOKEN_2022_ATA_SIZE);
 /** Rent the launcher pays in tx B and is reimbursed for. */
-const initRent = rent(COIN_VAULT_SIZE) + rent(0) + rent(TOKEN_2022_ATA_SIZE) + rent(SPL_TOKEN_ACCOUNT_SIZE) + rent(PUMP_USER_VOLUME_ACCUMULATOR_SIZE);
+const initRent = rent(COIN_VAULT_SIZE) + rent(0);
 
 let db: Db;
 let h: Harness;
@@ -85,7 +85,9 @@ describe("happy path", () => {
     expect(h.chain.curve(mint).creator.equals(treasuryPda(mint))).toBe(true);
     expect(h.chain.vaultTriggers.get(mint.toBase58())).toBe(2500);
     expect(await h.chain.accountExists(keys.vault)).toBe(true);
-    expect(await h.chain.accountExists(pump.userVolumeAccumulatorPda(keys.treasury))).toBe(true);
+    // the treasury's token accounts and accumulator are not created at launch (prepare_treasury, later)
+    expect(await h.chain.accountExists(pump.userVolumeAccumulatorPda(keys.treasury))).toBe(false);
+    expect(await h.chain.accountExists(keys.treasuryTokenAccount)).toBe(false);
     expect(await h.chain.getBalance(keys.treasury)).toBe(rent(0));
 
     const coin = await getCoin(db, mint.toBase58());

@@ -18,6 +18,8 @@ import {
   openRoundIx,
   parseHoldfastEvents,
   payoutIx,
+  prepareTreasuryIx,
+  userVolumeAccumulatorPda,
   updateAthIx,
 } from "../src/holdfast.js";
 import { HOLDFAST_PROGRAM_ID } from "../src/constants.js";
@@ -34,14 +36,12 @@ function ixName(data: Buffer): string | undefined {
 
 describe("holdfast client", () => {
   it("decodes a CoinVault account", () => {
-    const observations = Array.from({ length: 32 }, () => ({ ts: zero, price: zero }));
+    const observations = Array.from({ length: 16 }, () => ({ ts: zero, price: zero }));
     const raw = {
       mint,
       token_program: PublicKey.default,
       bonding_curve: Keypair.generate().publicKey,
       amm_pool: PublicKey.default,
-      amm_pool_base_account: PublicKey.default,
-      amm_pool_quote_account: PublicKey.default,
       trigger_bps: 2500,
       venue: 0,
       bump: 255,
@@ -72,7 +72,7 @@ describe("holdfast client", () => {
       total_burn_sol: zero,
       total_hold_burned: zero,
       created_at: new BN(1_759_999_000),
-      reserved: Array(64).fill(0),
+      total_treasury_rent: zero,
     };
     // anchor's encode() uses a fixed 1000-byte buffer; CoinVault is larger, so encode with the layout directly
     const { discriminator, layout } = (coder.accounts as unknown as { accountLayouts: Map<string, { discriminator: number[]; layout: { encode: (v: unknown, b: Buffer) => number } }> }).accountLayouts.get("CoinVault")!;
@@ -126,10 +126,20 @@ describe("holdfast client", () => {
 
     const init = initCoinIx(coin, keeper, 2500);
     expect(ixName(init.data)).toBe("init_coin");
-    expect(init.keys).toHaveLength(13);
+    // vault + treasury reserve only: the treasury's token accounts come later (prepare_treasury)
+    expect(init.keys).toHaveLength(8);
     expect(init.keys[0]!.isSigner).toBe(true);
 
     expect(ixName(collectFeesIx(coin).data)).toBe("collect_fees");
+    // missing treasury token accounts are passed as "none" (the program id)
+    const bare = collectFeesIx(coin, { tokenAccount: false, wsolAccount: false });
+    expect(bare.keys.filter((k) => k.pubkey.equals(HOLDFAST_PROGRAM_ID))).toHaveLength(2);
+
+    const prepare = prepareTreasuryIx(coin, "curve");
+    expect(ixName(prepare.data)).toBe("prepare_treasury");
+    expect(prepare.keys.some((k) => k.pubkey.equals(userVolumeAccumulatorPda(coin.treasury, "curve")) && k.isWritable)).toBe(true);
+    const prepareAtas = prepareTreasuryIx(coin, null);
+    expect(prepareAtas.keys.slice(-3).every((k) => k.pubkey.equals(HOLDFAST_PROGRAM_ID))).toBe(true);
 
     const ath = updateAthIx(coin, keeper, { priceAccount: coin.bondingCurve });
     expect(ath.keys).toHaveLength(6);
@@ -153,6 +163,10 @@ describe("holdfast client", () => {
       { index: 1, wallet, sol: 0n, tokens: 7n, tokenAccount: ta },
     ]);
     expect(pay.keys).toHaveLength(9 + 3);
+    // a SOL-only batch does not need the treasury token account (it may not exist yet)
+    const solOnly = payoutIx(coin, keeper, 3n, [{ index: 0, wallet, sol: 5n, tokens: 0n }]);
+    expect(solOnly.keys[6]!.pubkey.equals(HOLDFAST_PROGRAM_ID)).toBe(true);
+    expect(pay.keys[6]!.pubkey.equals(coin.treasuryTokenAccount)).toBe(true);
     expect(() => payoutIx(coin, keeper, 3n, [{ index: 0, wallet, sol: 0n, tokens: 1n }])).toThrow();
 
     expect(ixName(closeRoundIx(coin, keeper, 3n).data)).toBe("close_round");

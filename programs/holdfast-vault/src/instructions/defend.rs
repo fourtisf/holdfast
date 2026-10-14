@@ -11,7 +11,7 @@ use crate::math;
 use crate::state::{CoinVault, Config};
 use crate::swap::{execute_buy, BuyRequest};
 use crate::treasury::{spendable_lamports, treasury_seeds, WsolAccounts};
-use crate::venue::BuyTargets;
+use crate::venue::{self, BuyTargets};
 
 /// Permissionless floor defence. `remaining_accounts` = the venue buy instruction's accounts
 /// (pump `buy_exact_sol_in` before graduation, PumpSwap `buy_exact_quote_in` after) with the
@@ -86,14 +86,20 @@ pub fn defend<'info>(ctx: Context<'_, '_, 'info, 'info, Defend<'info>>, min_toke
 
     let mint = vault.mint;
     let venue = vault.venue;
+    let (pool_base_account, pool_quote_account) = if venue == VENUE_AMM {
+        let pool = venue::read_pool(&ctx.accounts.price_account)?;
+        (pool.pool_base_token_account, pool.pool_quote_token_account)
+    } else {
+        (Pubkey::default(), Pubkey::default())
+    };
     let targets = BuyTargets {
         mint,
         user: ctx.accounts.treasury.key(),
         user_token_account: ctx.accounts.treasury_token_account.key(),
         market: if venue == VENUE_CURVE { vault.bonding_curve } else { vault.amm_pool },
         user_quote_account: ctx.accounts.treasury_wsol_account.key(),
-        pool_base_account: vault.amm_pool_base_account,
-        pool_quote_account: vault.amm_pool_quote_account,
+        pool_base_account,
+        pool_quote_account,
     };
 
     let bump = [vault.treasury_bump];

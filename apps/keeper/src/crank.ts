@@ -9,6 +9,7 @@ import {
   decodeMintSupply,
   defendIx,
   graduateIx,
+  prepareTreasuryIx,
   updateAthIx,
   VENUE_AMM,
   VENUE_CURVE,
@@ -21,7 +22,7 @@ import type { Logger } from "pino";
 
 import type { KeeperChain } from "./chain.js";
 import { applySlippage, planCrank, quoteBuy, type CrankAction, type CrankMemory, type PlanOptions } from "./plan.js";
-import { userVolumeAccumulator, type PumpGateway } from "./pump.js";
+import type { PumpGateway } from "./pump.js";
 import { loadCoinState, loadPool, type CoinChainState } from "./state.js";
 
 export interface CrankContext {
@@ -85,19 +86,16 @@ async function execute(ctx: CrankContext, s: CoinChainState, config: ConfigAccou
   const keeper = ctx.keeper.publicKey;
   const coin = s.coin;
   switch (action.kind) {
-    case "graduate": {
-      if (!s.pool) return null;
-      const ixs: TransactionInstruction[] = [graduateIx(coin, s.pool.address)];
-      const accumulator = userVolumeAccumulator(coin.treasury, "amm");
-      const [existing] = await ctx.chain.getAccounts([accumulator]);
-      if (!existing) ixs.push(await ctx.pump.initAccumulatorInstruction(keeper, coin.treasury, "amm"));
-      return send(ctx, ixs);
-    }
+    case "graduate":
+      // The PumpSwap volume accumulator follows through `prepare` on the next pass (venue = amm).
+      return s.pool ? send(ctx, [graduateIx(coin, s.pool.address)]) : null;
+    case "prepare":
+      return send(ctx, [prepareTreasuryIx(coin, s.treasury.volumeAccumulator ? null : s.vault.venue)], 200_000);
     case "update_ath":
       return send(ctx, [updateAthIx(coin, keeper, s.priceAccounts)], 120_000);
     case "collect": {
       const claims = await ctx.pump.feeClaimInstructions(coin, keeper, s.vault.venue === "amm");
-      return send(ctx, [...claims, collectFeesIx(coin)], 400_000);
+      return send(ctx, [...claims, collectFeesIx(coin, { tokenAccount: s.treasury.tokenAccount, wsolAccount: s.treasury.wsolAccount })], 400_000);
     }
     case "defend": {
       const jitter = Math.floor(Math.random() * ctx.options.defendJitterMs);

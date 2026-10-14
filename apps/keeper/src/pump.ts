@@ -24,7 +24,6 @@ export interface PumpGateway {
   /** Permissionless sweeps + claims that move the coin's creator fees into its treasury. */
   feeClaimInstructions(coin: CoinKeys, payer: PublicKey, graduated: boolean): Promise<TransactionInstruction[]>;
   /** Pre-creates the treasury's volume accumulator so vault buys never pay rent. */
-  initAccumulatorInstruction(payer: PublicKey, user: PublicKey, venue: "curve" | "amm"): Promise<TransactionInstruction>;
 }
 
 const GLOBAL_TTL_MS = 5 * 60_000;
@@ -81,14 +80,5 @@ export class SdkPumpGateway implements PumpGateway {
     return ixs;
   }
 
-  async initAccumulatorInstruction(payer: PublicKey, user: PublicKey, venue: "curve" | "amm"): Promise<TransactionInstruction> {
-    return venue === "curve" ? PUMP_SDK.initUserVolumeAccumulator({ payer, user }) : PUMP_AMM_SDK.initUserVolumeAccumulator({ payer, user });
-  }
 }
 
-export function userVolumeAccumulator(user: PublicKey, venue: "curve" | "amm"): PublicKey {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("user_volume_accumulator"), user.toBuffer()],
-    venue === "curve" ? PUMP_PROGRAM_ID : PUMP_AMM_PROGRAM_ID,
-  )[0];
-}

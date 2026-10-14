@@ -300,6 +300,10 @@ describe("vault activity", () => {
     expect(await getVaultState(db, coin.mint)).toMatchObject({ floorSol: 600_000n, holderSol: 300_000n, burnSol: 100_000n, holderTokens: 5_000n, totalFees: 1_000_000n, ath: 4n * 10n ** 13n, floor: 3n * 10n ** 13n });
     expect(await listFloorHistory(db, coin.mint)).toEqual([{ ts: (T0 + 600) * 1000, ath: 4n * 10n ** 13n, floor: 3n * 10n ** 13n }]);
 
+    // prepare_treasury: the treasury's own accounts are paid from the floor bucket
+    await h.run(new TxBuilder(305, T0 + 650, wallet()).holdfast([{ name: "TreasuryPrepared", fields: holdfastFields.treasuryPrepared(coin, 100_000n, T0 + 650) }]).build());
+    expect(await getVaultState(db, coin.mint)).toMatchObject({ floorSol: 500_000n, holderSol: 300_000n, burnSol: 100_000n });
+
     const holder = wallet();
     await insertRound(db, {
       version: 1,

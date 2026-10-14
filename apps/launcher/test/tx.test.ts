@@ -85,14 +85,13 @@ describe("tx A: create_v2", () => {
 });
 
 describe("tx B: init_coin", () => {
-  it("reimburses the launcher, registers the vault with the trigger, pre-creates the treasury accumulator", async () => {
-    const tx = await buildInitTx({
+  it("reimburses the launcher and registers the vault with the trigger", async () => {
+    const tx = buildInitTx({
       deposit: deposit.publicKey,
       launcher: launcher.publicKey,
       mint: mint.publicKey,
       triggerBps: 3500,
       reimburseLamports: 16_328_160n,
-      initTreasuryAccumulator: true,
       recent,
       priority,
     });
@@ -114,12 +113,7 @@ describe("tx B: init_coin", () => {
       vault: keys.vault,
       treasury: keys.treasury,
       bonding_curve: keys.bondingCurve,
-      treasury_token_account: keys.treasuryTokenAccount,
-      treasury_wsol_account: keys.treasuryWsolAccount,
-      wsol_mint: WSOL_MINT,
       token_program: TOKEN_2022_PROGRAM_ID,
-      wsol_token_program: TOKEN_PROGRAM_ID,
-      associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
       system_program: SystemProgram.programId,
     };
     const accounts = idlAccounts(HOLDFAST_IDL as unknown as Parameters<typeof idlAccounts>[0], "init_coin");
@@ -131,25 +125,20 @@ describe("tx B: init_coin", () => {
       expect(meta.isWritable, a.name).toBe(Boolean(a.writable));
     });
     expect(init.keys[0]).toMatchObject({ isSigner: true, isWritable: true }); // launcher pays
-
-    const uva = programIx(tx, PUMP_PROGRAM_ID, "init_user_volume_accumulator");
-    const uvaAccounts = Object.fromEntries(idlAccounts(pumpIdl, "init_user_volume_accumulator").map((a, i) => [a.name, uva.keys[i]!]));
-    expect(uvaAccounts.payer).toMatchObject({ pubkey: launcher.publicKey, isSigner: true, isWritable: true });
-    expect(uvaAccounts.user).toMatchObject({ pubkey: keys.treasury, isSigner: false, isWritable: false });
-    expect(uvaAccounts.user_volume_accumulator!.pubkey.equals(pump.userVolumeAccumulatorPda(keys.treasury))).toBe(true);
+    // no treasury token accounts or accumulator at launch: prepare_treasury creates them from fees
+    expect(tx.instructions.some((i) => i.programId.equals(PUMP_PROGRAM_ID))).toBe(false);
 
     expect(tx.feePayer!.equals(deposit.publicKey)).toBe(true);
     expect(requiredSigners(tx)).toEqual([deposit.publicKey.toBase58(), launcher.publicKey.toBase58()]);
   });
 
-  it("leaves out the accumulator when it exists and the transfer when nothing is owed", async () => {
-    const tx = await buildInitTx({
+  it("leaves out the transfer when nothing is owed", async () => {
+    const tx = buildInitTx({
       deposit: deposit.publicKey,
       launcher: launcher.publicKey,
       mint: mint.publicKey,
       triggerBps: 1500,
       reimburseLamports: 0n,
-      initTreasuryAccumulator: false,
       recent,
       priority,
     });
@@ -232,7 +221,7 @@ describe("transaction sizes", () => {
     const curve = { ...pump.newBondingCurve(global), creator: treasuryPda(mint.publicKey) };
     const txs = {
       create: await buildCreateTx({ deposit: deposit.publicKey, mint: mint.publicKey, ...worst, recent, priority }),
-      init: await buildInitTx({ deposit: deposit.publicKey, launcher: launcher.publicKey, mint: mint.publicKey, triggerBps: 2500, reimburseLamports: 1n, initTreasuryAccumulator: true, recent, priority }),
+      init: buildInitTx({ deposit: deposit.publicKey, launcher: launcher.publicKey, mint: mint.publicKey, triggerBps: 2500, reimburseLamports: 1n, recent, priority }),
       devBuy: await buildDevBuyTx({ deposit: deposit.publicKey, sender, mint: mint.publicKey, tokens: 1n, maxSolCost: 1n, bondingCurve: curve, buybackFeeRecipient: global.buybackFeeRecipients[0]!, closeAccumulator: true, recent, priority }),
       refund: buildRefundTx({ deposit: deposit.publicKey, sender, lamports: 1n, recent, priority }),
     };

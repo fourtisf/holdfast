@@ -148,7 +148,7 @@ export async function createWorld(params: Partial<Record<string, number>> = {}):
     max_defends_per_hour: 6,
     defend_price_tolerance_bps: 300,
     twap_window_secs: 600,
-    twap_min_sample_interval_secs: 30,
+    twap_min_sample_interval_secs: 40,
     twap_max_gap_secs: 120,
     ath_confirm_secs: 0,
     max_burn_slippage_bps: 500,
@@ -295,10 +295,6 @@ class MockPumpGateway implements PumpGateway {
 
   async feeClaimInstructions(): Promise<TransactionInstruction[]> {
     return [];
-  }
-
-  async initAccumulatorInstruction(): Promise<TransactionInstruction> {
-    throw new Error("not used in these tests");
   }
 }
 
