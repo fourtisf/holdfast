@@ -55,7 +55,7 @@
   would stay in the vaults, unspendable but never extractable. Use a multisig, or drop `set_paused` if the owner prefers no
   emergency stop (see `docs/decisions.md`).
 - **Keeper key** can sample prices (only on schedule; values are read on-chain), open rounds with any recipient set within the
-  holder bucket, and burn the burn bucket into $HOLD with a min-out. Keep it on a dedicated, monitored host. It pays the
+  holder bucket, and burn the burn bucket into $MOAT with a min-out. Keep it on a dedicated, monitored host. It pays the
   transaction fees and round rent, which it gets back.
 - **pump.fun** admins can re-point a coin's creator (CTO, `set_creator`, fee-sharing config). See `docs/pump-integration.md` §5.
 

@@ -4,7 +4,7 @@ import { cn } from "@/components/ui/cn";
 const SEGMENTS = [
   { bps: SPLIT_FLOOR_BPS, label: "Floor vault", color: "bg-floor", text: "text-floor" },
   { bps: SPLIT_HOLDER_BPS, label: "Holder payouts", color: "bg-brand", text: "text-brand" },
-  { bps: SPLIT_BURN_BPS, label: "Buy & burn $HOLD", color: "bg-vault", text: "text-vault" },
+  { bps: SPLIT_BURN_BPS, label: "Buy & burn $MOAT", color: "bg-vault", text: "text-vault" },
 ];
 
 export function FeeSplitBar({ className, compact = false }: { className?: string; compact?: boolean }) {

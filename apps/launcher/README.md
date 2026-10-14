@@ -3,7 +3,7 @@
 The no-wallet launch flow of SPEC §5:
 1. The API creates a `launches` row with a unique deposit address (HKDF from `DEPOSIT_MASTER_SECRET`).
 2. The user sends SOL to that address.
-3. This worker watches for the deposit, creates the coin on pump.fun with **creator = the coin's Holdfast treasury PDA**,
+3. This worker watches for the deposit, creates the coin on pump.fun with **creator = the coin's Moatpad treasury PDA**,
    registers its vault, optionally runs the dev buy, and refunds everything left over to the sender.
 
 ```bash
@@ -25,7 +25,7 @@ and run `alt sync` after pump.fun SDK upgrades):
 
 | Tx | Contents | Fee payer / signers |
 |---|---|---|
-| L (v0 + lookup table) | compute budget + deposit → launcher reimbursement + pump.fun `create_v2(creator = treasuryPda(mint))` + Holdfast `init_coin(trigger)` + **either** the dev buy (`buy_v3`) **or** the exact leftover back to the sender | deposit / deposit + mint + launcher |
+| L (v0 + lookup table) | compute budget + deposit → launcher reimbursement + pump.fun `create_v2(creator = treasuryPda(mint))` + Moatpad `init_coin(trigger)` + **either** the dev buy (`buy_v3`) **or** the exact leftover back to the sender | deposit / deposit + mint + launcher |
 | D (dev buy only) | sender ATA + `transfer_checked` of exactly the bought tokens + close the deposit ATA and volume accumulator + the exact leftover back to the sender | deposit |
 
 - **No sniping window.** The coin is created, registered and dev-bought in one transaction. Nothing can trade in between,
@@ -45,7 +45,7 @@ and run `alt sync` after pump.fun SDK upgrades):
 | Tx | Contents | Fee payer / signers |
 |---|---|---|
 | A | compute budget + pump.fun `create_v2(creator = treasuryPda(mint), mayhem off)` | deposit / deposit + mint |
-| B | deposit → launcher transfer of the exact rent the launcher fronts + Holdfast `init_coin(trigger)` | deposit / deposit + launcher |
+| B | deposit → launcher transfer of the exact rent the launcher fronts + Moatpad `init_coin(trigger)` | deposit / deposit + launcher |
 | C (dev buy only) | deposit ATA + pump.fun `buy_v3` + sender ATA + `transfer_checked` of exactly the bought tokens + close the deposit ATA and its volume accumulator | deposit |
 | Refund | everything left on the deposit, minus the fee, back to the sender | deposit |
 
@@ -68,7 +68,7 @@ Both flows:
 | pump.fun mint (MetadataPointer + TokenMetadata) | 415 / 438 | 3,779,280 | 3,939,360 |
 | pump.fun bonding curve | 166 | 2,046,240 | 2,046,240 |
 | pump.fun curve token account | 170 | 2,074,080 | 2,074,080 |
-| Holdfast CoinVault | 730 | 5,971,680 | 5,971,680 |
+| Moatpad CoinVault | 730 | 5,971,680 | 5,971,680 |
 | treasury rent-exempt reserve | 0 | 890,880 | 890,880 |
 | transaction fees | – | 27,500 | 50,100 |
 | **Consumed** | | **14,789,660 ≈ 0.0148 SOL** | **14,972,340 ≈ 0.0150 SOL** |

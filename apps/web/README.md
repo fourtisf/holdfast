@@ -1,6 +1,6 @@
 # @holdfast/web
 
-Next.js 15 (App Router) frontend for the Holdfast launchpad: coins list, coin page with live chart and
+Next.js 15 (App Router) frontend for the Moatpad launchpad: coins list, coin page with live chart and
 trading, launch flow with deposit QR, profile, and the "How it works" modal (docs/SPEC.md §6).
 
 > **Prototype note.** The spec says the UI must match `holdfast-launchpad.html`, but that file was not

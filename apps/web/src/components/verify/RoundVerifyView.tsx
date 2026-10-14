@@ -39,7 +39,7 @@ function download(snapshot: RoundSnapshot) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `holdfast-${snapshot.mint}-round-${snapshot.roundId}.json`;
+  a.download = `moatpad-${snapshot.mint}-round-${snapshot.roundId}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }

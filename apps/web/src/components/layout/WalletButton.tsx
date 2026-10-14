@@ -59,7 +59,7 @@ function OpenInWalletApp() {
       </button>
       {open ? (
         <div className="absolute right-0 z-50 mt-2 w-56 rounded-card border border-line bg-surface p-2 shadow-card">
-          <p className="px-2 pb-2 text-xs text-muted">Phone browsers have no wallet. Open Holdfast in your wallet app:</p>
+          <p className="px-2 pb-2 text-xs text-muted">Phone browsers have no wallet. Open Moatpad in your wallet app:</p>
           {links.map((l) => (
             <a key={l.name} href={l.href} className="block rounded-lg px-2 py-2 text-sm font-semibold text-fg hover:bg-surface-2">
               {l.name}
@@ -71,7 +71,7 @@ function OpenInWalletApp() {
   );
 }
 
-/** wallet-adapter's multi button (connect / copy / change / disconnect) with Holdfast labels. */
+/** wallet-adapter's multi button (connect / copy / change / disconnect) with Moatpad labels. */
 export function WalletButton() {
   const { connected } = useWallet();
   const needsApp = useNeedsWalletApp();

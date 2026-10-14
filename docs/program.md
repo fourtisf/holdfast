@@ -1,4 +1,4 @@
-# Holdfast Vault program (`programs/holdfast-vault`)
+# Moatpad Vault program (`programs/holdfast-vault`)
 
 Anchor 0.32 program. Program id (devnet placeholder, regenerate per deployment with `anchor keys sync`):
 `8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM`.
@@ -28,7 +28,7 @@ treasury PDA and `CoinVault` keeps the bucket accounting.
 ## Invariants (enforced in code, covered by tests)
 
 1. **No withdraw.** SOL leaves the treasury only through `defend` (into the pump.fun / PumpSwap buy CPI),
-   `payout` (System transfer to an on-curve, system-owned, data-less wallet) and `burn_hold` (buy CPI for $HOLD,
+   `payout` (System transfer to an on-curve, system-owned, data-less wallet) and `burn_hold` (buy CPI for $MOAT,
    then burn). Admin/keeper instructions never move funds. The only other lamports the treasury spends are the rent
    of its *own* accounts in `prepare_treasury` (at most three token/accumulator accounts per venue, booked against
    `floor_sol` and counted in `total_treasury_rent`).
@@ -62,7 +62,7 @@ treasury PDA and `CoinVault` keeps the bucket accounting.
 | `open_round(round_id, sol_pot, token_pot, snapshot_hash, recipient_count)` | keeper | `round_id = last + 1`, ≥ `min_round_interval_secs` since the last round, one open round at a time |
 | `payout(round_id, entries[{index, sol, tokens}])` | keeper | remaining accounts per entry: `wallet` then (if `tokens > 0`) its token account. The treasury token account is optional for SOL-only batches |
 | `close_round(round_id)` | keeper | closes the round PDA (rent back to the keeper); unpaid amounts stay in the buckets |
-| `burn_hold(venue, min_hold_out)` | keeper | swaps all of `burn_sol` for $HOLD and burns exactly what was received, same instruction |
+| `burn_hold(venue, min_hold_out)` | keeper | swaps all of `burn_sol` for $MOAT and burns exactly what was received, same instruction |
 
 ## Events (Anchor `emit!`, base64 in `Program data:` logs)
 

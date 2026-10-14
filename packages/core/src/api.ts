@@ -27,7 +27,7 @@ export interface VaultSnapshot {
   floorSol: number;
   /** SOL waiting in the holder payout bucket (30% of fees). */
   holderSol: number;
-  /** SOL waiting to buy & burn $HOLD (10% of fees). */
+  /** SOL waiting to buy & burn $MOAT (10% of fees). */
   burnSol: number;
   /** Tokens bought back by the vault and waiting to be paid to holders. */
   holderTokens: number;

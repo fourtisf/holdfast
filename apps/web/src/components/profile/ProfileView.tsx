@@ -192,7 +192,7 @@ function Positions({ positions, own }: { positions: Position[]; own: boolean }) 
       <CardHeader title="Positions" icon={<CoinsIcon size={15} />} subtitle="Share = tokens × weight ÷ everyone's tokens × weight" />
       {positions.length === 0 ? (
         <EmptyState
-          title={own ? "You don't hold any Holdfast coins yet" : "This wallet holds no Holdfast coins"}
+          title={own ? "You don't hold any Moatpad coins yet" : "This wallet holds no Moatpad coins"}
           body="Buy a coin to start earning. Lots start at 0.1× weight and reach 1.0× after 7 days."
           action={<ButtonLink href="/">Browse coins</ButtonLink>}
         />
@@ -349,7 +349,7 @@ function TradeHistory({ wallet }: { wallet: string }) {
   const hasMore = Boolean(data?.[data.length - 1]?.nextCursor);
   return (
     <Card className="overflow-hidden">
-      <CardHeader title="Trades" subtitle="Every buy and sell of this wallet on Holdfast coins" />
+      <CardHeader title="Trades" subtitle="Every buy and sell of this wallet on Moatpad coins" />
       {isLoading ? (
         <div className="space-y-2 border-t border-line p-4">
           {Array.from({ length: 4 }, (_, i) => (

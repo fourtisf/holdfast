@@ -18,7 +18,7 @@ function link(href: string, label: string): string {
 }
 
 function coinLink(links: Links, coin: CoinLabel): string {
-  return link(coinUrl(links, coin.mint), `$${coin.ticker.trim() || shortAddress(coin.mint)} on Holdfast`);
+  return link(coinUrl(links, coin.mint), `$${coin.ticker.trim() || shortAddress(coin.mint)} on Moatpad`);
 }
 
 function linksLine(links: Links, coin: CoinLabel, sig: string | null): string {

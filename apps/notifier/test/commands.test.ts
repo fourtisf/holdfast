@@ -110,7 +110,7 @@ describe("/watch and /unwatch", () => {
 describe("/coin and /uncoin", () => {
   it("requires the coin to exist", async () => {
     const unknown = addr("nope");
-    expect(await say(`/coin ${unknown}`)).toBe(`No Holdfast coin has the mint <code>${unknown}</code>.`);
+    expect(await say(`/coin ${unknown}`)).toBe(`No Moatpad coin has the mint <code>${unknown}</code>.`);
     expect(await say("/coin not-an-address")).toContain("is not a valid Solana address");
     expect(await countChatSubscriptions(db, PRIVATE.id)).toBe(0);
 

@@ -43,7 +43,7 @@ const STEPS: Step[] = [
     title: "Creator fees go to the coin's own vault",
     body: (
       <>
-        Every trade pays a creator fee. On Holdfast the creator is an on-chain vault owned by the coin: <b className="text-fg">0% goes to the dev</b>, and the
+        Every trade pays a creator fee. On Moatpad the creator is an on-chain vault owned by the coin: <b className="text-fg">0% goes to the dev</b>, and the
         program has no withdraw function.
       </>
     ),
@@ -90,7 +90,7 @@ export function HowItWorksModal({ open, onClose }: { open: boolean; onClose: () 
       className="sm:max-w-2xl"
       title={
         <div>
-          <div className="text-lg font-semibold">How Holdfast works</div>
+          <div className="text-lg font-semibold">How Moatpad works</div>
           <div className="mt-0.5 text-sm font-normal text-muted">Coins that defend their own price and pay the holders who stay.</div>
         </div>
       }

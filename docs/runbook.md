@@ -1,6 +1,6 @@
 # Runbook: devnet rehearsal to mainnet
 
-How to take Holdfast from a fresh checkout to a mainnet launch, and how to operate it afterwards. Commands
+How to take Moatpad from a fresh checkout to a mainnet launch, and how to operate it afterwards. Commands
 assume the repository root, a filled-in `.env` (see `.env.example`) and the toolchain from the README.
 
 Nothing in this runbook can move vault funds. The program has no withdraw path; every admin power is listed in
@@ -94,7 +94,7 @@ Do not deploy to mainnet without an external audit of `programs/holdfast-vault`.
    ([pump-integration.md §5](pump-integration.md)).
    Decide on the emergency pause ([decisions #15](decisions.md)): it can freeze outflows, so it is only acceptable
    behind the multisig.
-4. **$HOLD.** Launch $HOLD (through Holdfast itself, or on pump.fun), then set it once from the multisig:
+4. **$MOAT.** Launch $MOAT (through Moatpad itself, or on pump.fun), then set it once from the multisig:
    `pnpm --filter @holdfast/keeper admin -- set-hold-mint <HOLD_MINT> --print --as <SQUADS_VAULT> --rpc $RPC`
    gives the instruction to propose. Until then each coin's burn bucket accrues and nothing is lost.
 5. **Lookup table.** `pnpm --filter @holdfast/launcher alt create` against mainnet; set `LAUNCHER_LOOKUP_TABLE`.

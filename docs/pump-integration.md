@@ -22,7 +22,7 @@ Program ids are the same on mainnet and devnet:
   takes the creator as a **plain argument**. The signing payer (`user`) is a separate account. The legacy `create` is
   deprecated and takes `creator` the same way. The docs warn: *"be careful what creator pubkey you pass … that
   pubkey will receive all the creator fees for that coin."*
-- Holdfast passes `creator = treasuryPda(mint) = ["treasury", mint]` under the vault program. `init_coin` refuses a coin
+- Moatpad passes `creator = treasuryPda(mint) = ["treasury", mint]` under the vault program. `init_coin` refuses a coin
   unless the bonding curve's stored `creator` (offset 49) equals that PDA.
 - When the curve migrates, pump.fun copies the creator into the canonical pool's `Pool.coin_creator`.
 - Do **not** set `is_holder_reward = true`. Holder-reward coins ignore `creator` and route fees to pump.fun's own holder-rewards PDA.
@@ -45,10 +45,10 @@ not a signer:
 | PumpSwap, v1 trades | coin-creator vault ATA (WSOL), authority `["creator_vault", coin_creator]` (pump_amm) | — | `collect_coin_creator_fee` → creator's WSOL token account |
 | PumpSwap, v2 trades (fees kept in the pool) | `Pool.creator_fees` | `sweep_creator_fee` (pump_amm) | `collect_coin_creator_fee` |
 
-What the Holdfast keeper sends in one transaction (`apps/keeper/src/pump.ts`, built with the SDKs):
+What the Moatpad keeper sends in one transaction (`apps/keeper/src/pump.ts`, built with the SDKs):
 `pump sweep_creator_fee` → (after graduation) `pump_amm sweep_creator_fee` → `collect_creator_fee_v2` (+ the AMM
 `collect_coin_creator_fee` leg when its vault ATA exists, via `OnlinePumpSdk.collectCoinCreatorFeeV2Instructions` with the
-keeper as fee payer, so the SDK never tries to close the treasury's WSOL account) → **Holdfast `collect_fees`**.
+keeper as fee payer, so the SDK never tries to close the treasury's WSOL account) → **Moatpad `collect_fees`**.
 `collect_fees` unwraps the treasury's WSOL account by closing and re-creating it, then books every unaccounted lamport 60/30/10.
 Because `collect_fees` books whatever arrived, fees claimed by anyone else, or donations, still end up split correctly.
 
@@ -90,7 +90,7 @@ are tested.
 
 - **Admin creator changes.** `set_creator` (by `Global.set_creator_authority`), `admin_cto` / `admin_cto_pool`, and
   `create_fee_sharing_config` (also callable by `admin_set_creator_authority`) let pump.fun's admins re-point a coin's
-  creator fees. Holdfast can't prevent this. The indexer should alert on `SetCreatorEvent`, `AdminCtoEvent` and
+  creator fees. Moatpad can't prevent this. The indexer should alert on `SetCreatorEvent`, `AdminCtoEvent` and
   `CreateFeeSharingConfigEvent` for our mints.
 - **Upgrades.** pump.fun upgrades both programs often: v2/v3 trade instructions, fee sweeps, negative virtual reserves, and
   depth-2 quote coins on 2026-10-13. Pass-through accounts plus SDK-built lists absorb most changes without a vault upgrade.

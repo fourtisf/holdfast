@@ -105,7 +105,7 @@ export async function request<T>(path: string, init: RequestInit & { json?: unkn
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
-    throw new ApiError("Network error: the Holdfast API is unreachable.", 0);
+    throw new ApiError("Network error: the Moatpad API is unreachable.", 0);
   }
   if (!res.ok) {
     let message = `Request failed (${res.status})`;

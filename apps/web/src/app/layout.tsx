@@ -11,8 +11,8 @@ import { AppProviders } from "@/components/providers/AppProviders";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
-  title: { default: "Holdfast · memecoins that defend their floor", template: "%s · Holdfast" },
-  description: "Launch on pump.fun where creator fees fund an on-chain floor vault and pay long-term holders every 2 minutes.",
+  title: { default: "Moatpad · every coin gets a moat", template: "%s · Moatpad" },
+  description: "Every coin gets a moat. Launch on pump.fun where creator fees fund an on-chain floor vault and pay long-term holders every 2 minutes.",
 };
 
 export const viewport: Viewport = {

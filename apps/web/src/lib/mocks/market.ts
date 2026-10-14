@@ -188,7 +188,7 @@ const EXTRA_NAMES: [string, string][] = [
   ["Bedrock", "BED"],
   ["Floor Guard", "GUARD"],
   ["Sea Cucumber", "CUKE"],
-  ["Holdfast Hamster", "HAMSTR"],
+  ["Moat Hamster", "HAMSTR"],
   ["Mollusk Mafia", "MAFIA"],
   ["Anemone", "ANEM"],
   ["Kraken Jr", "KRAKJR"],

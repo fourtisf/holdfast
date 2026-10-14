@@ -97,7 +97,7 @@ export function ReportButton({ mint, ticker }: { mint: string; ticker: string })
                 placeholder="Links or context that help a moderator"
               />
             </label>
-            <p className="text-xs text-faint">Hiding a coin removes it from Holdfast&apos;s lists. It keeps trading on pump.fun, and its holders keep being paid.</p>
+            <p className="text-xs text-faint">Hiding a coin removes it from Moatpad&apos;s lists. It keeps trading on pump.fun, and its holders keep being paid.</p>
             {error ? <ErrorNote>{error}</ErrorNote> : null}
           </div>
         )}
@@ -110,7 +110,7 @@ export function ReportButton({ mint, ticker }: { mint: string; ticker: string })
 export function HiddenNotice({ reason }: { reason: string | null }) {
   return (
     <div role="status" className="rounded-card border border-sell/30 bg-sell/10 px-4 py-3 text-sm text-fg">
-      <span className="font-semibold">Hidden by Holdfast moderators.</span>{" "}
+      <span className="font-semibold">Hidden by Moatpad moderators.</span>{" "}
       <span className="text-muted">
         {reason ? `Reason: ${reason}. ` : ""}Its image, description and links are not shown. The coin keeps trading on pump.fun and its vault keeps
         working for holders.

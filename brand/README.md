@@ -1,55 +1,49 @@
-# Holdfast brand
+# Moatpad brand
 
-**The mark is a monogram H built like a rampart.** Two walls hold; between them a chevron rises. It is the
-product in one shape: every coin's vault defends its floor while the price climbs. The pillars' tops rise
-toward the centre and every diagonal shares one slope. The outer faces catch the light and the inner faces
-sit in shade, so the walls read as folded metal.
+**Every coin gets a moat.** A moat is the defence around a castle; on Moatpad it is each coin's floor vault,
+which buys back at the floor and pays holders. The mark is an **obsidian coin bearing a gold castle M** (its two
+pillars end in battlements) inside a **gold ring: the moat**. The wordmark is **MOATPAD** in Cinzel SemiBold,
+tracked capitals, outlined to paths. Domain: **moatpad.fun**. Token: **$MOAT**.
 
-The wordmark is **HOLDFAST** in Geist SemiBold, set in capitals with wide tracking (0.16 em, F–A kerned),
-outlined to paths so no font is needed.
-
-![Brand board](png/holdfast-brand-board.png)
+![Brand board](png/moatpad-brand-board.png)
 
 ## Files
 
 | File | Use |
 |---|---|
-| `holdfast-logo.svg` | Primary horizontal logo, for dark backgrounds |
-| `holdfast-logo-on-light.svg` | Horizontal logo for light backgrounds (deep emerald mark, night wordmark) |
-| `holdfast-logo-white.svg` | One-colour white, for photos and busy backgrounds |
-| `holdfast-logo-stacked.svg` | Mark above wordmark: splash screens, square layouts |
-| `holdfast-mark.svg` / `holdfast-mark-on-light.svg` | The mark alone (dark / light backgrounds) |
-| `holdfast-mark-white.svg` / `holdfast-mark-black.svg` | One-colour silhouettes |
-| `holdfast-icon.svg` | App icon: the mark on the night tile with an emerald glow |
-| `holdfast-favicon.svg` | Small sizes (≤ 32 px): flat mark, larger in the tile. Used as `apps/web/src/app/icon.svg` |
-| `holdfast-avatar.svg` | Full-bleed square for X, Telegram and Discord profile pictures (survives a circle crop) |
-| `holdfast-wordmark.svg` / `holdfast-wordmark-on-light.svg` | Wordmark alone |
-| `png/` | Exports: app icon 1024/512, apple-touch-icon 180, avatar 1000/400, mark 1024, logos on dark / light / transparent, stacked logo, X header 1500×500, brand board |
+| `moatpad-logo.svg` | Primary horizontal logo, gold wordmark, for dark backgrounds (`apps/web/public/brand/`) |
+| `moatpad-logo-on-light.svg` | Horizontal logo for light backgrounds (ink wordmark) |
+| `moatpad-logo-stacked.svg` | Coin above the wordmark: splash screens, square layouts |
+| `moatpad-mark.svg` | The coin alone, with rim light and embossed castle |
+| `moatpad-mark-small.svg` / `moatpad-favicon.svg` | Simplified coin for ≤ 32 px; the favicon sits on an obsidian tile (`apps/web/src/app/icon.svg`) |
+| `moatpad-wordmark.svg` / `moatpad-wordmark-on-light.svg` | Wordmark alone |
+| `3d/renders/` | Real 3D renders (three.js, physically based materials): `coin-*` tilted, `token-*` near front-on, `monogram` the castle M alone, in all three finishes |
+| `png/` | App icon 1024/512, apple-touch-icon 180, avatar 1000/400 (3D), coin 3D, mark 1024, logos on dark / light / transparent, stacked logo, X header 1500×500, brand board |
+
+Use the **3D coin** where the logo is large and alone (app icon, avatar, X header, hero) and the **2D logo** in
+interfaces and small sizes.
 
 ## Colours
 
 | Name | Hex | Role |
 |---|---|---|
-| Emerald | `#5fe8a8` | the brand colour |
-| Mint light | `#d4ffe9` | highlight end of the lit gradient |
-| Deep emerald | `#0c8653` | shadow end of the lit gradient; the mark on light backgrounds |
-| Night | `#07080c` | backgrounds, dark wordmark |
-| Paper | `#eef2ef` | light wordmark |
+| Gold | `#e8bc5b` | castle, moat, wordmark |
+| Gold light | `#fff1c6` | highlights |
+| Gold deep | `#a97b2a` | shadows of the gold |
+| Obsidian | `#0a0b0e` | the coin, backgrounds |
+| Ivory | `#f3efe4` | light backgrounds |
 
 ## Rules
 
-- Clear space: at least half the mark's width on every side of the logo.
-- Minimum sizes: horizontal logo 20 px tall; mark 16 px (use `holdfast-favicon.svg` below 32 px).
-- Use the lit/shade colouring or a one-colour version. Don't recolour single faces, add outlines or
-  shadows, rotate, or stretch.
-- Don't set the wordmark in another font or in lower case. The product is "Holdfast" in running text,
-  "HOLDFAST" in the logo, and the token is **$HOLD**.
+- Clear space: half the coin's width around the logo. Minimum size: logo 22 px tall, coin 16 px (use the favicon).
+- Keep the coin obsidian and the castle and moat gold. Don't recolour, outline, stretch or rotate the 2D logo.
+- The wordmark is always MOATPAD in Cinzel capitals. In running text the name is "Moatpad".
 
 ## Regenerating
 
 ```bash
-pip install fonttools && python3 brand/generate.py      # SVGs
+pip install fonttools && python3 brand/generate.py      # SVGs (+ copies into apps/web)
 cd apps/web && cp ../../brand/export.mjs .brand-export.mjs && node .brand-export.mjs; rm .brand-export.mjs   # PNGs
 ```
 
-The web app draws the same mark in `apps/web/src/components/layout/Logo.tsx`; keep the coordinates in sync.
+3D renders: `brand/3d/src` (see `brand/3d/README.md`). Cinzel is SIL Open Font License (`fonts/OFL-Cinzel.txt`).

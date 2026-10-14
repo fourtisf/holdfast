@@ -8,7 +8,7 @@
  * Two lists:
  * - `blocked` terms reject the launch outright (built-in: child-abuse terms and common scam
  *   phrases; operators add more with MODERATION_BLOCKLIST_FILE, one term per line).
- * - `reserved` tickers/names (well-known assets and Holdfast's own $HOLD) are accepted but flagged
+ * - `reserved` tickers/names (well-known assets and Moatpad's own $MOAT) are accepted but flagged
  *   for review, because impersonation is the most common launchpad scam.
  */
 
@@ -85,6 +85,8 @@ export const DEFAULT_BLOCKED_TERMS: readonly string[] = [
 
 /** Well-known tickers/names a new coin should not impersonate without review. */
 export const DEFAULT_RESERVED: readonly string[] = [
+  "moat",
+  "moatpad",
   "hold",
   "holdfast",
   "sol",

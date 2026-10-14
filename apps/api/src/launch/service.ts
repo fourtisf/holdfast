@@ -17,7 +17,7 @@ export interface LaunchService {
 }
 
 export function solanaPayUrl(address: string, lamports: bigint, ticker: string): string {
-  const params = new URLSearchParams({ amount: lamportsToSolString(lamports), label: "Holdfast", message: `Launch $${ticker}` });
+  const params = new URLSearchParams({ amount: lamportsToSolString(lamports), label: "Moatpad", message: `Launch $${ticker}` });
   return `solana:${address}?${params.toString().replace(/\+/g, "%20")}`;
 }
 

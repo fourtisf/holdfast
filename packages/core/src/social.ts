@@ -44,7 +44,7 @@ export function normalizeCommentBody(body: string): string {
 /** The text a wallet signs (`signMessage`) to post a comment. Human readable on purpose. */
 export function commentMessage(p: CommentPayload): string {
   return [
-    "Holdfast comment",
+    "Moatpad comment",
     `coin: ${p.mint}`,
     `reply to: ${p.replyTo === null ? "-" : String(p.replyTo)}`,
     `signed at: ${new Date(p.signedAt).toISOString()}`,

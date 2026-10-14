@@ -1,4 +1,4 @@
-# Holdfast API
+# Moatpad API
 
 Base URL: `NEXT_PUBLIC_API_URL` (default `http://localhost:4000`). All response bodies are JSON and typed in
 [`packages/core/src/api.ts`](../packages/core/src/api.ts). Errors: `{ "error": string }` with a 4xx/5xx status.
@@ -37,7 +37,7 @@ A coin hidden by moderators is left out of `/coins` and `/stats`. `GET /coins/:m
 
 ## Admin (`Authorization: Bearer $ADMIN_TOKEN`; 404 when ADMIN_TOKEN is unset)
 
-Nothing here can touch funds. Moderation only changes what Holdfast lists and shows, and every action is logged.
+Nothing here can touch funds. Moderation only changes what Moatpad lists and shows, and every action is logged.
 
 | Method | Path | Response | Notes |
 |---|---|---|---|

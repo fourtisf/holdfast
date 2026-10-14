@@ -1,15 +1,22 @@
-# Holdfast
+# Moatpad
+
+<img src="brand/png/moatpad-logo-on-dark.png" alt="Moatpad" height="80">
+
+**[moatpad.fun](https://moatpad.fun) · Every coin gets a moat.**
 
 A memecoin launchpad on top of **pump.fun (Solana)** where coins defend their own price and pay their holders:
 
-1. **Creator fees never reach the dev.** Every coin's pump.fun creator is a PDA of the Holdfast vault program. That program
+1. **Creator fees never reach the dev.** Every coin's pump.fun creator is a PDA of the Moatpad vault program. That program
    has no withdraw instruction.
 2. **Automatic floor.** `floor = ATH × (1 − trigger)`, with trigger 15 / 25 / 35% chosen at launch and immutable. When the
    price is at or below the floor, the vault buys back with 10% of its floor bucket per step.
 3. **Holders are paid by how long they hold.** Every 2 minutes, SOL plus the bought-back tokens are paid out by
    `tokens × weight`. Weight rises from 0.1× at purchase to 1.0× after 7 days.
 
-Fee split, fixed in the program: **60% floor vault · 30% holder payouts · 10% buy & burn $HOLD · 0% dev.**
+Fee split, fixed in the program: **60% floor vault · 30% holder payouts · 10% buy & burn $MOAT · 0% dev.**
+
+The code keeps the project's codename, **holdfast**: the `@holdfast/*` packages, the `holdfast_vault` program, the
+`HOLDFAST_*` settings and the database names. Only what users see says Moatpad.
 
 The product spec is [`docs/SPEC.md`](docs/SPEC.md) (Indonesian). Choices made where the spec left room, and the questions
 for the owner, are in [`docs/decisions.md`](docs/decisions.md).
@@ -23,8 +30,8 @@ for the owner, are in [`docs/decisions.md`](docs/decisions.md).
 | `packages/core` | Pure mechanism logic shared by every service and the web app: weights, FIFO lots, payout rounds, snapshot merkle tree and verifier, price/schedule helpers, API types |
 | `packages/chain` | Solana glue: PDAs, IDL-driven vault client, pump.fun / PumpSwap event and account decoders, deposit key derivation |
 | `packages/db` | Postgres schema and migrations, repositories, PGlite for tests/local dev |
-| `apps/indexer` | Parses pump.fun / PumpSwap / Holdfast transactions into trades, lots, balances, candles, vault mirrors |
-| `apps/keeper` | Keeper crank (fees, TWAP sampling, graduation, defend, $HOLD burn) and the 2-minute payout worker |
+| `apps/indexer` | Parses pump.fun / PumpSwap / Moatpad transactions into trades, lots, balances, candles, vault mirrors |
+| `apps/keeper` | Keeper crank (fees, TWAP sampling, graduation, defend, $MOAT burn) and the 2-minute payout worker |
 | `apps/launcher` | Launch flow: deposit address → one atomic transaction (pump.fun `create_v2(creator = treasury)` + `init_coin` + dev buy) → refund; IPFS metadata (Pinata) |
 | `apps/api` | Fastify REST + WebSocket API for the frontend ([docs/api.md](docs/api.md)) |
 | `apps/notifier` | Telegram bot: payouts, floor defences, graduations and weight milestones for watched wallets and coins ([docs/notifier.md](docs/notifier.md)) |
@@ -103,7 +110,7 @@ restart never sends anything twice. Create a bot with @BotFather, set `TELEGRAM_
 4. Start the stack and run the end-to-end proof of concept with real devnet transactions:
    `pnpm --filter @holdfast/keeper devnet-poc -- --api … --rpc … --payer …`. Then work through the remaining manual items in
    [docs/pump-integration.md](docs/pump-integration.md#devnet-poc-checklist-spec-91).
-5. Mainnet (audit, verifiable build, multisig upgrade authority and admin, $HOLD, monitoring, incidents):
+5. Mainnet (audit, verifiable build, multisig upgrade authority and admin, $MOAT, monitoring, incidents):
    [docs/runbook.md](docs/runbook.md).
 
 ## Docker

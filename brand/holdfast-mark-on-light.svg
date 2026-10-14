@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="14 12 72 76" role="img" aria-label="Holdfast"><title>Holdfast</title><defs>
-<linearGradient id="hf-lit" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#d4ffe9"/><stop offset="0.42" stop-color="#5fe8a8"/><stop offset="1" stop-color="#0c8653"/></linearGradient>
-<linearGradient id="hf-shade" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#1fae72"/><stop offset="1" stop-color="#06402a"/></linearGradient>
-<linearGradient id="hf-deep-lit" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#18b071"/><stop offset="1" stop-color="#0a5a39"/></linearGradient>
-<linearGradient id="hf-deep-shade" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#0b6d47"/><stop offset="1" stop-color="#03281a"/></linearGradient>
-<linearGradient id="hf-tile" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#132a20"/><stop offset="1" stop-color="#04090a"/></linearGradient>
-<radialGradient id="hf-glow" cx="0.5" cy="0.42" r="0.55"><stop offset="0" stop-color="#5fe8a8" stop-opacity="0.22"/><stop offset="1" stop-color="#5fe8a8" stop-opacity="0"/></radialGradient>
-</defs><polygon points="14,28 24,20 24,88 14,88" fill="url(#hf-deep-lit)"/><polygon points="76,20 86,28 86,88 76,88" fill="url(#hf-deep-lit)"/><polygon points="34,54 50,41.2 50,58.2 34,71" fill="url(#hf-deep-lit)"/><polygon points="24,20 34,12 34,88 24,88" fill="url(#hf-deep-shade)"/><polygon points="66,12 76,20 76,88 66,88" fill="url(#hf-deep-shade)"/><polygon points="50,41.2 66,54 66,71 50,58.2" fill="url(#hf-deep-shade)"/></svg>

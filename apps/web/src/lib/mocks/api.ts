@@ -222,7 +222,7 @@ export const mockApi: HoldfastApi = {
       depositAddress,
       requiredLamports: lamports(requiredSol),
       requiredSol,
-      solanaPayUrl: `solana:${depositAddress}?amount=${requiredSol}&label=Holdfast&message=${encodeURIComponent(`Launch $${req.ticker.toUpperCase()}`)}`,
+      solanaPayUrl: `solana:${depositAddress}?amount=${requiredSol}&label=Moatpad&message=${encodeURIComponent(`Launch $${req.ticker.toUpperCase()}`)}`,
       expiresAt: Date.now() + DEPOSIT_WINDOW_MS,
     };
     launches.set(launchId, { req, res, createdAt: Date.now(), mint: mockAddress(`launch:${launchId}`), sender: randomAddress() });

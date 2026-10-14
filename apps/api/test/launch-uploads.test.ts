@@ -65,7 +65,7 @@ describe("POST /launch", () => {
     const required = launchCost(launchCostSettings(api.config), { name: "Dog Coin", ticker: "DOG", devBuySol: 0.5 }).requiredLamports;
     expect(required).toBeGreaterThan(515_000_000n);
     expect(body).toMatchObject({ requiredLamports: required.toString(), requiredSol: Number(required) / 1e9, expiresAt: NOW + 30 * 60_000 });
-    expect(body.solanaPayUrl).toBe(`solana:${body.depositAddress}?amount=${lamportsToSolString(required)}&label=Holdfast&message=Launch%20%24DOG`);
+    expect(body.solanaPayUrl).toBe(`solana:${body.depositAddress}?amount=${lamportsToSolString(required)}&label=Moatpad&message=Launch%20%24DOG`);
     expect(await isExcluded(db, body.depositAddress)).toBe(true);
 
     const row = await getLaunch(db, body.launchId);
@@ -183,6 +183,6 @@ describe("helpers", () => {
     expect(lamportsToSolString(2_000_000_000n)).toBe("2");
     expect(tokensToRaw(1.5, 6)).toBe(1_500_000n);
     expect(tokensToRaw(1_000_000, 6)).toBe(1_000_000_000_000n);
-    expect(solanaPayUrl("Addr", 15_000_000n, "A B")).toBe("solana:Addr?amount=0.015&label=Holdfast&message=Launch%20%24A%20B");
+    expect(solanaPayUrl("Addr", 15_000_000n, "A B")).toBe("solana:Addr?amount=0.015&label=Moatpad&message=Launch%20%24A%20B");
   });
 });

@@ -70,7 +70,7 @@ describe("messages", () => {
   const mint = addr("mint:hound");
   const wallet = addr("alice");
   const coin = { mint, ticker: "HOUND", decimals: 6 };
-  const coinLink = `<a href="https://holdfast.example/coin/${mint}">$HOUND on Holdfast</a>`;
+  const coinLink = `<a href="https://holdfast.example/coin/${mint}">$HOUND on Moatpad</a>`;
 
   it("payout: amount, optional tokens, wallet, coin page and Solscan", () => {
     expect(payoutMessage(LINKS, { coin, roundId: 42, wallet, sol: 12_345_678n, tokens: 1500n * TOK, sig: "PaySig" })).toBe(

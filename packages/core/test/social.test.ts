@@ -20,7 +20,7 @@ describe("launchpad helpers", () => {
 
   it("the signed comment message is stable and readable", () => {
     const msg = commentMessage({ mint: "Mint111", body: "  gm\r\n\r\n\r\n\r\n\r\nfrens ", replyTo: null, signedAt: Date.UTC(2026, 9, 14, 7, 0, 0) });
-    expect(msg).toBe("Holdfast comment\ncoin: Mint111\nreply to: -\nsigned at: 2026-10-14T07:00:00.000Z\n\ngm\n\n\nfrens");
+    expect(msg).toBe("Moatpad comment\ncoin: Mint111\nreply to: -\nsigned at: 2026-10-14T07:00:00.000Z\n\ngm\n\n\nfrens");
     expect(normalizeCommentBody("a\r\nb")).toBe("a\nb");
   });
 });

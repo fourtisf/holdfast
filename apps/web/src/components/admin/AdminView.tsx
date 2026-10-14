@@ -43,7 +43,7 @@ export function AdminView() {
   if (!client) {
     return (
       <Card className="mx-auto max-w-md p-5">
-        <h1 className="text-lg font-semibold text-fg">Holdfast admin</h1>
+        <h1 className="text-lg font-semibold text-fg">Moatpad admin</h1>
         <p className="mt-1 text-sm text-muted">Enter the API&apos;s ADMIN_TOKEN. It is kept for this browser tab only.</p>
         <form
           className="mt-4 flex gap-2"

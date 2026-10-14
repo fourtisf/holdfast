@@ -1,4 +1,4 @@
-# Holdfast stack: Postgres, migrations, the backend services and the web app.
+# Moatpad stack: Postgres, migrations, the backend services and the web app.
 #
 #   cp .env.example .env     # fill in RPC, DEPOSIT_MASTER_SECRET, LAUNCHER_ADDRESS, ...
 #   mkdir -p keys            # keeper.json + launcher.json (Solana CLI keypair files)

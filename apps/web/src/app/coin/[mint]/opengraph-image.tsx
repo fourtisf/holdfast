@@ -1,9 +1,21 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
-import { logoMarkElements } from "@/components/layout/Logo";
 import { fetchCoinForPreview } from "@/lib/server-coin";
 import { formatMarketCap, formatSol } from "@/lib/format";
 
-export const alt = "Holdfast coin";
+export const alt = "Moatpad coin";
+
+// The brand logo, read from public/ (the server's working directory is the web app).
+function loadLogo(): string {
+  try {
+    return `data:image/svg+xml;base64,${readFileSync(join(process.cwd(), "public/brand/moatpad-logo.svg")).toString("base64")}`;
+  } catch {
+    return "";
+  }
+}
+const LOGO = loadLogo();
+const LOGO_WIDTH = 209; // 48 px tall at the logo's 4.35 : 1 aspect
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -26,13 +38,8 @@ export default async function Image({ params }: { params: Promise<{ mint: string
     (
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: C.bg, color: C.fg, padding: 60, fontFamily: "sans-serif" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 28, fontWeight: 600, color: C.fg, letterSpacing: 5 }}>
-            <svg width="42" height="44" viewBox="14 12 72 76">
-              {logoMarkElements("og")}
-            </svg>
-            HOLDFAST
-          </div>
-          <div style={{ fontSize: 26, color: C.muted }}>0% to the dev · vault defends the floor</div>
+          <img src={LOGO} height={48} width={LOGO_WIDTH} alt="" />
+          <div style={{ fontSize: 26, color: C.muted }}>Every coin gets a moat</div>
         </div>
         {coin ? (
           <div style={{ display: "flex", flexDirection: "column", flex: 1, justifyContent: "center" }}>

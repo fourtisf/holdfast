@@ -29,7 +29,7 @@ export function CoinPageView({ mint }: { mint: string }) {
   useCoinLive(mint, wallet);
 
   useEffect(() => {
-    if (coin) document.title = `${coin.name} ($${coin.ticker}) · Holdfast`;
+    if (coin) document.title = `${coin.name} ($${coin.ticker}) · Moatpad`;
   }, [coin]);
 
   if (error && !coin) {
@@ -38,7 +38,7 @@ export function CoinPageView({ mint }: { mint: string }) {
       <Card>
         <EmptyState
           title={missing ? "Coin not found" : "Could not load this coin"}
-          body={missing ? "This mint isn't a Holdfast coin, or it hasn't been indexed yet." : errorMessage(error)}
+          body={missing ? "This mint isn't a Moatpad coin, or it hasn't been indexed yet." : errorMessage(error)}
           action={<ButtonLink href="/">Back to coins</ButtonLink>}
         />
       </Card>

@@ -56,8 +56,8 @@ export interface CommandContext {
 
 export function helpText(): string {
   return [
-    "<b>Holdfast alerts</b>",
-    "Every Holdfast coin's creator fees fund a floor vault (buybacks when the price drops to the floor), pay holders every 2 minutes weighted by how long they hold, and burn $HOLD. This bot tells you when that happens to you.",
+    "<b>Moatpad alerts</b>",
+    "Every Moatpad coin's creator fees fund a floor vault (buybacks when the price drops to the floor), pay holders every 2 minutes weighted by how long they hold, and burn $MOAT. This bot tells you when that happens to you.",
     "",
     "/watch &lt;wallet&gt; - your payouts, and when a position reaches 0.5x and full weight",
     "/unwatch &lt;wallet&gt; - stop watching a wallet",
@@ -101,7 +101,7 @@ async function follow(ctx: CommandContext, chatId: number, cmd: ParsedCommand): 
   const arg = addressArg(cmd, "mint");
   if ("reply" in arg) return arg.reply;
   const coin = await getCoin(ctx.db, arg.address);
-  if (!coin) return `No Holdfast coin has the mint ${code(arg.address)}.`;
+  if (!coin) return `No Moatpad coin has the mint ${code(arg.address)}.`;
   return subscribed(ctx, chatId, "coin", coin.mint, () =>
     [
       `🔔 Following $${tickerText(coin)} (${escapeHtml(coin.name)}).`,

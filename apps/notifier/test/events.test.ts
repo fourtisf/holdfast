@@ -103,7 +103,7 @@ describe("round closed", () => {
 
     expect(await notifier.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(4);
     const solscan = '<a href="https://solscan.io/tx/pay1?cluster=devnet">Solscan</a>';
-    const coinLink = `<a href="https://holdfast.example/coin/${coin.mint}">$HOUND on Holdfast</a>`;
+    const coinLink = `<a href="https://holdfast.example/coin/${coin.mint}">$HOUND on Moatpad</a>`;
     const aliceMsg = [
       `💰 You earned ${formatSol(a.sol)} SOL (+ ${formatTokens(a.tokens, 6)} HOUND) from $HOUND round #1`,
       `Wallet <code>${shortAddress(alice)}</code>`,
@@ -198,7 +198,7 @@ describe("floor defence", () => {
       [
         "🛡 Floor defended: the $HOUND vault bought back 0.15 SOL at price 0.00000015 SOL",
         "Floor: 0.00000015 SOL per token",
-        `<a href="https://holdfast.example/coin/${coin.mint}">$HOUND on Holdfast</a> · <a href="https://solscan.io/tx/DefSig?cluster=devnet">Solscan</a>`,
+        `<a href="https://holdfast.example/coin/${coin.mint}">$HOUND on Moatpad</a> · <a href="https://solscan.io/tx/DefSig?cluster=devnet">Solscan</a>`,
       ].join("\n"),
     ]);
     expect(await notifier.handle({ kind: "trade", mint: coin.mint, sig: "DefSig" })).toBe(0);
@@ -217,7 +217,7 @@ describe("graduation", () => {
     await watch(404, "coin", coin.mint, NOW); // followed two hours after the graduation
 
     expect(await notifier.handle({ kind: "coin", mint: coin.mint })).toBe(1);
-    expect(tg.to(CHAT_C)).toEqual([`🎓 $HOUND graduated to PumpSwap\n<a href="https://holdfast.example/coin/${coin.mint}">$HOUND on Holdfast</a>`]);
+    expect(tg.to(CHAT_C)).toEqual([`🎓 $HOUND graduated to PumpSwap\n<a href="https://holdfast.example/coin/${coin.mint}">$HOUND on Moatpad</a>`]);
     expect(await notifier.handle({ kind: "coin", mint: coin.mint })).toBe(0);
     expect(tg.to(404)).toEqual([]);
   });
@@ -257,7 +257,7 @@ describe("weight milestones", () => {
       [
         "⚖️ Your $HOUND position reached 0.5x weight (now 0.61x); it keeps rising to 1.0x over 7 days of holding",
         `Wallet <code>${shortAddress(alice)}</code>`,
-        `<a href="https://holdfast.example/coin/${coin.mint}">$HOUND on Holdfast</a>`,
+        `<a href="https://holdfast.example/coin/${coin.mint}">$HOUND on Moatpad</a>`,
       ].join("\n"),
     ]);
     expect(await notifier.checkMilestones()).toBe(0);
