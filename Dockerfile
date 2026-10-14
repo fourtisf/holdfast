@@ -11,6 +11,7 @@
 #                         -w /app/apps/keeper    tsx src/main-keeper.ts
 #                         -w /app/apps/keeper    tsx src/main-payout.ts
 #                         -w /app/apps/launcher  tsx src/main.ts
+#                         -w /app/apps/notifier  tsx src/main.ts           (Telegram bot)
 #                         -w /app                pnpm db:migrate           (one-shot)
 #                       docker-compose.yml wires these up with the env overrides they need
 #                       (database host, absolute keypair / metadata paths). The commands run

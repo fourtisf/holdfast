@@ -18,3 +18,4 @@ export * from "./repos/market.js";
 export * from "./seed.js";
 export * from "./repos/moderation.js";
 export * from "./repos/social.js";
+export * from "./repos/notifier.js";

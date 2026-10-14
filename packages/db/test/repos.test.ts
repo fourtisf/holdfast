@@ -2,11 +2,16 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { applyDecrease, applyBuy, buildRoundSnapshot, computeRound, emptyLedger, verifyRoundSnapshot, type RoundInputs } from "@holdfast/core";
 import {
   addExcluded,
+  addSubscription,
   applyLotConsumptions,
   applyVaultDelta,
+  chatsWatchingCoin,
+  chatsWatchingWallets,
   countCoins,
+  countChatSubscriptions,
   countDefendsSince,
   countHolders,
+  countSubscriptionsByKind,
   earningsByMint,
   earningsByWallet,
   expireLaunches,
@@ -19,6 +24,8 @@ import {
   getLaunch,
   getLaunchByDepositAddress,
   getRound,
+  getRoundRow,
+  getTelegramOffset,
   getTokenAccounts,
   getTradesBySig,
   getVaultState,
@@ -33,6 +40,7 @@ import {
   isExcluded,
   latestTradePrice,
   listCandles,
+  listChatSubscriptions,
   listCoins,
   listDefends,
   listExcluded,
@@ -41,6 +49,7 @@ import {
   listPendingLaunches,
   listRounds,
   listTrades,
+  listWalletSubscriptions,
   loadCarries,
   loadEligibleHolders,
   loadHolderBook,
@@ -49,12 +58,20 @@ import {
   loadWalletBook,
   markGraduated,
   markPayout,
+  markSent,
   nextDepositIndex,
+  openLotsByWallet,
+  pruneSent,
   recentPayoutsForWallet,
+  recentNotifierEvents,
+  removeChatSubscriptions,
+  removeSubscription,
   saveCarries,
   saveLedger,
   setLaunchSig,
+  setTelegramOffset,
   sumCarries,
+  unmarkSent,
   updateCoinMetadata,
   updateLastPrice,
   updateLaunchStatus,
@@ -417,5 +434,94 @@ describe("excluded wallets", () => {
       { address: "a", reason: "pool" },
       { address: "b", reason: "launcher" },
     ]);
+  });
+});
+
+describe("telegram notifier", () => {
+  it("subscriptions: add once, limit per chat, list, look up watchers, remove", async () => {
+    const [w1, w2, m1] = [addr("w1"), addr("w2"), addr("m1")];
+    expect(await addSubscription(db, { chatId: 1, kind: "wallet", target: w1, atMs: T0 })).toBe("added");
+    expect(await addSubscription(db, { chatId: 1, kind: "wallet", target: w1 })).toBe("exists");
+    expect(await addSubscription(db, { chatId: 1, kind: "coin", target: m1, atMs: T0 + 1 }, { limit: 2 })).toBe("added");
+    expect(await addSubscription(db, { chatId: 1, kind: "wallet", target: w2 }, { limit: 2 })).toBe("limit");
+    // Telegram supergroup ids need more than 32 bits.
+    expect(await addSubscription(db, { chatId: -1001234567890, kind: "wallet", target: w1, atMs: T0 + 2 })).toBe("added");
+
+    expect(await countChatSubscriptions(db, 1)).toBe(2);
+    expect(await countSubscriptionsByKind(db)).toEqual({ wallet: 2, coin: 1 });
+    expect(await listChatSubscriptions(db, 1)).toEqual([
+      { chatId: 1, kind: "wallet", target: w1, createdAt: T0 },
+      { chatId: 1, kind: "coin", target: m1, createdAt: T0 + 1 },
+    ]);
+    expect(await chatsWatchingWallets(db, [w1, w2])).toEqual(
+      new Map([[w1, [{ chatId: -1001234567890, createdAt: T0 + 2 }, { chatId: 1, createdAt: T0 }]]]),
+    );
+    expect(await chatsWatchingCoin(db, m1)).toEqual([{ chatId: 1, createdAt: T0 + 1 }]);
+    expect((await listWalletSubscriptions(db)).map((s) => s.chatId)).toEqual([-1001234567890, 1]);
+
+    expect(await removeSubscription(db, 1, "coin", m1)).toBe(true);
+    expect(await removeSubscription(db, 1, "coin", m1)).toBe(false);
+    expect(await removeChatSubscriptions(db, 1)).toBe(1);
+    expect(await countChatSubscriptions(db, 1)).toBe(0);
+  });
+
+  it("offset, sent-message claims and pruning", async () => {
+    expect(await getTelegramOffset(db)).toBe(0);
+    await setTelegramOffset(db, 812_345_678);
+    expect(await getTelegramOffset(db)).toBe(812_345_678);
+
+    expect(await markSent(db, 1, "round:m:1:w")).toBe(true);
+    expect(await markSent(db, 1, "round:m:1:w")).toBe(false);
+    expect(await markSent(db, 2, "round:m:1:w")).toBe(true);
+    await unmarkSent(db, 1, "round:m:1:w");
+    expect(await markSent(db, 1, "round:m:1:w")).toBe(true);
+    expect(await markSent(db, 1, "weight:w:m:1.0:1")).toBe(true);
+
+    expect(await pruneSent(db, Date.now() - 60_000)).toBe(0);
+    expect(await pruneSent(db, Date.now() + 60_000, ["weight:"])).toBe(2);
+    expect(await markSent(db, 1, "weight:w:m:1.0:1")).toBe(false);
+    expect(await markSent(db, 1, "round:m:1:w")).toBe(true);
+  });
+
+  it("reads open lots of watched wallets and recent events", async () => {
+    const c = await seedCoin(db, "n");
+    const [w1, pool] = [addr("w1"), addr("pool")];
+    await addExcluded(db, [{ address: pool, reason: "pool" }]);
+    const first = await insertLot(db, { wallet: w1, mint: c.mint, amount: 10n, acquiredAt: T0 - 1000, sourceSig: sig("l1"), sourceIx: 0 });
+    await insertLot(db, { wallet: w1, mint: c.mint, amount: 5n, acquiredAt: T0, sourceSig: sig("l2"), sourceIx: 0 });
+    await insertLot(db, { wallet: pool, mint: c.mint, amount: 7n, acquiredAt: T0, sourceSig: sig("l3"), sourceIx: 0 });
+    await applyLotConsumptions(db, [{ lotId: first!, amount: 4n }]);
+    const lots = await openLotsByWallet(db, [w1, pool, addr("nobody")]);
+    expect([...lots.keys()]).toEqual([w1]);
+    expect(lots.get(w1)?.get(c.mint)).toEqual([
+      { id: first, amount: 6n, acquiredAt: T0 - 1000 },
+      { id: expect.any(String), amount: 5n, acquiredAt: T0 },
+    ]);
+
+    const inputs: RoundInputs = {
+      mint: c.mint,
+      roundId: 1n,
+      snapshotAt: T0,
+      potSol: 1_000_000_000n,
+      potTokens: 0n,
+      params: { minSolLamports: 1n, minTokensRaw: 1n, rentExemptMinLamports: 0n, carryExpiryMs: 0, maxRecipients: 10 },
+      holders: [{ wallet: w1, lots: [{ amount: 10n, acquiredAt: T0 }], solBalance: 10n ** 9n, hasTokenAccount: true }],
+      carriedIn: [],
+    };
+    await insertRound(db, buildRoundSnapshot(inputs, computeRound(inputs), T0));
+    expect(await recentNotifierEvents(db, T0 - 1000)).toEqual([]);
+    await updateRoundStatus(db, c.mint, 1, "closed", { closeSig: "close" });
+    expect(await getRoundRow(db, c.mint, 1)).toMatchObject({ roundId: 1n, status: "closed", closeSig: "close" });
+    expect(await getRoundRow(db, c.mint, 2)).toBeNull();
+    await insertTrade(db, { sig: sig("v"), ixIndex: 0, mint: c.mint, wallet: c.treasury, side: "vault", sol: 1n, tokens: 1n, price: 1, ts: T0, slot: 1, source: "vault" });
+    await insertTrade(db, { sig: sig("v"), ixIndex: 1, mint: c.mint, wallet: c.treasury, side: "vault", sol: 1n, tokens: 1n, price: 1, ts: T0, slot: 1, source: "vault" });
+    await insertTrade(db, { sig: sig("b"), ixIndex: 0, mint: c.mint, wallet: w1, side: "buy", sol: 1n, tokens: 1n, price: 1, ts: T0, slot: 1, source: "curve" });
+    await markGraduated(db, c.mint, addr("amm"), T0);
+    expect(await recentNotifierEvents(db, T0 - 1000)).toEqual([
+      { kind: "round", mint: c.mint, roundId: 1 },
+      { kind: "trade", mint: c.mint, sig: sig("v") },
+      { kind: "coin", mint: c.mint },
+    ]);
+    expect(await recentNotifierEvents(db, T0 + 1)).toEqual([]);
   });
 });
