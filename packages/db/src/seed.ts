@@ -13,6 +13,9 @@ import {
   floorFromAth,
   RENT_EXEMPT_MIN_LAMPORTS,
   ROUND_INTERVAL_SECONDS,
+  SPLIT_BURN_BPS,
+  SPLIT_CREATOR_BPS,
+  SPLIT_HOLDER_BPS,
   tradePrice,
   type CarryInput,
   type HolderInput,
@@ -162,6 +165,7 @@ async function seedCoin(
 
   let floorSol = 0n;
   let holderSol = 0n;
+  let creatorSol = 0n;
   let burnSol = 0n;
   let holderTokens = 0n;
   let pendingFees = 0n;
@@ -265,14 +269,16 @@ async function seedCoin(
       }
     }
 
-    // Creator fees (demo: 1%) collected every ~10 minutes and split 60/30/10.
+    // Creator fees (demo: 1%) collected every ~10 minutes and split 50/25/15/10 (dust to the floor).
     pendingFees += (fill.sol * 100n) / 10_000n;
     if (t - lastCollect > 600_000 && pendingFees > 0n) {
-      const f = (pendingFees * 6_000n) / 10_000n;
-      const h = (pendingFees * 3_000n) / 10_000n;
-      floorSol += f;
+      const h = (pendingFees * BigInt(SPLIT_HOLDER_BPS)) / 10_000n;
+      const c = (pendingFees * BigInt(SPLIT_CREATOR_BPS)) / 10_000n;
+      const b = (pendingFees * BigInt(SPLIT_BURN_BPS)) / 10_000n;
+      floorSol += pendingFees - h - c - b;
       holderSol += h;
-      burnSol += pendingFees - f - h;
+      creatorSol += c;
+      burnSol += b;
       totalFees += pendingFees;
       pendingFees = 0n;
       lastCollect = t;
@@ -397,6 +403,8 @@ async function seedCoin(
     totalPaidSol,
     totalPaidTokens,
     totalBurnedSol: totalBurned,
+    creatorSol,
+    totalCreatorClaimed: 0n,
     slot,
   });
 }

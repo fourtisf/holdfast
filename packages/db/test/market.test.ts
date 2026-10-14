@@ -47,6 +47,8 @@ function vault(mint: string, over: Record<string, bigint | number | null> = {}) 
     totalPaidSol: 0n,
     totalPaidTokens: 0n,
     totalBurnedSol: 0n,
+    creatorSol: 0n,
+    totalCreatorClaimed: 0n,
     slot: 1,
     ...over,
   } as Parameters<typeof upsertVaultState>[1];

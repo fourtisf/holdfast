@@ -208,7 +208,7 @@ export async function createWorld(params: Partial<Record<string, number>> = {}):
       setRaw(svm, coin.bondingCurve, PUMP_PROGRAM_ID, curve);
       world.setTokenAccount(associatedTokenAddress(coin.bondingCurve, coin.mint, TOKEN_2022_PROGRAM_ID), coin.mint, coin.bondingCurve, TOKEN_2022_PROGRAM_ID, 793_100_000_000_000n);
       airdrop(creatorVaultPda(coin.treasury), SOL);
-      await chain.send([initCoinIx(coin, launcher.publicKey, triggerBps)], [launcher]);
+      await chain.send([initCoinIx(coin, launcher.publicKey, triggerBps, Keypair.generate().publicKey)], [launcher]);
       return coin;
     },
     setCurveReserves(m, vtok, vsol) {

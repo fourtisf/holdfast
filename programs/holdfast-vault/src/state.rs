@@ -70,13 +70,16 @@ pub struct Observation {
 #[derive(InitSpace)]
 pub struct CoinVault {
     pub mint: Pubkey,
-    pub token_program: Pubkey,
+    /// Claims the creator bucket. Written once in `init_coin`; no instruction updates it.
+    pub creator: Pubkey,
     pub bonding_curve: Pubkey,
     /// Canonical PumpSwap pool once graduated (default key before). Its token accounts are read from
     /// the pool itself on every use.
     pub amm_pool: Pubkey,
     /// 1500 / 2500 / 3500. Written once in `init_coin`; no instruction updates it.
     pub trigger_bps: u16,
+    /// The mint's token program: Token-2022 (pump.fun `create_v2`) or SPL Token (see `token_program_id`).
+    pub token_2022: bool,
     pub venue: u8,
     pub bump: u8,
     pub treasury_bump: u8,
@@ -90,6 +93,8 @@ pub struct CoinVault {
     /// Bucket accounting of the treasury's lamports (see invariant 2 in docs/program.md).
     pub floor_sol: u64,
     pub holder_sol: u64,
+    /// The creator's unclaimed share.
+    pub creator_sol: u64,
     pub burn_sol: u64,
     /// Bought-back tokens in the treasury token account, waiting for payout rounds.
     pub holder_tokens: u64,
@@ -109,24 +114,33 @@ pub struct CoinVault {
 
     pub total_fees: u64,
     pub total_defended_sol: u64,
-    pub total_tokens_bought: u64,
     pub total_paid_sol: u64,
     pub total_paid_tokens: u64,
     pub total_burn_sol: u64,
-    pub total_hold_burned: u64,
+    pub total_creator_claimed: u64,
     /// Rent the treasury paid (out of the floor bucket) for its own accounts in `prepare_treasury`.
     pub total_treasury_rent: u64,
     pub created_at: i64,
     // No reserved padding: every byte here is launch rent (≈ 6960 lamports). Future fields are added
-    // with a realloc migration.
+    // with a realloc migration. Token counts of buybacks and burns live in the `Defended` and
+    // `HoldBurned` events, not here.
 }
 
 impl CoinVault {
     pub fn accounted_lamports(&self) -> Result<u64> {
         self.floor_sol
             .checked_add(self.holder_sol)
+            .and_then(|v| v.checked_add(self.creator_sol))
             .and_then(|v| v.checked_add(self.burn_sol))
             .ok_or_else(|| error!(HoldfastError::MathOverflow))
+    }
+
+    pub fn token_program_id(&self) -> Pubkey {
+        if self.token_2022 {
+            anchor_spl::token_2022::ID
+        } else {
+            anchor_spl::token::ID
+        }
     }
 
     pub fn latest_observation(&self) -> Option<Observation> {

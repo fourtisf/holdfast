@@ -94,7 +94,7 @@ pub struct Payout<'info> {
         associated_token::token_program = token_program,
     )]
     pub treasury_token_account: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
-    #[account(address = vault.token_program)]
+    #[account(address = vault.token_program_id())]
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }

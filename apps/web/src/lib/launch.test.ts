@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeSocial, normalizeTicker, parseDevBuy, requiredDepositSol, toLaunchRequest, validateLaunch, type LaunchForm } from "./launch";
 
-const base: LaunchForm = { name: "Kelp Lord", ticker: "KELP", description: "", imageUrl: null, x: "", telegram: "", website: "", triggerBps: 2500, devBuy: "" };
+const base: LaunchForm = { name: "Kelp Lord", ticker: "KELP", description: "", imageUrl: null, x: "", telegram: "", website: "", triggerBps: 2500, devBuy: "", creatorWallet: "" };
 
 describe("normalizeTicker", () => {
   it("uppercases and strips non-alphanumerics", () => {
@@ -49,8 +49,8 @@ describe("validateLaunch", () => {
     expect(validateLaunch(base)).toEqual({});
   });
   it("flags missing and invalid fields", () => {
-    const errors = validateLaunch({ ...base, name: " ", ticker: "", website: "nope", devBuy: "500" });
-    expect(Object.keys(errors).sort()).toEqual(["devBuy", "name", "ticker", "website"]);
+    const errors = validateLaunch({ ...base, name: " ", ticker: "", website: "nope", devBuy: "500", creatorWallet: "not a wallet" });
+    expect(Object.keys(errors).sort()).toEqual(["creatorWallet", "devBuy", "name", "ticker", "website"]);
   });
 });
 
@@ -64,11 +64,14 @@ describe("toLaunchRequest", () => {
       socials: undefined,
       triggerBps: 2500,
       devBuySol: undefined,
+      creatorWallet: undefined,
     });
     const req = toLaunchRequest({ ...base, x: "@kelp", devBuy: "0.5", description: " hi ", imageUrl: "https://img" });
     expect(req.socials).toEqual({ x: "https://x.com/kelp" });
     expect(req.devBuySol).toBe(0.5);
     expect(req.description).toBe("hi");
     expect(req.imageUrl).toBe("https://img");
+    const wallet = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+    expect(toLaunchRequest({ ...base, creatorWallet: ` ${wallet} ` }).creatorWallet).toBe(wallet);
   });
 });

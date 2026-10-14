@@ -202,6 +202,13 @@ export const mockApi: HoldfastApi = {
     const q = quote(req);
     return latency({ quote: q, transaction: unsignedTransaction(req.wallet), lastValidBlockHeight: 280_000_000 + Math.floor(Math.random() * 1000) }, 200, 450);
   },
+  buildCreatorClaim: async (req) => {
+    const coin = market.coinDetail(req.mint) ?? notFound("Coin");
+    if (coin.launcher !== req.wallet) throw new ApiError("Only the coin's creator wallet can claim its fees", 403);
+    const claimableSol = market.claimCreatorFees(req.mint);
+    if (claimableSol <= 0) throw new ApiError("Nothing to claim yet", 409);
+    return latency({ transaction: unsignedTransaction(req.wallet), lastValidBlockHeight: 280_000_000 + Math.floor(Math.random() * 1000), claimableSol }, 200, 450);
+  },
   uploadImage: async (file) => {
     if (!/^image\/(png|jpe?g|gif|webp)$/.test(file.type)) throw new ApiError("Unsupported image type (png, jpg, gif or webp)", 415);
     if (file.size > MAX_UPLOAD_BYTES) throw new ApiError("Image is larger than 5 MB", 413);

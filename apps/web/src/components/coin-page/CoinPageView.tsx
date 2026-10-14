@@ -12,6 +12,7 @@ import { useCoin, usePosition } from "@/lib/hooks/queries";
 import { ActivityTabs } from "./ActivityTabs";
 import { ChartCard } from "./ChartCard";
 import { CoinHeader, MarketCapCard } from "./CoinHeader";
+import { CreatorClaimCard } from "./CreatorClaimCard";
 import { SharePanel } from "./SharePanel";
 import { TopHolders } from "./TopHolders";
 import { TradePanel } from "./TradePanel";
@@ -64,8 +65,9 @@ export function CoinPageView({ mint }: { mint: string }) {
         </div>
       </div>
       <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
-        <div className="order-4">
+        <div className="order-4 flex flex-col gap-4">
           <TradePanel coin={coin} position={position.data} />
+          {wallet && coin.launcher === wallet ? <CreatorClaimCard coin={coin} /> : null}
         </div>
         <div className="order-5">
           <SharePanel coin={coin} wallet={wallet} position={position.data} loading={position.isLoading} />

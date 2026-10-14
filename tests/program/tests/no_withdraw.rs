@@ -1,4 +1,5 @@
-//! Acceptance: "there is no way to take SOL out of the vault except the three allowed paths".
+//! Acceptance: "there is no way to take SOL out of the vault except the four allowed paths": floor
+//! buybacks, holder payouts, $HOLD burns and the creator's claim of its own bucket.
 
 use anchor_lang::prelude::Pubkey;
 use holdfast_vault::constants::PUMP_PROGRAM_ID;
@@ -11,6 +12,7 @@ use solana_signer::Signer;
 const EXPECTED_INSTRUCTIONS: &[&str] = &[
     "accept_admin",
     "burn_hold",
+    "claim_creator_fees",
     "close_round",
     "collect_fees",
     "defend",
@@ -87,11 +89,23 @@ fn payouts_cannot_reach_the_floor_or_burn_buckets() {
     env.advance(120);
     assert_err(&env.open_round(&coin, 2, 1, 0, 1), HoldfastError::PotExceedsBucket);
     let after = env.vault(&coin.mint);
-    assert_eq!((after.floor_sol, after.burn_sol, after.holder_sol), (v.floor_sol, v.burn_sol, 0));
+    assert_eq!((after.floor_sol, after.creator_sol, after.burn_sol, after.holder_sol), (v.floor_sol, v.creator_sol, v.burn_sol, 0));
 }
 
-/// Randomised lifecycle: fees, price moves, defends, rounds. After every step the treasury's lamports
-/// are fully explained by fees in minus the three allowed outflows.
+#[test]
+fn the_creator_claim_cannot_reach_the_other_buckets() {
+    let mut env = Env::ready();
+    let coin = env.launch(2_500);
+    env.collect(&coin, 10 * SOL).unwrap();
+    let v = env.vault(&coin.mint);
+    env.claim_creator_fees(&coin).unwrap();
+    assert_err(&env.claim_creator_fees(&coin), HoldfastError::NothingToClaim);
+    let after = env.vault(&coin.mint);
+    assert_eq!((after.floor_sol, after.holder_sol, after.burn_sol, after.creator_sol), (v.floor_sol, v.holder_sol, v.burn_sol, 0));
+}
+
+/// Randomised lifecycle: fees, price moves, defends, rounds, creator claims. After every step the
+/// treasury's lamports are fully explained by fees in minus the four allowed outflows.
 #[test]
 fn lamports_are_conserved_across_a_random_lifecycle() {
     let mut env = Env::ready();
@@ -145,20 +159,24 @@ fn lamports_are_conserved_across_a_random_lifecycle() {
             4 => {
                 let _ = env.update_ath(&coin, None);
             }
-            _ => {}
+            _ => {
+                if env.vault(&coin.mint).creator_sol > 0 {
+                    env.claim_creator_fees(&coin).unwrap();
+                }
+            }
         }
         env.advance(30 + rand(90) as i64);
 
         let v = env.vault(&coin.mint);
         let treasury = env.lamports(&coin.treasury);
-        assert!(treasury - rent >= v.floor_sol + v.holder_sol + v.burn_sol, "step {step}: buckets exceed treasury");
+        assert!(treasury - rent >= v.accounted_lamports().unwrap(), "step {step}: buckets exceed treasury");
         assert_eq!(
             treasury - rent,
-            v.total_fees - v.total_defended_sol - v.total_paid_sol - v.total_burn_sol - v.total_treasury_rent,
+            v.total_fees - v.total_defended_sol - v.total_paid_sol - v.total_burn_sol - v.total_treasury_rent - v.total_creator_claimed,
             "step {step}: lamports not explained by fees − allowed outflows"
         );
         assert_eq!(env.token_balance(&coin.treasury_ata), v.holder_tokens, "step {step}: token pool mismatch");
     }
     let v = env.vault(&coin.mint);
-    assert!(v.defend_count > 0 && v.total_paid_sol > 0, "lifecycle should exercise defends and payouts");
+    assert!(v.defend_count > 0 && v.total_paid_sol > 0 && v.total_creator_claimed > 0, "lifecycle should exercise defends, payouts and claims");
 }

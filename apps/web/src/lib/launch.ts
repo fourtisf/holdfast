@@ -19,6 +19,8 @@ export interface LaunchForm {
   website: string;
   triggerBps: TriggerBps;
   devBuy: string;
+  /** Claims the creator share; empty = the wallet the deposit comes from. */
+  creatorWallet: string;
 }
 
 export type LaunchErrors = Partial<Record<keyof LaunchForm, string>>;
@@ -32,6 +34,7 @@ export function normalizeTicker(input: string): string {
 }
 
 const HANDLE = /^@?([A-Za-z0-9_]{1,32})$/;
+const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 /** Accept a handle ("@kelp") or a URL for X / Telegram; websites get https:// when missing. */
 export function normalizeSocial(kind: keyof Socials, input: string): string | null {
@@ -83,6 +86,8 @@ export function validateLaunch(form: LaunchForm): LaunchErrors {
       errors[kind] = kind === "website" ? "Enter a valid URL" : `Enter a ${kind === "x" ? "X" : "Telegram"} handle or link`;
   }
   if (!(TRIGGER_OPTIONS_BPS as readonly number[]).includes(form.triggerBps)) errors.triggerBps = "Choose a floor";
+  const creator = form.creatorWallet.trim();
+  if (creator && !BASE58_ADDRESS.test(creator)) errors.creatorWallet = "Enter a Solana wallet address";
   const dev = parseDevBuy(form.devBuy);
   if (dev === null) errors.devBuy = "Enter an amount in SOL";
   else if (dev > DEV_BUY_MAX_SOL) errors.devBuy = `Max ${DEV_BUY_MAX_SOL} SOL`;
@@ -104,5 +109,6 @@ export function toLaunchRequest(form: LaunchForm): LaunchRequest {
     socials: Object.keys(socials).length ? socials : undefined,
     triggerBps: form.triggerBps,
     devBuySol: devBuySol > 0 ? devBuySol : undefined,
+    creatorWallet: form.creatorWallet.trim() || undefined,
   };
 }

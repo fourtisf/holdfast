@@ -297,12 +297,25 @@ describe("vault activity", () => {
         ])
         .build(),
     );
-    expect(await getVaultState(db, coin.mint)).toMatchObject({ floorSol: 600_000n, holderSol: 300_000n, burnSol: 100_000n, holderTokens: 5_000n, totalFees: 1_000_000n, ath: 4n * 10n ** 13n, floor: 3n * 10n ** 13n });
+    expect(await getVaultState(db, coin.mint)).toMatchObject({
+      floorSol: 500_000n,
+      holderSol: 250_000n,
+      creatorSol: 150_000n,
+      burnSol: 100_000n,
+      holderTokens: 5_000n,
+      totalFees: 1_000_000n,
+      ath: 4n * 10n ** 13n,
+      floor: 3n * 10n ** 13n,
+    });
     expect(await listFloorHistory(db, coin.mint)).toEqual([{ ts: (T0 + 600) * 1000, ath: 4n * 10n ** 13n, floor: 3n * 10n ** 13n }]);
 
     // prepare_treasury: the treasury's own accounts are paid from the floor bucket
     await h.run(new TxBuilder(305, T0 + 650, wallet()).holdfast([{ name: "TreasuryPrepared", fields: holdfastFields.treasuryPrepared(coin, 100_000n, T0 + 650) }]).build());
-    expect(await getVaultState(db, coin.mint)).toMatchObject({ floorSol: 500_000n, holderSol: 300_000n, burnSol: 100_000n });
+    expect(await getVaultState(db, coin.mint)).toMatchObject({ floorSol: 400_000n, holderSol: 250_000n, burnSol: 100_000n });
+
+    // the creator claims its share
+    await h.run(new TxBuilder(306, T0 + 660, wallet()).holdfast([{ name: "CreatorFeesClaimed", fields: holdfastFields.creatorFeesClaimed(coin, 150_000n, T0 + 660) }]).build());
+    expect(await getVaultState(db, coin.mint)).toMatchObject({ creatorSol: 0n, totalCreatorClaimed: 150_000n, floorSol: 400_000n, holderSol: 250_000n });
 
     const holder = wallet();
     await insertRound(db, {
@@ -326,7 +339,7 @@ describe("vault activity", () => {
     expect(opened.status === "processed" && opened.notifications).toEqual(expect.arrayContaining([{ kind: "round", mint: coin.mint, roundId: 1 }]));
     await h.run(new TxBuilder(311, T0 + 730, wallet()).holdfast([{ name: "PayoutBatch", fields: holdfastFields.payoutBatch(coin, 1n, 1000n, T0 + 730) }]).build());
     expect((await getRound(db, coin.mint, 1))?.status).toBe("paying");
-    expect(await getVaultState(db, coin.mint)).toMatchObject({ holderSol: 299_000n, totalPaidSol: 1000n, roundId: 1n });
+    expect(await getVaultState(db, coin.mint)).toMatchObject({ holderSol: 249_000n, totalPaidSol: 1000n, roundId: 1n });
     await h.run(new TxBuilder(312, T0 + 740, wallet()).holdfast([{ name: "RoundClosed", fields: holdfastFields.roundClosed(coin, 1n, T0 + 740) }]).build());
     expect((await getRound(db, coin.mint, 1))).toMatchObject({ status: "closed" });
   });
@@ -349,6 +362,8 @@ describe("vault activity", () => {
       totalPaidSol: 0n,
       totalPaidTokens: 0n,
       totalBurnedSol: 0n,
+      creatorSol: 0n,
+      totalCreatorClaimed: 0n,
       slot: 999,
     });
     const fetched: string[] = [];
@@ -379,6 +394,7 @@ describe("vault activity", () => {
             mint: new PublicKey(c.mint),
             vault: new PublicKey(c.vault),
             treasury: new PublicKey(c.treasury),
+            creator: new PublicKey(c.mint),
             triggerBps: 3500,
             bondingCurve: new PublicKey(c.bondingCurve),
             ts: T0,

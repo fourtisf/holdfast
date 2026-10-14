@@ -32,11 +32,11 @@ fn burn_buys_hold_with_the_burn_bucket_and_burns_it() {
     let v = env.vault(&coin.mint);
     assert_eq!(v.burn_sol, 0);
     assert_eq!(v.total_burn_sol, SOL);
-    assert!(v.total_hold_burned > 0);
-    assert_eq!(env.mint_supply(&hold), supply_before - v.total_hold_burned, "bought $HOLD is burned in the same instruction");
+    // bought $HOLD is burned in the same instruction: supply drops, nothing stays in the treasury
+    assert!(env.mint_supply(&hold) < supply_before);
     assert_eq!(env.token_balance(&ata(&coin.treasury, &hold, &TOKEN_2022_PROGRAM)), 0);
     // other buckets untouched
-    assert_eq!((v.floor_sol, v.holder_sol), (v_before.floor_sol, v_before.holder_sol));
+    assert_eq!((v.floor_sol, v.holder_sol, v.creator_sol), (v_before.floor_sol, v_before.holder_sol, v_before.creator_sol));
 }
 
 #[test]

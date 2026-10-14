@@ -88,4 +88,8 @@ pub enum HoldfastError {
     TreasuryAccountMissing,
     #[msg("wrong pump volume accumulator accounts")]
     InvalidVolumeAccounts,
+    #[msg("creator must be a wallet, not one of the coin's program accounts")]
+    InvalidCreator,
+    #[msg("no creator fees to claim")]
+    NothingToClaim,
 }

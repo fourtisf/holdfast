@@ -54,7 +54,7 @@ await shoot(`<div style="width:1500px;height:500px;display:flex;align-items:cent
   <img src="${render("coin-obsidian-gold.png")}" style="width:400px">
   <div><div style="${words};font-size:92px;line-height:1">MOATPAD</div>
   <div style="font:300 34px GL;color:#ece8de;margin:24px 0 14px">Every coin gets a moat.</div>
-  <div style="font:300 20px GL;color:#8f95a2"><b style="color:#e9bf62;font-weight:300">60%</b> floor vault &nbsp;·&nbsp; <b style="color:#e9bf62;font-weight:300">30%</b> to holders every 2 min &nbsp;·&nbsp; <b style="color:#e9bf62;font-weight:300">10%</b> buyback &amp; burn &nbsp;·&nbsp; <b style="color:#e9bf62;font-weight:300">0%</b> dev</div></div></div>`,
+  <div style="font:300 20px GL;color:#8f95a2"><b style="color:#e9bf62;font-weight:300">50%</b> floor vault &nbsp;·&nbsp; <b style="color:#e9bf62;font-weight:300">25%</b> to holders every 2 min &nbsp;·&nbsp; <b style="color:#e9bf62;font-weight:300">15%</b> creator &nbsp;·&nbsp; <b style="color:#e9bf62;font-weight:300">10%</b> buyback &amp; burn</div></div></div>`,
   "moatpad-x-banner-1500x500.png", 1500, 500);
 
 const sw = (hex, name) => `<div style="display:flex;flex-direction:column;gap:6px;font:400 12px GR;color:#8f95a2"><div style="width:92px;height:54px;border-radius:12px;background:${hex};border:1px solid #23252c"></div>${name}<span style="color:#5d6370">${hex}</span></div>`;

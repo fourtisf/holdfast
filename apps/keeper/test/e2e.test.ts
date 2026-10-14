@@ -109,8 +109,10 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     const prepared = w.chain.events.find((e) => e.name === "TreasuryPrepared");
     expect(prepared).toMatchObject({ tokenAccount: true, wsolAccount: true, rentPaid: PREPARE_RENT });
     expect(v.totalTreasuryRent).toBe(PREPARE_RENT);
-    expect(v.floorSol).toBe(6n * SOL - PREPARE_RENT);
-    expect(v.holderSol).toBe(3n * SOL);
+    // 50 / 25 / 15 / 10
+    expect(v.floorSol).toBe(5n * SOL - PREPARE_RENT);
+    expect(v.holderSol).toBe(2_500_000_000n);
+    expect(v.creatorSol).toBe(1_500_000_000n);
     expect(v.burnSol).toBe(SOL);
     expect(v.athPrice).toBeGreaterThan(0n);
     expect(v.floorPrice).toBe((v.athPrice * 7_500n) / 10_000n);
@@ -121,7 +123,7 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     await crankFor(w, coin, 0);
     v = await vaultOf(w, coin);
     expect(v.defendCount).toBe(1n);
-    const floorBefore = 6n * SOL - PREPARE_RENT;
+    const floorBefore = 5n * SOL - PREPARE_RENT;
     expect(v.floorSol).toBe(floorBefore - floorBefore / 10n);
     expect(v.holderTokens).toBeGreaterThan(0n);
     expect(w.chain.events.some((e) => e.name === "Defended")).toBe(true);
@@ -159,7 +161,7 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     expect(carries.map((c) => c.wallet)).toContain(tiny.wallet.toBase58());
     v = await vaultOf(w, coin);
     expect(v.roundOpen).toBe(false);
-    expect(v.holderSol + outcome.solPaid).toBe(3n * SOL);
+    expect(v.holderSol + outcome.solPaid).toBe(2_500_000_000n);
     expect(v.holderTokens + outcome.tokensPaid).toBe(tokensBefore);
     // what is still in the bucket equals the carries plus rounding remainders
     const carriedSol = carries.reduce((s, c) => s + c.sol, 0n);
@@ -211,13 +213,13 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     const coin = await w.launch(2500);
     await registerCoin(w, coin);
     await Promise.all([0, 1, 2].map((i) => holder(w, coin, 1_000_000_000n, i * HOUR, SOL)));
-    w.airdrop(coin.treasury, 2_000_000n); // 0.002 SOL of fees → 0.0006 SOL holder pot for 3 wallets
+    w.airdrop(coin.treasury, 2_000_000n); // 0.002 SOL of fees → 0.0005 SOL holder pot for 3 wallets
     const small = await runPayoutRound(payoutDeps(w), coin);
     expect(small.kind).toBe("skipped");
     expect(small.kind === "skipped" && small.reason).toMatch(/pot too small for its fees/);
     let v = await vaultOf(w, coin);
     expect(v.roundId).toBe(0n);
-    expect(v.holderSol).toBe(600_000n); // booked, still in the bucket
+    expect(v.holderSol).toBe(500_000n); // booked, still in the bucket
 
     // more fees arrive: now the round is worth it and pays everything accumulated
     w.airdrop(coin.treasury, SOL);
@@ -225,7 +227,7 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     const paid = await runPayoutRound(payoutDeps(w), coin);
     expect(paid.kind).toBe("paid");
     v = await vaultOf(w, coin);
-    expect(v.totalPaidSol).toBeGreaterThan(300_000_000n);
+    expect(v.totalPaidSol).toBeGreaterThan(250_000_000n);
   }, 60_000);
 
   it("does not open a round when the keeper could not afford to finish it", async () => {

@@ -164,6 +164,8 @@ export class FakeChain implements LaunchChain {
   readonly feeConfig = fakeFeeConfig();
   readonly landed: LandedTx[] = [];
   readonly vaultTriggers = new Map<string, number>();
+  /** Creator recorded by each init_coin (base58). */
+  readonly vaultCreators = new Map<string, string>();
   injections: Injection[] = [];
   private accounts = new Map<string, Acct>();
   private fundings = new Map<string, IncomingTransfer[]>();
@@ -356,7 +358,7 @@ export class FakeChain implements LaunchChain {
     // Execute on a copy; commit only if everything succeeds (preflight semantics: no fee on failure).
     const working = new Map<string, Acct>();
     for (const [k, v] of this.accounts) working.set(k, { ...v, data: Buffer.from(v.data), token: v.token ? { ...v.token } : undefined });
-    const triggers = new Map<string, number>();
+    const triggers = new Map<string, { trigger: number; creator: string }>();
     try {
       const payer = working.get(feePayer);
       if (!payer || payer.lamports < fee) throw new ProgramError("insufficient funds for fee");
@@ -375,7 +377,10 @@ export class FakeChain implements LaunchChain {
       throw err;
     }
     this.accounts = new Map([...working].filter(([, a]) => a.lamports > 0n || a.data.length > 0));
-    for (const [k, v] of triggers) this.vaultTriggers.set(k, v);
+    for (const [k, v] of triggers) {
+      this.vaultTriggers.set(k, v.trigger);
+      this.vaultCreators.set(k, v.creator);
+    }
     this.landed.push({ kind, signature, feePayer, fee, size, ok: true, tx, instructions });
 
     if (injection?.mode === "crash") {
@@ -416,7 +421,7 @@ export class FakeChain implements LaunchChain {
     return encodePumpAccount("bondingCurve", curve);
   }
 
-  private execute(w: Map<string, Acct>, ix: TransactionInstruction, triggers: Map<string, number>): void {
+  private execute(w: Map<string, Acct>, ix: TransactionInstruction, triggers: Map<string, { trigger: number; creator: string }>): void {
     const program = ix.programId.toBase58();
     const get = (k: PublicKey) => w.get(k.toBase58());
     const debit = (k: PublicKey, lamports: bigint) => {
@@ -598,7 +603,7 @@ export class FakeChain implements LaunchChain {
       if (decoded?.name !== "init_coin") throw new ProgramError(`unsupported holdfast instruction ${decoded?.name}`);
       const def = (HOLDFAST_IDL.instructions as unknown as { name: string; accounts: { name: string }[] }[]).find((i) => i.name === "init_coin")!;
       const acc = Object.fromEntries(def.accounts.map((a, i) => [a.name, ix.keys[i]?.pubkey])) as Record<string, PublicKey>;
-      const trigger = (decoded.data as { trigger_bps: number }).trigger_bps;
+      const { trigger_bps: trigger, creator } = decoded.data as { trigger_bps: number; creator: PublicKey };
       const mint = acc.mint!;
       if (!acc.launcher!.equals(this.opts.configLauncher)) throw new ProgramError("ConstraintHasOne: launcher");
       if (!acc.config!.equals(configPda())) throw new ProgramError("config PDA mismatch");
@@ -610,7 +615,8 @@ export class FakeChain implements LaunchChain {
       const curve = PUMP_SDK.decodeBondingCurve({ data: curveAcct.data, owner: PUMP_PROGRAM_ID, lamports: 0, executable: false });
       if (!curve.creator.equals(acc.treasury!)) throw new ProgramError("CreatorMismatch");
       create(acc.vault!, COIN_VAULT_SIZE, HOLDFAST_PROGRAM_ID, acc.launcher!);
-      triggers.set(mint.toBase58(), trigger);
+      if (creator.equals(PublicKey.default) || creator.equals(acc.treasury!) || creator.equals(acc.vault!)) throw new ProgramError("InvalidCreator");
+      triggers.set(mint.toBase58(), { trigger, creator: creator.toBase58() });
       const reserve = this.rent(0);
       const treasury = get(acc.treasury!)?.lamports ?? 0n;
       if (treasury < reserve) {

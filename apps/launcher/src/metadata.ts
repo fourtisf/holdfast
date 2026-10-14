@@ -6,6 +6,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { PublicKey } from "@solana/web3.js";
 import { TRIGGER_OPTIONS_BPS, type LaunchRequest, type Socials, type TriggerBps } from "@holdfast/core";
 
 import { PUMP_MAX_NAME_BYTES, PUMP_MAX_SYMBOL_BYTES, PUMP_MAX_URI_BYTES, utf8Len } from "@holdfast/chain";
@@ -30,6 +31,8 @@ export interface LaunchForm {
   imageUrl: string | null;
   socials: Socials;
   triggerBps: TriggerBps;
+  /** Claims the creator share; null = the deposit's sender. */
+  creatorWallet: string | null;
 }
 
 export const MAX_DESCRIPTION_BYTES = 2_000;
@@ -95,7 +98,29 @@ export function normalizeForm(form: LaunchRequest, publicBaseUrl: string): Launc
   if (x) socials.x = x;
   if (telegram) socials.telegram = telegram;
   if (website) socials.website = website;
-  return { name, symbol, description, imageUrl: validateImageUrl(form.imageUrl, publicBaseUrl), socials, triggerBps: form.triggerBps };
+  return {
+    name,
+    symbol,
+    description,
+    imageUrl: validateImageUrl(form.imageUrl, publicBaseUrl),
+    socials,
+    triggerBps: form.triggerBps,
+    creatorWallet: parseCreatorWallet(form.creatorWallet),
+  };
+}
+
+/** The creator signs its claims, so it must be a regular (on-curve) wallet, not a program address. */
+export function parseCreatorWallet(value: string | undefined): string | null {
+  const s = value?.trim();
+  if (!s) return null;
+  let key: PublicKey;
+  try {
+    key = new PublicKey(s);
+  } catch {
+    throw new ValidationError("creator wallet is not a valid Solana address");
+  }
+  if (!PublicKey.isOnCurve(key.toBytes())) throw new ValidationError("creator wallet must be a regular wallet: it signs the fee claims");
+  return key.toBase58();
 }
 
 /** The JSON pump.fun's frontend and wallets read from the token's `uri`. */

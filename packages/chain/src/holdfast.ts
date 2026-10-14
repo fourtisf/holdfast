@@ -23,6 +23,8 @@ export const VENUE_AMM = 1;
 
 export interface CoinVaultAccount {
   mint: PublicKey;
+  /** Claims the creator bucket (`claim_creator_fees`). */
+  creator: PublicKey;
   triggerBps: number;
   tokenProgram: PublicKey;
   venue: "curve" | "amm";
@@ -32,6 +34,8 @@ export interface CoinVaultAccount {
   floorPrice: bigint;
   floorSol: bigint;
   holderSol: bigint;
+  /** The creator's unclaimed share. */
+  creatorSol: bigint;
   burnSol: bigint;
   holderTokens: bigint;
   lastDefendTs: number;
@@ -46,11 +50,10 @@ export interface CoinVaultAccount {
   lastRoundTs: number;
   totalFees: bigint;
   totalDefendedSol: bigint;
-  totalTokensBought: bigint;
   totalPaidSol: bigint;
   totalPaidTokens: bigint;
   totalBurnSol: bigint;
-  totalHoldBurned: bigint;
+  totalCreatorClaimed: bigint;
   /** Rent the treasury paid (from the floor bucket) for its own accounts in `prepare_treasury`. */
   totalTreasuryRent: bigint;
   createdAt: number;
@@ -111,8 +114,9 @@ export function decodeCoinVault(data: Buffer): CoinVaultAccount {
   const r = coder.accounts.decode<Raw>("CoinVault", data);
   return {
     mint: key(r.mint),
+    creator: key(r.creator),
     triggerBps: num(r.trigger_bps),
-    tokenProgram: key(r.token_program),
+    tokenProgram: r.token_2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID,
     venue: num(r.venue) === VENUE_AMM ? "amm" : "curve",
     bondingCurve: key(r.bonding_curve),
     ammPool: optKey(r.amm_pool),
@@ -120,6 +124,7 @@ export function decodeCoinVault(data: Buffer): CoinVaultAccount {
     floorPrice: big(r.floor_price),
     floorSol: big(r.floor_sol),
     holderSol: big(r.holder_sol),
+    creatorSol: big(r.creator_sol),
     burnSol: big(r.burn_sol),
     holderTokens: big(r.holder_tokens),
     lastDefendTs: num(r.last_defend_ts),
@@ -132,11 +137,10 @@ export function decodeCoinVault(data: Buffer): CoinVaultAccount {
     lastRoundTs: num(r.last_round_ts),
     totalFees: big(r.total_fees),
     totalDefendedSol: big(r.total_defended_sol),
-    totalTokensBought: big(r.total_tokens_bought),
     totalPaidSol: big(r.total_paid_sol),
     totalPaidTokens: big(r.total_paid_tokens),
     totalBurnSol: big(r.total_burn_sol),
-    totalHoldBurned: big(r.total_hold_burned),
+    totalCreatorClaimed: big(r.total_creator_claimed),
     totalTreasuryRent: big(r.total_treasury_rent),
     createdAt: num(r.created_at),
   };
@@ -188,8 +192,20 @@ export function decodePayoutRound(data: Buffer): PayoutRoundAccount {
 // ---- events --------------------------------------------------------------------------------------
 
 export type HoldfastEvent =
-  | { name: "CoinInitialized"; mint: PublicKey; vault: PublicKey; treasury: PublicKey; triggerBps: number; bondingCurve: PublicKey; ts: number }
-  | { name: "FeesCollected"; mint: PublicKey; amount: bigint; floor: bigint; holder: bigint; burn: bigint; unwrappedWsol: bigint; tokens: bigint; ts: number }
+  | { name: "CoinInitialized"; mint: PublicKey; vault: PublicKey; treasury: PublicKey; creator: PublicKey; triggerBps: number; bondingCurve: PublicKey; ts: number }
+  | {
+      name: "FeesCollected";
+      mint: PublicKey;
+      amount: bigint;
+      floor: bigint;
+      holder: bigint;
+      creator: bigint;
+      burn: bigint;
+      unwrappedWsol: bigint;
+      tokens: bigint;
+      ts: number;
+    }
+  | { name: "CreatorFeesClaimed"; mint: PublicKey; creator: PublicKey; amount: bigint; ts: number }
   | { name: "AthUpdated"; mint: PublicKey; twap: bigint; ath: bigint; floor: bigint; ts: number }
   | { name: "Graduated"; mint: PublicKey; pool: PublicKey; coinCreator: PublicKey; ts: number }
   | { name: "Defended"; mint: PublicKey; solSpent: bigint; tokensBought: bigint; spotPrice: bigint; floorPrice: bigint; venue: number; ts: number }
@@ -306,7 +322,8 @@ const commonPrograms = {
   systemProgram: SYSTEM_PROGRAM_ID,
 };
 
-export function initCoinIx(coin: CoinKeys, launcher: PublicKey, triggerBps: number): TransactionInstruction {
+/** `creator`: the wallet that may later claim the coin's creator bucket (`claimCreatorFeesIx`). */
+export function initCoinIx(coin: CoinKeys, launcher: PublicKey, triggerBps: number, creator: PublicKey): TransactionInstruction {
   return buildIx(
     "init_coin",
     {
@@ -319,7 +336,16 @@ export function initCoinIx(coin: CoinKeys, launcher: PublicKey, triggerBps: numb
       tokenProgram: coin.tokenProgram,
       systemProgram: SYSTEM_PROGRAM_ID,
     },
-    { trigger_bps: triggerBps },
+    { trigger_bps: triggerBps, creator },
+  );
+}
+
+/** The coin's creator withdraws its whole unclaimed share; `creator` signs and pays the fee. */
+export function claimCreatorFeesIx(coin: Pick<CoinKeys, "mint" | "vault" | "treasury">, creator: PublicKey): TransactionInstruction {
+  return buildIx(
+    "claim_creator_fees",
+    { creator, config: configPda(), vault: coin.vault, treasury: coin.treasury, systemProgram: SYSTEM_PROGRAM_ID },
+    {},
   );
 }
 

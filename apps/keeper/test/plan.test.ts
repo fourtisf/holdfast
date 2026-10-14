@@ -40,6 +40,7 @@ function state(v: Partial<CoinVaultAccount> = {}, curve: { vsol?: bigint; comple
   const vsol = curve.vsol ?? VSOL;
   const vault: CoinVaultAccount = {
     mint,
+    creator: PublicKey.default,
     triggerBps: 2500,
     tokenProgram: PublicKey.default,
     venue: "curve",
@@ -49,6 +50,7 @@ function state(v: Partial<CoinVaultAccount> = {}, curve: { vsol?: bigint; comple
     floorPrice: (SPOT * 75n) / 100n,
     floorSol: 6_000_000_000n,
     holderSol: 0n,
+    creatorSol: 0n,
     burnSol: 0n,
     holderTokens: 0n,
     lastDefendTs: 0,
@@ -62,11 +64,10 @@ function state(v: Partial<CoinVaultAccount> = {}, curve: { vsol?: bigint; comple
     lastRoundTs: 0,
     totalFees: 0n,
     totalDefendedSol: 0n,
-    totalTokensBought: 0n,
     totalPaidSol: 0n,
     totalPaidTokens: 0n,
     totalBurnSol: 0n,
-    totalHoldBurned: 0n,
+    totalCreatorClaimed: 0n,
     totalTreasuryRent: 0n,
     createdAt: NOW - 10_000,
     ...v,

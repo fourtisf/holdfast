@@ -30,7 +30,7 @@ export function StatCards() {
       <StatCard
         label="Coins launched"
         value={data ? formatCompact(data.coins, 0) : loading}
-        sub="0% of fees to devs"
+        sub="Creators earn 15% of fees"
         icon={<RocketIcon size={15} />}
         tone="bg-fg/8 text-fg"
       />

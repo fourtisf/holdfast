@@ -20,7 +20,7 @@ export function Sidebar() {
         <div className="text-xs font-semibold tracking-wider text-muted uppercase">Where creator fees go</div>
         <FeeSplitBar compact className="mt-3" />
         <p className="mt-3 text-xs text-muted">
-          <span className="font-semibold text-fg">0% to the dev.</span> The vault has no withdraw function.
+          <span className="font-semibold text-fg">15% to the creator,</span> claimed on-chain. The floor and holder funds have no withdraw path.
         </p>
       </div>
 

@@ -15,7 +15,7 @@ async function sampleKeys(global: Global, launcher: PublicKey, buybackFeeRecipie
   const mint = Keypair.generate().publicKey;
   const deposit = Keypair.generate().publicKey;
   const sender = Keypair.generate().publicKey;
-  const common = { deposit, launcher, mint, name: "sample", symbol: "SMPL", uri: "https://ipfs.io/ipfs/sample", triggerBps: 2500, reimburseLamports: 1n, priority: DEFAULT_PRIORITY };
+  const common = { deposit, launcher, mint, name: "sample", symbol: "SMPL", uri: "https://ipfs.io/ipfs/sample", triggerBps: 2500, creator: sender, reimburseLamports: 1n, priority: DEFAULT_PRIORITY };
   const withDevBuy = await atomicLaunchInstructions({
     ...common,
     devBuy: { tokens: 1_000n, maxSolCost: 1_000n, bondingCurve: { ...pump.newBondingCurve(global), creator: pumpCreatorFor(mint) }, buybackFeeRecipient },

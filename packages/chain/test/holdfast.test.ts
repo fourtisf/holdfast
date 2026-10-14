@@ -8,6 +8,7 @@ import {
   initializeIx,
   setHoldMintIx,
   setParamsIx,
+  claimCreatorFeesIx,
   closeRoundIx,
   coinKeys,
   collectFeesIx,
@@ -23,8 +24,8 @@ import {
   updateAthIx,
 } from "../src/holdfast.js";
 import { roundOpenedFromLogs, HOLDFAST_PROGRAM_ADDRESS } from "@holdfast/core";
-import { HOLDFAST_PROGRAM_ID } from "../src/constants.js";
-import { treasuryPda, vaultPda } from "../src/pda.js";
+import { HOLDFAST_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "../src/constants.js";
+import { configPda, treasuryPda, vaultPda } from "../src/pda.js";
 
 const coder = new BorshCoder(HOLDFAST_IDL);
 const mint = Keypair.generate().publicKey;
@@ -38,12 +39,14 @@ function ixName(data: Buffer): string | undefined {
 describe("holdfast client", () => {
   it("decodes a CoinVault account", () => {
     const observations = Array.from({ length: 16 }, () => ({ ts: zero, price: zero }));
+    const creator = Keypair.generate().publicKey;
     const raw = {
       mint,
-      token_program: PublicKey.default,
+      creator,
       bonding_curve: Keypair.generate().publicKey,
       amm_pool: PublicKey.default,
       trigger_bps: 2500,
+      token_2022: true,
       venue: 0,
       bump: 255,
       treasury_bump: 254,
@@ -52,8 +55,9 @@ describe("holdfast client", () => {
       floor_price: new BN("20969245107176141"),
       ath_candidate: zero,
       ath_candidate_since: zero,
-      floor_sol: new BN(6_000_000_000),
-      holder_sol: new BN(3_000_000_000),
+      floor_sol: new BN(5_000_000_000),
+      holder_sol: new BN(2_500_000_000),
+      creator_sol: new BN(1_500_000_000),
       burn_sol: new BN(1_000_000_000),
       holder_tokens: new BN(42),
       last_defend_ts: new BN(1_760_000_000),
@@ -67,13 +71,12 @@ describe("holdfast client", () => {
       observations,
       total_fees: new BN(10_000_000_000),
       total_defended_sol: zero,
-      total_tokens_bought: zero,
       total_paid_sol: zero,
       total_paid_tokens: zero,
       total_burn_sol: zero,
-      total_hold_burned: zero,
-      created_at: new BN(1_759_999_000),
+      total_creator_claimed: new BN(700),
       total_treasury_rent: zero,
+      created_at: new BN(1_759_999_000),
     };
     // anchor's encode() uses a fixed 1000-byte buffer; CoinVault is larger, so encode with the layout directly
     const { discriminator, layout } = (coder.accounts as unknown as { accountLayouts: Map<string, { discriminator: number[]; layout: { encode: (v: unknown, b: Buffer) => number } }> }).accountLayouts.get("CoinVault")!;
@@ -85,7 +88,12 @@ describe("holdfast client", () => {
     expect(v.triggerBps).toBe(2500);
     expect(v.venue).toBe("curve");
     expect(v.ammPool).toBeNull();
-    expect(v.floorSol).toBe(6_000_000_000n);
+    expect(v.floorSol).toBe(5_000_000_000n);
+    expect(v.creator.equals(creator)).toBe(true);
+    expect(v.creatorSol).toBe(1_500_000_000n);
+    expect(v.totalCreatorClaimed).toBe(700n);
+    expect(v.tokenProgram.equals(TOKEN_2022_PROGRAM_ID)).toBe(true);
+    expect(v.createdAt).toBe(1_759_999_000);
     expect(v.athPrice).toBe(27958993476234855n);
     expect(v.roundId).toBe(9n);
     expect(v.defendCount).toBe(3n);
@@ -115,7 +123,7 @@ describe("holdfast client", () => {
   });
 
   it("ignores events of other programs", () => {
-    const line = encodeHoldfastEventLog("FeesCollected", { mint, amount: new BN(1), floor: zero, holder: zero, burn: zero, unwrapped_wsol: zero, tokens: zero, ts: zero });
+    const line = encodeHoldfastEventLog("FeesCollected", { mint, amount: new BN(1), floor: zero, holder: zero, creator: zero, burn: zero, unwrapped_wsol: zero, tokens: zero, ts: zero });
     const other = Keypair.generate().publicKey.toBase58();
     expect(parseHoldfastEvents([`Program ${other} invoke [1]`, line, `Program ${other} success`])).toEqual([]);
   });
@@ -160,11 +168,25 @@ describe("holdfast client", () => {
     expect(coin.vault.equals(vaultPda(mint))).toBe(true);
     expect(coin.treasury.equals(treasuryPda(mint))).toBe(true);
 
-    const init = initCoinIx(coin, keeper, 2500);
+    const creator = Keypair.generate().publicKey;
+    const init = initCoinIx(coin, keeper, 2500, creator);
     expect(ixName(init.data)).toBe("init_coin");
     // vault + treasury reserve only: the treasury's token accounts come later (prepare_treasury)
     expect(init.keys).toHaveLength(8);
     expect(init.keys[0]!.isSigner).toBe(true);
+    // args: trigger (u16) then the creator pubkey
+    expect(init.data.subarray(8, 10).readUInt16LE(0)).toBe(2500);
+    expect(new PublicKey(init.data.subarray(10, 42)).equals(creator)).toBe(true);
+
+    const claim = claimCreatorFeesIx(coin, creator);
+    expect(ixName(claim.data)).toBe("claim_creator_fees");
+    expect(claim.keys.map((k) => [k.pubkey.toBase58(), k.isSigner, k.isWritable])).toEqual([
+      [creator.toBase58(), true, true],
+      [configPda().toBase58(), false, false],
+      [coin.vault.toBase58(), false, true],
+      [coin.treasury.toBase58(), false, true],
+      ["11111111111111111111111111111111", false, false],
+    ]);
 
     expect(ixName(collectFeesIx(coin).data)).toBe("collect_fees");
     // missing treasury token accounts are passed as "none" (the program id)

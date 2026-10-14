@@ -289,19 +289,24 @@ describe("vault state, floor history, defends", () => {
       totalPaidSol: 0n,
       totalPaidTokens: 0n,
       totalBurnedSol: 0n,
+      creatorSol: 3n,
+      totalCreatorClaimed: 0n,
       slot: 10,
     };
     expect(await upsertVaultState(db, snap)).toBe(true);
     expect(await upsertVaultState(db, { ...snap, floorSol: 1n, slot: 9 })).toBe(false);
-    expect((await getVaultState(db, c.mint))?.floorSol).toBe(6n);
+    expect(await getVaultState(db, c.mint)).toMatchObject({ floorSol: 6n, creatorSol: 3n, totalCreatorClaimed: 0n });
 
     await applyVaultDelta(db, c.mint, { floorSol: -2n, holderTokens: 500n, totalDefended: 2n, defends: 1, lastDefendTs: T0, ath: 1n });
     const v = await getVaultState(db, c.mint);
     expect(v).toMatchObject({ floorSol: 4n, holderTokens: 500n, totalDefended: 2n, defendCount: 1n, lastDefendTs: T0, ath: 10n ** 20n });
 
     const other = await seedCoin(db, "v2");
-    await applyVaultDelta(db, other.mint, { floorSol: 60n, holderSol: 30n, burnSol: 10n, totalFees: 100n });
-    expect(await getVaultState(db, other.mint)).toMatchObject({ floorSol: 60n, holderSol: 30n, burnSol: 10n, totalFees: 100n, lastDefendTs: null });
+    await applyVaultDelta(db, other.mint, { floorSol: 50n, holderSol: 25n, creatorSol: 15n, burnSol: 10n, totalFees: 100n });
+    expect(await getVaultState(db, other.mint)).toMatchObject({ floorSol: 50n, holderSol: 25n, creatorSol: 15n, burnSol: 10n, totalFees: 100n, lastDefendTs: null });
+    // a creator claim empties the creator bucket and counts as claimed
+    await applyVaultDelta(db, other.mint, { creatorSol: -15n, totalCreatorClaimed: 15n });
+    expect(await getVaultState(db, other.mint)).toMatchObject({ creatorSol: 0n, totalCreatorClaimed: 15n });
   });
 
   it("floor history returns the step before the range", async () => {

@@ -27,6 +27,8 @@ export function toVaultSnapshot(
   return {
     floorSol: vault ? lamportsToSol(vault.floorSol) : 0,
     holderSol: vault ? lamportsToSol(vault.holderSol) : 0,
+    creatorSol: vault ? lamportsToSol(vault.creatorSol) : 0,
+    creatorClaimedSol: vault ? lamportsToSol(vault.totalCreatorClaimed) : 0,
     burnSol: vault ? lamportsToSol(vault.burnSol) : 0,
     holderTokens: vault ? rawToTokens(vault.holderTokens, decimals) : 0,
     athPrice: vault ? fixedToSolPerToken(vault.ath, decimals) : 0,

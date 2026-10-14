@@ -1,6 +1,6 @@
 "use client";
 
-import { SPLIT_BURN_BPS, SPLIT_FLOOR_BPS, SPLIT_HOLDER_BPS, type CoinDetail } from "@holdfast/core";
+import { SPLIT_BURN_BPS, SPLIT_CREATOR_BPS, SPLIT_FLOOR_BPS, SPLIT_HOLDER_BPS, type CoinDetail } from "@holdfast/core";
 import type { ReactNode } from "react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { ExternalIcon, VaultIcon } from "@/components/ui/icons";
@@ -31,7 +31,7 @@ export function VaultPanel({ coin }: { coin: CoinDetail }) {
       <CardHeader
         title="Floor vault"
         icon={<VaultIcon size={15} />}
-        subtitle="No withdraw function · 0% to the dev"
+        subtitle="Only the creator's 15% can be withdrawn"
         action={
           <a
             href={explorerAddressUrl(coin.vaultAddress, SOLANA_CLUSTER)}
@@ -57,6 +57,10 @@ export function VaultPanel({ coin }: { coin: CoinDetail }) {
             </div>
           ) : null}
         </Row>
+        <Row label="Creator share" hint={`${SPLIT_CREATOR_BPS / 100}% of fees · claimed by the creator`}>
+          <div className="text-creator">{formatSol(v.creatorSol)}</div>
+          {v.creatorClaimedSol > 0 ? <div className="text-xs font-normal text-muted">{formatSol(v.creatorClaimedSol)} claimed</div> : null}
+        </Row>
         <Row label="Burn bucket" hint={`${SPLIT_BURN_BPS / 100}% of fees → buy & burn $MOAT`}>
           <span className="text-vault">{formatSol(v.burnSol)}</span>
         </Row>
@@ -74,7 +78,8 @@ export function VaultPanel({ coin }: { coin: CoinDetail }) {
         <Row label="Last buyback">{v.lastDefendAt ? formatRelativeTime(v.lastDefendAt, now) : <span className="text-faint">Never</span>}</Row>
       </div>
       <div className="border-t border-line px-4 py-2.5 text-[11px] text-faint">
-        Fee split: {SPLIT_FLOOR_BPS / 100}% floor · {SPLIT_HOLDER_BPS / 100}% holders · {SPLIT_BURN_BPS / 100}% burn
+        Fee split: {SPLIT_FLOOR_BPS / 100}% floor · {SPLIT_HOLDER_BPS / 100}% holders · {SPLIT_CREATOR_BPS / 100}% creator ·{" "}
+        {SPLIT_BURN_BPS / 100}% burn
       </div>
     </Card>
   );

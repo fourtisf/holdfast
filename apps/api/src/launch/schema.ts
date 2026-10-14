@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { TRIGGER_OPTIONS_BPS, type LaunchRequest } from "@holdfast/core";
+import { PublicKey } from "@solana/web3.js";
+import { base58Address } from "../validation.js";
 
 const httpUrl = z
   .string()
@@ -56,6 +58,11 @@ export const LaunchRequestSchema = z
       .optional(),
     triggerBps: z.number().refine((v) => (TRIGGER_OPTIONS_BPS as readonly number[]).includes(v), "triggerBps must be 1500, 2500 or 3500"),
     devBuySol: z.number().min(0, "devBuySol must be ≥ 0").max(10, "devBuySol must be ≤ 10").optional(),
+    // The creator signs its fee claims: a regular (on-curve) wallet, never a program address.
+    creatorWallet: z.preprocess(
+      emptyToUndefined,
+      base58Address.refine((v) => PublicKey.isOnCurve(new PublicKey(v).toBytes()), "creatorWallet must be a regular wallet: it signs the fee claims").optional(),
+    ),
   })
   .strict();
 

@@ -84,6 +84,8 @@ describe("happy path", () => {
     const keys = coinKeys(mint, TOKEN_2022_PROGRAM_ID);
     expect(h.chain.curve(mint).creator.equals(treasuryPda(mint))).toBe(true);
     expect(h.chain.vaultTriggers.get(mint.toBase58())).toBe(2500);
+    // the deposit's sender claims the creator share when the form names no creator wallet
+    expect(h.chain.vaultCreators.get(mint.toBase58())).toBe(from.toBase58());
     expect(await h.chain.accountExists(keys.vault)).toBe(true);
     // the treasury's token accounts and accumulator are not created at launch (prepare_treasury, later)
     expect(await h.chain.accountExists(pump.userVolumeAccumulatorPda(keys.treasury))).toBe(false);
@@ -172,6 +174,17 @@ describe("happy path", () => {
     const excluded = new Map((await listExcluded(db)).map((e) => [e.address, e.reason]));
     expect(excluded.get(deposit.publicKey.toBase58())).toBe("deposit");
     expect(excluded.get(h.launcher.publicKey.toBase58())).toBe("launcher");
+  });
+
+  it("records the form's creator wallet as the coin's creator instead of the sender", async () => {
+    const creatorWallet = Keypair.generate().publicKey.toBase58();
+    const { row, deposit, required } = await h.launch({ ...defaultForm(), creatorWallet });
+    h.chain.fund(sender(), deposit.publicKey, required);
+    await h.tick();
+    expect((await h.row(row.id)).status).toBe("live");
+    const mint = await mintOf(row.id);
+    expect(h.chain.vaultCreators.get(mint.toBase58())).toBe(creatorWallet);
+    expect((await getCoin(db, mint.toBase58()))!.creator).toBe(creatorWallet);
   });
 
   it("raises an under-quoted launch to its real cost before creating anything", async () => {

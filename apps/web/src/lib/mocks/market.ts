@@ -2,7 +2,7 @@
  * In-browser simulated Holdfast market used when NEXT_PUBLIC_USE_MOCKS=1.
  *
  * Every coin gets a deterministic 1-minute price path (seeded by its name), and the vault mechanism is
- * replayed over it: creator fees split 60/30/10, ATH from a 15-minute TWAP, floor = ATH × (1 − trigger),
+ * replayed over it: creator fees split 50/25/15/10, ATH from a 15-minute TWAP, floor = ATH × (1 − trigger),
  * buybacks of 10% of the floor vault when the price touches the floor (with a cooldown), and payout
  * rounds every 2 minutes. Summary numbers are derived from the same path, so cards, chart and vault
  * panels agree with each other.
@@ -11,6 +11,7 @@ import {
   DEFEND_STEP_BPS,
   ROUND_INTERVAL_SECONDS,
   SPLIT_BURN_BPS,
+  SPLIT_CREATOR_BPS,
   SPLIT_FLOOR_BPS,
   SPLIT_HOLDER_BPS,
   TRIGGER_OPTIONS_BPS,
@@ -73,6 +74,12 @@ interface CoinSeed {
   trigger: TriggerBps;
   socials?: Socials;
 }
+
+/** Coin the mock wallet launched (no demo holdings of its own), so mock mode shows the creator's claim card. */
+export const MOCK_CREATED_TICKER = "FINS";
+
+const pickLauncher = (ticker: string, roll: number): string | null =>
+  ticker === MOCK_CREATED_TICKER ? MOCK_WALLET : roll > 0.3 ? mockAddress(`launcher:${ticker}`) : null;
 
 const SEEDS: CoinSeed[] = [
   {
@@ -202,7 +209,7 @@ const BLURBS = [
   "Fees go to the vault, not the dev. Hold and get paid.",
   "Community coin. Floor follows the ATH.",
   "The longer you hold, the more you earn.",
-  "No dev bags. No withdraw. Just the floor.",
+  "No dev dumps. Just the floor.",
   "Bought-back tokens go to holders, not the burn.",
   "Stuck to the rock like a true holdfast.",
 ];
@@ -232,6 +239,8 @@ function seedsFor(): CoinSeed[] {
 interface VaultState {
   floorSol: number;
   holderSol: number;
+  creatorSol: number;
+  creatorClaimedSol: number;
   burnSol: number;
   holderTokens: number;
   athPrice: number;
@@ -323,12 +332,13 @@ function twapAth(closes: number[]): { ath: number[]; peakIndex: number } {
 }
 
 function emptyVault(): VaultState {
-  return { floorSol: 0, holderSol: 0, burnSol: 0, holderTokens: 0, athPrice: 0, floorPrice: 0, defendCount: 0, lastDefendAt: null, totalDefendedSol: 0 };
+  return { floorSol: 0, holderSol: 0, creatorSol: 0, creatorClaimedSol: 0, burnSol: 0, holderTokens: 0, athPrice: 0, floorPrice: 0, defendCount: 0, lastDefendAt: null, totalDefendedSol: 0 };
 }
 
 function splitFee(coin: MockCoin, fee: number) {
   coin.vault.floorSol += (fee * SPLIT_FLOOR_BPS) / 10_000;
   coin.vault.holderSol += (fee * SPLIT_HOLDER_BPS) / 10_000;
+  coin.vault.creatorSol += (fee * SPLIT_CREATOR_BPS) / 10_000;
   coin.vault.burnSol += (fee * SPLIT_BURN_BPS) / 10_000;
 }
 
@@ -425,7 +435,7 @@ function simulate(seed: CoinSeed, index: number): MockCoin {
     socials: seed.socials ?? {},
     triggerBps: seed.trigger,
     createdAt,
-    launcher: rand() > 0.3 ? mockAddress(`launcher:${seed.ticker}`) : null,
+    launcher: pickLauncher(seed.ticker, rand()),
     activity: seed.activity,
     minutes: [],
     genMinutes: n,
@@ -538,6 +548,8 @@ function vaultSnapshot(coin: MockCoin): VaultSnapshot {
   return {
     floorSol: v.floorSol,
     holderSol: v.holderSol,
+    creatorSol: v.creatorSol,
+    creatorClaimedSol: v.creatorClaimedSol,
     burnSol: v.burnSol,
     holderTokens: v.holderTokens,
     athPrice: v.athPrice,
@@ -629,6 +641,16 @@ export function listCoins(sort: CoinSort = "newest", q = ""): CoinSummary[] {
 export function coinDetail(mint: string): CoinDetail | null {
   const coin = getCoin(mint);
   return coin ? detail(coin) : null;
+}
+
+/** Mock of `claim_creator_fees`: empties the creator bucket and returns what it held (SOL). */
+export function claimCreatorFees(mint: string): number {
+  const coin = getCoin(mint);
+  if (!coin) return 0;
+  const amount = coin.vault.creatorSol;
+  coin.vault.creatorClaimedSol += amount;
+  coin.vault.creatorSol = 0;
+  return amount;
 }
 
 export function coinSummary(mint: string): CoinSummary | null {

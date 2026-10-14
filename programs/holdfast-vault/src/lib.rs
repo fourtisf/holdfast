@@ -1,5 +1,6 @@
-//! Holdfast vault: one vault per pump.fun coin. The coin's creator fees flow here and can only leave
-//! as floor buybacks, holder payouts or $HOLD buy-and-burn. There is no withdraw instruction.
+//! Holdfast vault: one vault per pump.fun coin. The coin's creator fees flow here and are split
+//! 50 / 25 / 15 / 10. They can only leave as floor buybacks, holder payouts, $HOLD buy-and-burn, or
+//! the creator's own 15% claimed by the creator recorded at launch. There is no other withdraw path.
 
 #![allow(unexpected_cfgs)]
 
@@ -58,8 +59,8 @@ pub mod holdfast_vault {
     }
 
     // ---- coin lifecycle ----------------------------------------------------------------------
-    pub fn init_coin(ctx: Context<InitCoin>, trigger_bps: u16) -> Result<()> {
-        init_coin::init_coin(ctx, trigger_bps)
+    pub fn init_coin(ctx: Context<InitCoin>, trigger_bps: u16, creator: Pubkey) -> Result<()> {
+        init_coin::init_coin(ctx, trigger_bps, creator)
     }
 
     pub fn collect_fees(ctx: Context<CollectFees>) -> Result<()> {
@@ -104,5 +105,10 @@ pub mod holdfast_vault {
 
     pub fn burn_hold<'info>(ctx: Context<'_, '_, 'info, 'info, BurnHold<'info>>, venue: u8, min_hold_out: u64) -> Result<()> {
         burn_hold::burn_hold(ctx, venue, min_hold_out)
+    }
+
+    // ---- creator -------------------------------------------------------------------------------
+    pub fn claim_creator_fees(ctx: Context<ClaimCreatorFees>) -> Result<()> {
+        claim_creator_fees::claim_creator_fees(ctx)
     }
 }

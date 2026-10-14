@@ -49,7 +49,7 @@ pub struct Defend<'info> {
     pub pool_quote_account: Option<UncheckedAccount<'info>>,
     #[account(address = WSOL_MINT)]
     pub wsol_mint: Box<InterfaceAccount<'info, Mint>>,
-    #[account(address = vault.token_program)]
+    #[account(address = vault.token_program_id())]
     pub token_program: Interface<'info, TokenInterface>,
     pub wsol_token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -139,7 +139,6 @@ pub fn defend<'info>(ctx: Context<'_, '_, 'info, 'info, Defend<'info>>, min_toke
     vault.floor_sol = vault.floor_sol.checked_sub(outcome.sol_spent).ok_or(HoldfastError::OverspentSwap)?;
     vault.holder_tokens = vault.holder_tokens.checked_add(outcome.tokens_received).ok_or(HoldfastError::MathOverflow)?;
     vault.total_defended_sol = vault.total_defended_sol.saturating_add(outcome.sol_spent);
-    vault.total_tokens_bought = vault.total_tokens_bought.saturating_add(outcome.tokens_received);
     vault.last_defend_ts = now;
     vault.defend_count += 1;
     vault.hour_window_start = window_start;

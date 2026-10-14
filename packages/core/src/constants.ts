@@ -5,9 +5,13 @@
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 
-/** Creator-fee split, in basis points. Must sum to 10_000. Dev/launcher share is 0 by construction. */
-export const SPLIT_FLOOR_BPS = 6_000;
-export const SPLIT_HOLDER_BPS = 3_000;
+/**
+ * Creator-fee split, in basis points. Must sum to 10_000. The creator's share accrues in the vault and
+ * only the creator recorded at launch can claim it; the launcher and the platform have no share.
+ */
+export const SPLIT_FLOOR_BPS = 5_000;
+export const SPLIT_HOLDER_BPS = 2_500;
+export const SPLIT_CREATOR_BPS = 1_500;
 export const SPLIT_BURN_BPS = 1_000;
 
 /** Allowed floor triggers (floor = ATH × (1 − trigger)). Chosen at launch, immutable. */

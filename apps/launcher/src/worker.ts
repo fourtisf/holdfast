@@ -150,6 +150,9 @@ type Step = "create" | "atomic" | "init" | "dev_buy" | "register" | "refund";
 /** How long a fetched lookup table is reused before it is read again. */
 const LOOKUP_TABLE_TTL_MS = 10 * 60_000;
 
+/** The wallet recorded as the coin's creator (claims its share): the form's, else the deposit's sender. */
+const creatorOf = (form: LaunchForm, sender: PublicKey): PublicKey => (form.creatorWallet ? new PublicKey(form.creatorWallet) : sender);
+
 const describe = (err: unknown): string => {
   if (err instanceof TxError) return `${err.message} [${err.outcome}${err.signature ? ` ${err.signature}` : ""}]`;
   return err instanceof Error ? err.message : String(err);
@@ -453,6 +456,7 @@ export class LaunchWorker {
           launcher: this.s.launcher.publicKey,
           mint: mint.publicKey,
           triggerBps: form.triggerBps,
+          creator: creatorOf(form, sender),
           reimburseLamports: reimbursement.lamports,
           recent: await this.chain.latestBlockhash(),
           priority: this.s.priority,
@@ -580,6 +584,7 @@ export class LaunchWorker {
         symbol: form.symbol,
         uri: meta.uri,
         triggerBps: form.triggerBps,
+        creator: creatorOf(form, sender),
         reimburseLamports: reimbursement,
         devBuy,
         leftover: leftover > 0n ? { to: toTreasury ? coin.treasury : sender, lamports: leftover } : null,
@@ -620,7 +625,7 @@ export class LaunchWorker {
 
   /**
    * The leftover goes back to the sender, unless the sender is an empty account it cannot make
-   * rent-exempt: then it is a donation to the coin's own treasury (booked as fees 60/30/10).
+   * rent-exempt: then it is a donation to the coin's own treasury (booked as fees 50/25/15/10).
    */
   private leftoverToTreasury(leftover: bigint, senderBalance: bigint, rent: RentFn): boolean {
     return leftover > 0n && senderBalance === 0n && leftover < rent(SYSTEM_ACCOUNT_SIZE);
@@ -737,7 +742,7 @@ export class LaunchWorker {
         imageUrl: form.imageUrl,
         description: form.description,
         socials: form.socials,
-        creator: sender.toBase58(),
+        creator: creatorOf(form, sender).toBase58(),
         metadataUri: uri,
       };
       const inserted = await insertCoin(q, {

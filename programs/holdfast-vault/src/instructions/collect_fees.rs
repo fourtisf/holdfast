@@ -12,7 +12,7 @@ use crate::treasury::{spendable_lamports, treasury_seeds, unwrap_wsol, WsolAccou
 
 /// Permissionless. Books every lamport that reached the treasury since the last call (pump.fun creator
 /// fees claimed by the keeper's `collect_creator_fee_v2` / PumpSwap `collect_coin_creator_fee`, or any
-/// donation) into the 60/30/10 buckets, and adds coin tokens sent to the treasury to the holder pool.
+/// donation) into the 50/25/15/10 buckets, and adds coin tokens sent to the treasury to the holder pool.
 /// The treasury's token accounts are optional: they only exist once `prepare_treasury` ran (or someone
 /// created one to send tokens), and a coin's first fees are booked without them.
 #[derive(Accounts)]
@@ -36,7 +36,7 @@ pub struct CollectFees<'info> {
         associated_token::token_program = token_program,
     )]
     pub treasury_token_account: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
-    #[account(address = vault.token_program)]
+    #[account(address = vault.token_program_id())]
     pub token_program: Interface<'info, TokenInterface>,
     #[account(address = WSOL_MINT)]
     pub wsol_mint: Box<InterfaceAccount<'info, Mint>>,
@@ -91,12 +91,23 @@ pub fn collect_fees(ctx: Context<CollectFees>) -> Result<()> {
         return Ok(());
     }
 
-    let (floor, holder, burn) = split_fees(amount);
-    vault.floor_sol = vault.floor_sol.checked_add(floor).ok_or(HoldfastError::MathOverflow)?;
-    vault.holder_sol = vault.holder_sol.checked_add(holder).ok_or(HoldfastError::MathOverflow)?;
-    vault.burn_sol = vault.burn_sol.checked_add(burn).ok_or(HoldfastError::MathOverflow)?;
+    let split = split_fees(amount);
+    vault.floor_sol = vault.floor_sol.checked_add(split.floor).ok_or(HoldfastError::MathOverflow)?;
+    vault.holder_sol = vault.holder_sol.checked_add(split.holder).ok_or(HoldfastError::MathOverflow)?;
+    vault.creator_sol = vault.creator_sol.checked_add(split.creator).ok_or(HoldfastError::MathOverflow)?;
+    vault.burn_sol = vault.burn_sol.checked_add(split.burn).ok_or(HoldfastError::MathOverflow)?;
     vault.total_fees = vault.total_fees.saturating_add(amount);
 
-    emit!(FeesCollected { mint, amount, floor, holder, burn, unwrapped_wsol, tokens, ts: Clock::get()?.unix_timestamp });
+    emit!(FeesCollected {
+        mint,
+        amount,
+        floor: split.floor,
+        holder: split.holder,
+        creator: split.creator,
+        burn: split.burn,
+        unwrapped_wsol,
+        tokens,
+        ts: Clock::get()?.unix_timestamp,
+    });
     Ok(())
 }

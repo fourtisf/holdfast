@@ -6,14 +6,15 @@
 
 A memecoin launchpad on top of **pump.fun (Solana)** where coins defend their own price and pay their holders:
 
-1. **Creator fees never reach the dev.** Every coin's pump.fun creator is a PDA of the Moatpad vault program. That program
-   has no withdraw instruction.
+1. **Creator fees work for the coin.** Every coin's pump.fun creator is a PDA of the Moatpad vault program. 85% of the
+   fees defend the floor, pay holders and burn $MOAT; the creator claims its 15% from the vault with its own wallet.
+   Nothing else can be withdrawn.
 2. **Automatic floor.** `floor = ATH × (1 − trigger)`, with trigger 15 / 25 / 35% chosen at launch and immutable. When the
    price is at or below the floor, the vault buys back with 10% of its floor bucket per step.
 3. **Holders are paid by how long they hold.** Every 2 minutes, SOL plus the bought-back tokens are paid out by
    `tokens × weight`. Weight rises from 0.1× at purchase to 1.0× after 7 days.
 
-Fee split, fixed in the program: **60% floor vault · 30% holder payouts · 10% buy & burn $MOAT · 0% dev.**
+Fee split, fixed in the program: **50% floor vault · 25% holder payouts · 15% creator (claimable) · 10% buy & burn $MOAT.**
 
 The code keeps the project's codename, **holdfast**: the `@holdfast/*` packages, the `holdfast_vault` program, the
 `HOLDFAST_*` settings and the database names. Only what users see says Moatpad.
@@ -151,8 +152,8 @@ CI (`.github/workflows/ci.yml`) builds and tests the program, runs the TypeScrip
 | Criterion | Status |
 |---|---|
 | Launch by only sending SOL; fees flow to the vault PDA | Implemented and tested against an instruction-executing fake chain (`apps/launcher`), in one atomic transaction (anti-snipe) or the four-transaction fallback. `init_coin` refuses a coin unless `creator == treasury`. **0.015 SOL**, as specified ([decisions #20](docs/decisions.md)). **Devnet run pending**: `devnet-poc` automates it ([runbook](docs/runbook.md)) |
-| 60/30/10 split proven on-chain | ✅ program tests `fees_split_exactly_60_30_10`, keeper e2e |
-| No way to withdraw SOL except the three paths (proven by tests) | ✅ `tests/program/tests/no_withdraw.rs` (instruction set pinned, admin powers, randomised lamport conservation) |
+| Fee split proven on-chain (50/25/15/10, [decisions #23](docs/decisions.md)) | ✅ program tests `fees_split_exactly_50_25_15_10`, keeper e2e |
+| No way to withdraw SOL except the four paths: buybacks, payouts, $MOAT burns, the creator's own claim (proven by tests) | ✅ `tests/program/tests/no_withdraw.rs` (instruction set pinned, admin powers, randomised lamport conservation) |
 | Price ≤ floor triggers a 10% buyback, cooldown works, tokens go to the holder pool | ✅ `ath_defend.rs`, keeper e2e |
 | Payout every 2 minutes per the weight formula, snapshot re-verifiable | ✅ `packages/core` tests, keeper e2e (snapshot root = on-chain `RoundOpened` root), `verify-round` CLI |
 | Dev buy and transferred tokens earn nothing | ✅ lot rules (`packages/core` lots tests, indexer tests), dev buy delivered by transfer |

@@ -88,6 +88,8 @@ pub struct Coin {
     pub bonding_curve: Pubkey,
     pub curve_ata: Pubkey,
     pub trigger_bps: u16,
+    /// Recorded in `init_coin`; claims the creator bucket.
+    pub creator: Pubkey,
 }
 
 pub struct Env {
@@ -96,6 +98,8 @@ pub struct Env {
     pub keeper: Keypair,
     pub launcher: Keypair,
     pub payer: Keypair,
+    /// The coin creator of every coin `prepare_coin` makes.
+    pub creator: Keypair,
     /// Mock pump "global" account (byte 0 = misbehaviour mode).
     pub pump_global: Pubkey,
     pub amm_global_config: Pubkey,
@@ -110,7 +114,8 @@ impl Env {
         let keeper = Keypair::new();
         let launcher = Keypair::new();
         let payer = Keypair::new();
-        for kp in [&admin, &keeper, &launcher, &payer] {
+        let creator = Keypair::new();
+        for kp in [&admin, &keeper, &launcher, &payer, &creator] {
             svm.airdrop(&kp.pubkey(), 1_000 * SOL).unwrap();
         }
 
@@ -124,6 +129,7 @@ impl Env {
             keeper,
             launcher,
             payer,
+            creator,
             pump_global: Pubkey::new_unique(),
             amm_global_config: Pubkey::new_unique(),
             fee_recipient: Pubkey::new_unique(),
@@ -434,6 +440,7 @@ impl Env {
             bonding_curve: bonding_curve_pda(&mint),
             curve_ata: ata(&bonding_curve_pda(&mint), &mint, &TOKEN_2022_PROGRAM),
             trigger_bps,
+            creator: self.creator.pubkey(),
         }
     }
 
@@ -449,8 +456,27 @@ impl Env {
                 token_program: TOKEN_2022_PROGRAM,
                 system_program: SYSTEM_PROGRAM,
             },
-            holdfast_vault::instruction::InitCoin { trigger_bps: coin.trigger_bps },
+            holdfast_vault::instruction::InitCoin { trigger_bps: coin.trigger_bps, creator: coin.creator },
         )
+    }
+
+    pub fn claim_creator_fees_ix(&self, coin: &Coin, creator: &Pubkey) -> Instruction {
+        ix(
+            holdfast_vault::accounts::ClaimCreatorFees {
+                creator: *creator,
+                config: config_pda(),
+                vault: coin.vault,
+                treasury: coin.treasury,
+                system_program: SYSTEM_PROGRAM,
+            },
+            holdfast_vault::instruction::ClaimCreatorFees {},
+        )
+    }
+
+    pub fn claim_creator_fees(&mut self, coin: &Coin) -> TxResult {
+        let creator = self.creator.insecure_clone();
+        let ix = self.claim_creator_fees_ix(coin, &creator.pubkey());
+        self.send(&[ix], &[&creator])
     }
 
     pub fn collect_fees_ix(&self, coin: &Coin) -> Instruction {

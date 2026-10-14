@@ -226,12 +226,12 @@ async function main() {
         return { creatorVault: vault.toBase58(), sig: await transfer(payer, vault, Math.round(seedFees * LAMPORTS_PER_SOL)) };
       });
     }
-    await step("keeper collects fees into the vault (60 / 30 / 10)", () =>
+    await step("keeper collects fees into the vault (50 / 25 / 15 / 10)", () =>
       until(
         "fees in the vault",
         async () => {
           const c = await get<CoinDetail>(`/coins/${mint}`);
-          return c.vault.floorSol > 0 && (c.vault.holderSol > 0 || c.paidOutSol > 0) ? { floorSol: c.vault.floorSol, holderSol: c.vault.holderSol, burnSol: c.vault.burnSol } : null;
+          return c.vault.floorSol > 0 && (c.vault.holderSol > 0 || c.paidOutSol > 0) ? { floorSol: c.vault.floorSol, holderSol: c.vault.holderSol, creatorSol: c.vault.creatorSol, burnSol: c.vault.burnSol } : null;
         },
         6 * 60_000 * scale,
       ),

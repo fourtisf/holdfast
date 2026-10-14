@@ -32,8 +32,13 @@ pub struct InitCoin<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn init_coin(ctx: Context<InitCoin>, trigger_bps: u16) -> Result<()> {
+pub fn init_coin(ctx: Context<InitCoin>, trigger_bps: u16, creator: Pubkey) -> Result<()> {
     require!(TRIGGER_OPTIONS_BPS.contains(&trigger_bps), HoldfastError::InvalidTrigger);
+    // The creator must be a wallet that can sign a claim, not one of the coin's own program accounts.
+    require!(
+        creator != Pubkey::default() && creator != ctx.accounts.treasury.key() && creator != ctx.accounts.vault.key(),
+        HoldfastError::InvalidCreator
+    );
 
     let curve = read_curve(&ctx.accounts.bonding_curve)?;
     require_keys_eq!(curve.creator, ctx.accounts.treasury.key(), HoldfastError::CreatorMismatch);
@@ -59,7 +64,8 @@ pub fn init_coin(ctx: Context<InitCoin>, trigger_bps: u16) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let vault = &mut ctx.accounts.vault;
     vault.mint = ctx.accounts.mint.key();
-    vault.token_program = ctx.accounts.token_program.key();
+    vault.creator = creator;
+    vault.token_2022 = ctx.accounts.token_program.key() == anchor_spl::token_2022::ID;
     vault.bonding_curve = ctx.accounts.bonding_curve.key();
     vault.trigger_bps = trigger_bps;
     vault.venue = VENUE_CURVE;
@@ -71,6 +77,7 @@ pub fn init_coin(ctx: Context<InitCoin>, trigger_bps: u16) -> Result<()> {
         mint: vault.mint,
         vault: vault.key(),
         treasury: ctx.accounts.treasury.key(),
+        creator,
         trigger_bps,
         bonding_curve: vault.bonding_curve,
         ts: now,

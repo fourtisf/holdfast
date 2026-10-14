@@ -23,10 +23,14 @@ export interface Socials {
 
 /** Live state of a coin's on-chain vault (CoinVault account + treasury balances). */
 export interface VaultSnapshot {
-  /** SOL reserved for floor defence (60% of creator fees, minus buybacks). */
+  /** SOL reserved for floor defence (50% of creator fees, minus buybacks). */
   floorSol: number;
-  /** SOL waiting in the holder payout bucket (30% of fees). */
+  /** SOL waiting in the holder payout bucket (25% of fees). */
   holderSol: number;
+  /** The creator's unclaimed share (15% of fees); only the coin's creator wallet can claim it. */
+  creatorSol: number;
+  /** What the creator has claimed so far. */
+  creatorClaimedSol: number;
   /** SOL waiting to buy & burn $MOAT (10% of fees). */
   burnSol: number;
   /** Tokens bought back by the vault and waiting to be paid to holders. */
@@ -71,7 +75,10 @@ export interface CoinSummary {
 export interface CoinDetail extends CoinSummary {
   description: string;
   socials: Socials;
-  /** Wallet that launched the coin (informational only: it receives no fees). */
+  /**
+   * The coin's creator: the wallet recorded on-chain at launch that claims the creator share (15% of
+   * fees). The wallet that sent the launch deposit, unless the launch form named another one.
+   */
   launcher: string | null;
   vaultAddress: string;
   treasuryAddress: string;
@@ -288,6 +295,11 @@ export interface LaunchRequest {
   triggerBps: TriggerBps;
   /** Optional dev buy in SOL (tokens are sent to the depositor and do NOT earn payouts). */
   devBuySol?: number;
+  /**
+   * Wallet that may claim the coin's creator share (15% of its fees). Defaults to the wallet the
+   * deposit comes from; set it when depositing from an exchange or another wallet.
+   */
+  creatorWallet?: string;
 }
 
 /** GET /launch/quote: what a launch costs before anything is submitted (same model the launcher uses). */
@@ -548,3 +560,19 @@ export type WsServerMessage =
   | { channel: "stats"; data: Stats }
   | { channel: "pong"; serverTime: number }
   | { channel: "error"; message: string };
+
+/** POST /creator/claim/build: an unsigned transaction for the creator to claim its share. */
+export interface CreatorClaimBuildRequest {
+  mint: string;
+  /** Must be the coin's creator (`CoinDetail.launcher`). */
+  wallet: string;
+  priorityMicroLamports?: number;
+}
+
+export interface CreatorClaimBuildResponse {
+  /** Base64 v0 transaction, fee payer = the creator; sign and send it. */
+  transaction: string;
+  lastValidBlockHeight: number;
+  /** What the claim pays out, as last mirrored from the vault. */
+  claimableSol: number;
+}

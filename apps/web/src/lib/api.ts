@@ -26,6 +26,8 @@ import type {
   Stats,
   Trade,
   TradeBuildResponse,
+  CreatorClaimBuildRequest,
+  CreatorClaimBuildResponse,
   TradeQuote,
   TradeQuoteRequest,
   WalletTrade,
@@ -59,6 +61,8 @@ export interface HoldfastApi {
   position(wallet: string, mint: string): Promise<Position | null>;
   quote(req: TradeQuoteRequest, signal?: AbortSignal): Promise<TradeQuote>;
   buildTrade(req: TradeQuoteRequest): Promise<TradeBuildResponse>;
+  /** Unsigned claim of the creator share; only the coin's creator wallet gets one. */
+  buildCreatorClaim(req: CreatorClaimBuildRequest): Promise<CreatorClaimBuildResponse>;
   uploadImage(file: File): Promise<{ imageUrl: string }>;
   launch(req: LaunchRequest): Promise<LaunchResponse>;
   launchStatus(launchId: string): Promise<LaunchStatus>;
@@ -149,6 +153,7 @@ export const httpApi: HoldfastApi = {
   position: (wallet, mint) => request(withQuery("/me/position", { wallet, mint })),
   quote: (req, signal) => request("/trade/quote", { method: "POST", json: req, signal }),
   buildTrade: (req) => request("/trade/build", { method: "POST", json: req }),
+  buildCreatorClaim: (req) => request("/creator/claim/build", { method: "POST", json: req }),
   uploadImage: (file) => {
     const form = new FormData();
     form.append("file", file);
@@ -198,6 +203,7 @@ export const api: HoldfastApi = {
   position: lazy("position"),
   quote: lazy("quote"),
   buildTrade: lazy("buildTrade"),
+  buildCreatorClaim: lazy("buildCreatorClaim"),
   uploadImage: lazy("uploadImage"),
   launch: lazy("launch"),
   launchStatus: lazy("launchStatus"),

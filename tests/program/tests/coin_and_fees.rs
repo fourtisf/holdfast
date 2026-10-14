@@ -13,8 +13,10 @@ fn init_coin_registers_a_pump_coin_whose_creator_is_the_treasury() {
     assert_eq!(v.trigger_bps, 2_500);
     assert_eq!(v.venue, VENUE_CURVE);
     assert_eq!(v.bonding_curve, coin.bonding_curve);
-    assert_eq!(v.token_program, TOKEN_2022_PROGRAM);
-    assert_eq!((v.floor_sol, v.holder_sol, v.burn_sol, v.holder_tokens), (0, 0, 0, 0));
+    assert!(v.token_2022);
+    assert_eq!(v.token_program_id(), TOKEN_2022_PROGRAM);
+    assert_eq!(v.creator, coin.creator);
+    assert_eq!((v.floor_sol, v.holder_sol, v.creator_sol, v.burn_sol, v.holder_tokens), (0, 0, 0, 0, 0));
     assert_eq!((v.ath_price, v.floor_price), (0, 0));
     // treasury exists, rent exempt, system owned
     let treasury = env.svm.get_account(&coin.treasury).unwrap();
@@ -26,7 +28,7 @@ fn init_coin_registers_a_pump_coin_whose_creator_is_the_treasury() {
     assert!(!env.exists(&coin.treasury_wsol));
     // the launcher pays exactly the vault and the treasury's rent reserve (plus the tx fee)
     let vault_len = env.account_data(&coin.vault).len();
-    assert!(vault_len <= 730, "CoinVault is {vault_len} bytes: launch rent budget is ≈ 730");
+    assert!(vault_len <= 731, "CoinVault is {vault_len} bytes: launch rent budget is ≈ 731");
     let rent = env.svm.minimum_balance_for_rent_exemption(vault_len) + env.svm.minimum_balance_for_rent_exemption(0);
     assert_eq!(launcher_before - env.lamports(&env.launcher.pubkey()), rent + 5_000);
 }
@@ -37,7 +39,7 @@ fn first_fees_are_booked_without_treasury_token_accounts() {
     let coin = env.launch_bare(2_500);
     env.collect(&coin, SOL).unwrap();
     let v = env.vault(&coin.mint);
-    assert_eq!((v.floor_sol, v.holder_sol, v.burn_sol), (600_000_000, 300_000_000, 100_000_000));
+    assert_eq!((v.floor_sol, v.holder_sol, v.creator_sol, v.burn_sol), (500_000_000, 250_000_000, 150_000_000, 100_000_000));
     // a SOL-only payout round works without the treasury token account too
     env.open_round(&coin, 1, v.holder_sol, 0, 1).unwrap();
     let wallet = Keypair::new().pubkey();
@@ -57,7 +59,7 @@ fn prepare_treasury_creates_its_accounts_out_of_the_floor_bucket() {
 
     // the floor bucket must still fund one minimum buyback step (10 × 0.001 SOL) after paying
     let cost = rent(&env, 170) + rent(&env, 165) + rent(&env, 137);
-    let fee = (cost + 9_000_000) * 10 / 6 + 10;
+    let fee = (cost + 9_000_000) * 2 + 10;
     env.collect(&coin, fee).unwrap();
     assert!(env.vault(&coin.mint).floor_sol < cost + 10_000_000);
     assert_err(&env.prepare_treasury(&coin, Some(PUMP_PROGRAM_ID)), HoldfastError::FloorVaultTooSmall);
@@ -71,9 +73,9 @@ fn prepare_treasury_creates_its_accounts_out_of_the_floor_bucket() {
     assert_eq!(env.token_balance(&coin.treasury_ata), 0);
     assert_eq!(before.floor_sol - after.floor_sol, cost);
     assert_eq!(after.total_treasury_rent, cost);
-    assert_eq!((after.holder_sol, after.burn_sol), (before.holder_sol, before.burn_sol));
+    assert_eq!((after.holder_sol, after.creator_sol, after.burn_sol), (before.holder_sol, before.creator_sol, before.burn_sol));
     let reserve = rent(&env, 0);
-    assert_eq!(env.lamports(&coin.treasury) - reserve, after.floor_sol + after.holder_sol + after.burn_sol);
+    assert_eq!(env.lamports(&coin.treasury) - reserve, after.accounted_lamports().unwrap());
 
     // idempotent
     env.prepare_treasury(&coin, Some(PUMP_PROGRAM_ID)).unwrap();
@@ -159,22 +161,25 @@ fn init_coin_rejects_foreign_creators_and_non_launchers() {
 }
 
 #[test]
-fn fees_split_exactly_60_30_10() {
+fn fees_split_exactly_50_25_15_10() {
     let mut env = Env::ready();
     let coin = env.launch(2_500);
     env.collect(&coin, 10 * SOL).unwrap();
     let v = env.vault(&coin.mint);
-    assert_eq!(v.floor_sol, 6 * SOL);
-    assert_eq!(v.holder_sol, 3 * SOL);
+    assert_eq!(v.floor_sol, 5 * SOL);
+    assert_eq!(v.holder_sol, 2_500_000_000);
+    assert_eq!(v.creator_sol, 1_500_000_000);
     assert_eq!(v.burn_sol, SOL);
     assert_eq!(v.total_fees, 10 * SOL);
 
     // odd amount: parts still sum exactly, rounding dust lands in the floor
     env.collect(&coin, 1_234_567_891).unwrap();
     let v = env.vault(&coin.mint);
-    assert_eq!(v.holder_sol, 3 * SOL + 370_370_367);
+    assert_eq!(v.holder_sol, 2_500_000_000 + 308_641_972);
+    assert_eq!(v.creator_sol, 1_500_000_000 + 185_185_183);
     assert_eq!(v.burn_sol, SOL + 123_456_789);
-    assert_eq!(v.floor_sol + v.holder_sol + v.burn_sol, 10 * SOL + 1_234_567_891);
+    assert_eq!(v.floor_sol, 5 * SOL + 617_283_947);
+    assert_eq!(v.accounted_lamports().unwrap(), 10 * SOL + 1_234_567_891);
 
     // nothing new → no change
     env.collect(&coin, 0).unwrap();
@@ -182,7 +187,7 @@ fn fees_split_exactly_60_30_10() {
     // buckets equal the treasury's spendable lamports
     let rent = env.svm.minimum_balance_for_rent_exemption(0);
     let v = env.vault(&coin.mint);
-    assert_eq!(env.lamports(&coin.treasury) - rent, v.floor_sol + v.holder_sol + v.burn_sol);
+    assert_eq!(env.lamports(&coin.treasury) - rent, v.accounted_lamports().unwrap());
 }
 
 #[test]
@@ -194,26 +199,30 @@ fn pumpswap_creator_fees_in_wsol_are_unwrapped_and_split() {
     let wsol_rent = env.svm.minimum_balance_for_rent_exemption(165);
     env.collect(&coin, 0).unwrap();
     let v = env.vault(&coin.mint);
-    assert_eq!(v.floor_sol + v.holder_sol + v.burn_sol, 2 * SOL);
-    assert_eq!((v.floor_sol, v.holder_sol, v.burn_sol), (1_200_000_000, 600_000_000, 200_000_000));
+    assert_eq!(v.accounted_lamports().unwrap(), 2 * SOL);
+    assert_eq!((v.floor_sol, v.holder_sol, v.creator_sol, v.burn_sol), (1_000_000_000, 500_000_000, 300_000_000, 200_000_000));
     // WSOL account re-created, empty, still owned by the treasury
     assert_eq!(env.token_balance(&coin.treasury_wsol), 0);
     assert_eq!(env.lamports(&coin.treasury_wsol), wsol_rent);
 }
 
 #[test]
-fn collect_fees_is_permissionless_and_creator_has_no_share() {
+fn collect_fees_is_permissionless_and_pays_no_one() {
     let mut env = Env::ready();
     let coin = env.launch(2_500);
     let launcher_before = env.lamports(&env.launcher.pubkey());
+    let creator_before = env.lamports(&coin.creator);
     let anyone = Keypair::new();
     env.svm.airdrop(&anyone.pubkey(), SOL).unwrap();
     env.svm.airdrop(&coin.treasury, 5 * SOL).unwrap();
     let ix = env.collect_fees_ix(&coin);
     env.send(&[ix], &[&anyone]).unwrap();
     let v = env.vault(&coin.mint);
-    assert_eq!(v.floor_sol + v.holder_sol + v.burn_sol, 5 * SOL);
+    assert_eq!(v.accounted_lamports().unwrap(), 5 * SOL);
     assert_eq!(env.lamports(&env.launcher.pubkey()), launcher_before);
+    // the creator's share is booked in the vault and waits for its claim
+    assert_eq!(v.creator_sol, 750_000_000);
+    assert_eq!(env.lamports(&coin.creator), creator_before);
 }
 
 #[test]

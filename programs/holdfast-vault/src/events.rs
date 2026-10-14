@@ -5,6 +5,7 @@ pub struct CoinInitialized {
     pub mint: Pubkey,
     pub vault: Pubkey,
     pub treasury: Pubkey,
+    pub creator: Pubkey,
     pub trigger_bps: u16,
     pub bonding_curve: Pubkey,
     pub ts: i64,
@@ -16,6 +17,7 @@ pub struct FeesCollected {
     pub amount: u64,
     pub floor: u64,
     pub holder: u64,
+    pub creator: u64,
     pub burn: u64,
     pub unwrapped_wsol: u64,
     /// Coin tokens added to the holder pool (sent to the treasury outside buybacks).
@@ -98,5 +100,13 @@ pub struct TreasuryPrepared {
     pub wsol_account: bool,
     /// pump or pump_amm program whose volume accumulator was created (default key: none).
     pub volume_accumulator_program: Pubkey,
+    pub ts: i64,
+}
+
+#[event]
+pub struct CreatorFeesClaimed {
+    pub mint: Pubkey,
+    pub creator: Pubkey,
+    pub amount: u64,
     pub ts: i64,
 }

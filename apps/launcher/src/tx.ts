@@ -90,6 +90,8 @@ export interface InitTxParams {
   launcher: PublicKey;
   mint: PublicKey;
   triggerBps: number;
+  /** Recorded in the vault: claims the creator share. */
+  creator: PublicKey;
   /** Rent the launcher pays inside `init_coin` (see cost.ts `initReimbursement`). */
   reimburseLamports: bigint;
   recent: RecentBlockhash;
@@ -100,7 +102,7 @@ export function buildInitTx(p: InitTxParams): Transaction {
   const coin = coinKeys(p.mint, TOKEN_2022_PROGRAM_ID);
   const ixs = computeBudgetIxs(p.priority.units.init, p.priority.microLamports);
   if (p.reimburseLamports > 0n) ixs.push(SystemProgram.transfer({ fromPubkey: p.deposit, toPubkey: p.launcher, lamports: p.reimburseLamports }));
-  ixs.push(initCoinIx(coin, p.launcher, p.triggerBps));
+  ixs.push(initCoinIx(coin, p.launcher, p.triggerBps, p.creator));
   return newTx(p.deposit, p.recent, ixs);
 }
 
@@ -182,6 +184,8 @@ export interface AtomicLaunchParams {
   symbol: string;
   uri: string;
   triggerBps: number;
+  /** Recorded in the vault: claims the creator share. */
+  creator: PublicKey;
   /** Rent the launcher fronts inside `init_coin` (see cost.ts `initReimbursement`). */
   reimburseLamports: bigint;
   /**
@@ -210,7 +214,7 @@ export async function atomicLaunchInstructions(p: Omit<AtomicLaunchParams, "rece
       user: p.deposit,
       mayhemMode: false,
     }),
-    initCoinIx(coin, p.launcher, p.triggerBps),
+    initCoinIx(coin, p.launcher, p.triggerBps, p.creator),
   );
   if (p.devBuy) ixs.push(...(await devBuyBuyInstructions({ ...p.devBuy, deposit: p.deposit, mint: p.mint })));
   if (p.devBuy && p.leftover) throw new Error("an atomic launch with a dev buy keeps its leftover for the delivery transaction");

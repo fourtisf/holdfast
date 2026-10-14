@@ -16,6 +16,7 @@ import { NO_PRICE, type SolPriceSource } from "./services/price.js";
 import { commentRoutes } from "./routes/comments.js";
 import { socialRoutes } from "./routes/social.js";
 import { adminRoutes } from "./routes/admin.js";
+import { creatorRoutes } from "./routes/creator.js";
 import { launchRoutes } from "./routes/launch.js";
 import { moderationRoutes } from "./routes/moderation.js";
 import { marketRoutes } from "./routes/market.js";
@@ -117,6 +118,7 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   tradeRoutes(app, ctx);
   uploadRoutes(app, ctx);
   launchRoutes(app, ctx);
+  creatorRoutes(app, ctx);
   moderationRoutes(app, ctx);
   socialRoutes(app, ctx);
   commentRoutes(app, ctx);

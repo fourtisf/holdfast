@@ -503,6 +503,7 @@ class TxRun {
           const d = delta(mint);
           d.floorSol = add(d.floorSol, e.floor);
           d.holderSol = add(d.holderSol, e.holder);
+          d.creatorSol = add(d.creatorSol, e.creator ?? 0n);
           d.burnSol = add(d.burnSol, e.burn);
           d.totalFees = add(d.totalFees, e.amount);
           // Coin tokens swept into the holder pool alongside the SOL fees.
@@ -556,6 +557,12 @@ class TxRun {
           await updateRoundStatus(this.q, mint, e.roundId, "closed", { closeSig: this.tx.signature });
           this.notify({ kind: "round", mint, roundId: Number(e.roundId) });
           break;
+        case "CreatorFeesClaimed": {
+          const d = delta(mint);
+          d.creatorSol = add(d.creatorSol, -e.amount);
+          d.totalCreatorClaimed = add(d.totalCreatorClaimed, e.amount);
+          break;
+        }
         case "HoldBurned": {
           const d = delta(mint);
           d.burnSol = add(d.burnSol, -e.solSpent);

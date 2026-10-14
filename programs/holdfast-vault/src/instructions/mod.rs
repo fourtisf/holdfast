@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod burn_hold;
+pub mod claim_creator_fees;
 pub mod collect_fees;
 pub mod defend;
 pub mod init_coin;
@@ -9,6 +10,7 @@ pub mod rounds;
 
 pub use admin::*;
 pub use burn_hold::*;
+pub use claim_creator_fees::*;
 pub use collect_fees::*;
 pub use defend::*;
 pub use init_coin::*;

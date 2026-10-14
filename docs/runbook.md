@@ -3,7 +3,8 @@
 How to take Moatpad from a fresh checkout to a mainnet launch, and how to operate it afterwards. Commands
 assume the repository root, a filled-in `.env` (see `.env.example`) and the toolchain from the README.
 
-Nothing in this runbook can move vault funds. The program has no withdraw path; every admin power is listed in
+Nothing in this runbook can move vault funds. The program has no withdraw path besides each coin creator's claim of its
+own 15% share; every admin power is listed in
 [program.md](program.md) and pinned by `tests/program/tests/no_withdraw.rs`. The keys below protect *liveness*
 (who can crank, launch, pause, upgrade), not custody. Program upgrades are the exception: an upgrade can change
 everything, which is why the upgrade authority goes to a multisig or is frozen.

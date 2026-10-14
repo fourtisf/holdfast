@@ -33,6 +33,7 @@ const recent = { blockhash: Keypair.generate().publicKey.toBase58(), lastValidBl
 const priority: PriorityConfig = DEFAULT_PRIORITY;
 const deposit = Keypair.generate();
 const launcher = Keypair.generate();
+const creator = Keypair.generate();
 const mint = Keypair.generate();
 const sender = Keypair.generate().publicKey;
 const worst = { name: "N".repeat(PUMP_MAX_NAME_BYTES), symbol: "S".repeat(PUMP_MAX_SYMBOL_BYTES), uri: `https://x.example/${"u".repeat(PUMP_MAX_URI_BYTES - 18)}` };
@@ -91,6 +92,7 @@ describe("tx B: init_coin", () => {
       launcher: launcher.publicKey,
       mint: mint.publicKey,
       triggerBps: 3500,
+      creator: creator.publicKey,
       reimburseLamports: 16_328_160n,
       recent,
       priority,
@@ -105,7 +107,7 @@ describe("tx B: init_coin", () => {
 
     const init = programIx(tx, HOLDFAST_PROGRAM_ID);
     const decoded = holdfastCoder.instruction.decode(Buffer.from(init.data))!;
-    expect(decoded).toEqual({ name: "init_coin", data: { trigger_bps: 3500 } });
+    expect(decoded).toEqual({ name: "init_coin", data: { trigger_bps: 3500, creator: creator.publicKey } });
     const expected: Record<string, PublicKey> = {
       launcher: launcher.publicKey,
       config: configPda(),
@@ -138,13 +140,14 @@ describe("tx B: init_coin", () => {
       launcher: launcher.publicKey,
       mint: mint.publicKey,
       triggerBps: 1500,
+      creator: creator.publicKey,
       reimburseLamports: 0n,
       recent,
       priority,
     });
     expect(tx.instructions.some((i) => i.programId.equals(SystemProgram.programId))).toBe(false);
     expect(tx.instructions.some((i) => i.programId.equals(PUMP_PROGRAM_ID))).toBe(false);
-    expect(holdfastCoder.instruction.decode(Buffer.from(programIx(tx, HOLDFAST_PROGRAM_ID).data))!.data).toEqual({ trigger_bps: 1500 });
+    expect(holdfastCoder.instruction.decode(Buffer.from(programIx(tx, HOLDFAST_PROGRAM_ID).data))!.data).toEqual({ trigger_bps: 1500, creator: creator.publicKey });
   });
 });
 
@@ -221,7 +224,7 @@ describe("transaction sizes", () => {
     const curve = { ...pump.newBondingCurve(global), creator: treasuryPda(mint.publicKey) };
     const txs = {
       create: await buildCreateTx({ deposit: deposit.publicKey, mint: mint.publicKey, ...worst, recent, priority }),
-      init: buildInitTx({ deposit: deposit.publicKey, launcher: launcher.publicKey, mint: mint.publicKey, triggerBps: 2500, reimburseLamports: 1n, recent, priority }),
+      init: buildInitTx({ deposit: deposit.publicKey, launcher: launcher.publicKey, mint: mint.publicKey, triggerBps: 2500, creator: creator.publicKey, reimburseLamports: 1n, recent, priority }),
       devBuy: await buildDevBuyTx({ deposit: deposit.publicKey, sender, mint: mint.publicKey, tokens: 1n, maxSolCost: 1n, bondingCurve: curve, buybackFeeRecipient: global.buybackFeeRecipients[0]!, closeAccumulator: true, recent, priority }),
       refund: buildRefundTx({ deposit: deposit.publicKey, sender, lamports: 1n, recent, priority }),
     };

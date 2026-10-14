@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import type { LaunchQuote, LaunchResponse, LaunchStatus } from "@holdfast/core";
 import { getLaunch, isExcluded, updateLaunchStatus, type Db } from "@holdfast/db";
 import { deriveDepositKeypair, launchPlanFromEnv, parseMasterSecret } from "@holdfast/chain";
@@ -101,6 +102,22 @@ describe("POST /launch", () => {
     } finally {
       await paused.app.close();
     }
+  });
+
+  it("records an optional creator wallet; it must be a regular wallet", async () => {
+    const creatorWallet = Keypair.generate().publicKey.toBase58();
+    const res = await api.app.inject({ method: "POST", url: "/launch", payload: { ...valid, creatorWallet } });
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await getLaunch(db, res.json<LaunchResponse>().launchId))?.form.creatorWallet).toBe(creatorWallet);
+    // empty means "the deposit's sender"
+    const blank = await api.app.inject({ method: "POST", url: "/launch", payload: { ...valid, creatorWallet: " " } });
+    expect(blank.statusCode, blank.body).toBe(200);
+    expect((await getLaunch(db, blank.json<LaunchResponse>().launchId))?.form.creatorWallet).toBeUndefined();
+    // a program address can never sign a claim
+    const pda = PublicKey.findProgramAddressSync([Buffer.from("x")], Keypair.generate().publicKey)[0].toBase58();
+    const bad = await api.app.inject({ method: "POST", url: "/launch", payload: { ...valid, creatorWallet: pda } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error).toMatch(/creatorWallet/);
   });
 
   it.each([

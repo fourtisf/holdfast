@@ -139,7 +139,6 @@ pub fn burn_hold<'info>(ctx: Context<'_, '_, 'info, 'info, BurnHold<'info>>, ven
     let vault = &mut ctx.accounts.vault;
     vault.burn_sol = vault.burn_sol.checked_sub(outcome.sol_spent).ok_or(HoldfastError::OverspentSwap)?;
     vault.total_burn_sol = vault.total_burn_sol.saturating_add(outcome.sol_spent);
-    vault.total_hold_burned = vault.total_hold_burned.saturating_add(outcome.tokens_received);
     require!(spendable_lamports(&treasury)? >= vault.accounted_lamports()?, HoldfastError::InvariantViolation);
 
     emit!(HoldBurned { mint, sol_spent: outcome.sol_spent, hold_burned: outcome.tokens_received, ts: Clock::get()?.unix_timestamp });

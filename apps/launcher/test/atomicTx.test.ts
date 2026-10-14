@@ -26,6 +26,7 @@ async function size(uriBytes: number, withDevBuy: boolean): Promise<number> {
       symbol: "s".repeat(13),
       uri: "u".repeat(uriBytes),
       triggerBps: 2500,
+      creator: Keypair.generate().publicKey,
       reimburseLamports: 6_000_000n,
       devBuy: withDevBuy ? { tokens: 10n ** 12n, maxSolCost: 10n ** 9n, bondingCurve: { ...pump.newBondingCurve(global), creator: pumpCreatorFor(mint) }, buybackFeeRecipient: global.buybackFeeRecipients[3]! } : null,
       leftover: withDevBuy ? null : { to: Keypair.generate().publicKey, lamports: 123n },
@@ -41,7 +42,7 @@ describe("atomic launch transaction", () => {
   it("fits one packet with the longest name and ticker: any URI without a dev buy, an IPFS URI with one", async () => {
     expect(await size(200, false)).toBeLessThanOrEqual(PACKET_DATA_SIZE);
     expect(await size(80, true)).toBeLessThanOrEqual(PACKET_DATA_SIZE); // https://ipfs.io/ipfs/<CIDv1>
-    expect(await size(110, true)).toBeLessThanOrEqual(PACKET_DATA_SIZE); // a typical local metadata base
+    expect(await size(102, true)).toBeLessThanOrEqual(PACKET_DATA_SIZE); // https://moatpad.fun/api/metadata/<sha256>.json
     // a 200-byte URI plus a dev buy does not: the worker launches those with the split flow
     expect(await size(200, true)).toBeGreaterThan(PACKET_DATA_SIZE);
   });

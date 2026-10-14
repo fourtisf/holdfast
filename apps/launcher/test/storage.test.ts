@@ -29,6 +29,7 @@ function setup(responses: { status: number; body: string }[]) {
 }
 
 const form: LaunchForm = {
+  creatorWallet: null,
   name: "Pinned",
   symbol: "PIN",
   description: "on ipfs",

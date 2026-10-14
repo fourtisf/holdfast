@@ -33,7 +33,7 @@ pub struct PrepareTreasury<'info> {
     pub treasury_wsol_account: UncheckedAccount<'info>,
     #[account(address = WSOL_MINT)]
     pub wsol_mint: Box<InterfaceAccount<'info, Mint>>,
-    #[account(address = vault.token_program)]
+    #[account(address = vault.token_program_id())]
     pub token_program: Interface<'info, TokenInterface>,
     pub wsol_token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,

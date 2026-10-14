@@ -6,6 +6,8 @@ export interface VaultStateRow {
   mint: string;
   floorSol: bigint;
   holderSol: bigint;
+  /** The creator's unclaimed share. */
+  creatorSol: bigint;
   burnSol: bigint;
   holderTokens: bigint;
   ath: bigint;
@@ -18,6 +20,7 @@ export interface VaultStateRow {
   totalPaidSol: bigint;
   totalPaidTokens: bigint;
   totalBurnedSol: bigint;
+  totalCreatorClaimed: bigint;
   slot: number;
   updatedAt: number;
 }
@@ -29,6 +32,7 @@ export function mapVaultState(r: Record<string, unknown>): VaultStateRow {
     mint: r.mint as string,
     floorSol: big(r.floor_sol),
     holderSol: big(r.holder_sol),
+    creatorSol: big(r.creator_sol),
     burnSol: big(r.burn_sol),
     holderTokens: big(r.holder_tokens),
     ath: big(r.ath),
@@ -41,6 +45,7 @@ export function mapVaultState(r: Record<string, unknown>): VaultStateRow {
     totalPaidSol: big(r.total_paid_sol),
     totalPaidTokens: big(r.total_paid_tokens),
     totalBurnedSol: big(r.total_burned_sol),
+    totalCreatorClaimed: big(r.total_creator_claimed),
     slot: num(r.slot),
     updatedAt: ms(r.updated_at),
   };
@@ -59,15 +64,17 @@ export async function ensureVaultState(q: Queryable, mint: string): Promise<void
 export async function upsertVaultState(q: Queryable, s: VaultSnapshotInput): Promise<boolean> {
   const res = await q.query(
     `INSERT INTO vault_state AS v (mint, floor_sol, holder_sol, burn_sol, holder_tokens, ath, floor, defend_count, last_defend_ts,
-       round_id, total_fees, total_defended, total_paid_sol, total_paid_tokens, total_burned_sol, slot, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now())
+       round_id, total_fees, total_defended, total_paid_sol, total_paid_tokens, total_burned_sol, slot, creator_sol,
+       total_creator_claimed, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, now())
      ON CONFLICT (mint) DO UPDATE SET
        floor_sol = EXCLUDED.floor_sol, holder_sol = EXCLUDED.holder_sol, burn_sol = EXCLUDED.burn_sol,
        holder_tokens = EXCLUDED.holder_tokens, ath = EXCLUDED.ath, floor = EXCLUDED.floor,
        defend_count = EXCLUDED.defend_count, last_defend_ts = EXCLUDED.last_defend_ts, round_id = EXCLUDED.round_id,
        total_fees = EXCLUDED.total_fees, total_defended = EXCLUDED.total_defended,
        total_paid_sol = EXCLUDED.total_paid_sol, total_paid_tokens = EXCLUDED.total_paid_tokens,
-       total_burned_sol = EXCLUDED.total_burned_sol, slot = EXCLUDED.slot, updated_at = now()
+       total_burned_sol = EXCLUDED.total_burned_sol, slot = EXCLUDED.slot, creator_sol = EXCLUDED.creator_sol,
+       total_creator_claimed = EXCLUDED.total_creator_claimed, updated_at = now()
      WHERE v.slot <= EXCLUDED.slot
      RETURNING mint`,
     [
@@ -87,6 +94,8 @@ export async function upsertVaultState(q: Queryable, s: VaultSnapshotInput): Pro
       dec(s.totalPaidTokens),
       dec(s.totalBurnedSol),
       s.slot,
+      dec(s.creatorSol),
+      dec(s.totalCreatorClaimed),
     ],
   );
   return res.rows.length > 0;
@@ -99,6 +108,7 @@ export async function upsertVaultState(q: Queryable, s: VaultSnapshotInput): Pro
 export interface VaultDelta {
   floorSol?: bigint;
   holderSol?: bigint;
+  creatorSol?: bigint;
   burnSol?: bigint;
   holderTokens?: bigint;
   totalFees?: bigint;
@@ -106,6 +116,7 @@ export interface VaultDelta {
   totalPaidSol?: bigint;
   totalPaidTokens?: bigint;
   totalBurnedSol?: bigint;
+  totalCreatorClaimed?: bigint;
   defends?: number;
   lastDefendTs?: number;
   ath?: bigint;
@@ -123,6 +134,7 @@ export async function applyVaultDelta(q: Queryable, mint: string, d: VaultDelta)
        defend_count = defend_count + $11,
        last_defend_ts = CASE WHEN $12::timestamptz IS NULL THEN last_defend_ts ELSE GREATEST(last_defend_ts, $12::timestamptz) END,
        ath = GREATEST(ath, $13), floor = GREATEST(floor, $14), round_id = GREATEST(round_id, $15),
+       creator_sol = GREATEST(creator_sol + $16, 0), total_creator_claimed = total_creator_claimed + $17,
        updated_at = now()
      WHERE mint = $1`,
     [
@@ -141,6 +153,8 @@ export async function applyVaultDelta(q: Queryable, mint: string, d: VaultDelta)
       dec(d.ath ?? 0n),
       dec(d.floor ?? 0n),
       dec(d.roundId ?? 0n),
+      dec(d.creatorSol ?? 0n),
+      dec(d.totalCreatorClaimed ?? 0n),
     ],
   );
 }

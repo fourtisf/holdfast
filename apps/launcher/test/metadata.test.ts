@@ -3,6 +3,8 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { Keypair } from "@solana/web3.js";
+import { treasuryPda } from "@holdfast/chain";
 
 import {
   assertUriFits,
@@ -42,6 +44,17 @@ describe("validateImageUrl", () => {
     "not a url",
   ])("rejects %s", (url) => {
     expect(() => validateImageUrl(url, BASE)).toThrow(ValidationError);
+  });
+});
+
+describe("creator wallet", () => {
+  it("is optional, must be a valid on-curve address", () => {
+    expect(normalizeForm(defaultForm(), BASE).creatorWallet).toBeNull();
+    const wallet = Keypair.generate().publicKey.toBase58();
+    expect(normalizeForm({ ...defaultForm(), creatorWallet: ` ${wallet} ` }, BASE).creatorWallet).toBe(wallet);
+    expect(() => normalizeForm({ ...defaultForm(), creatorWallet: "not-a-wallet" }, BASE)).toThrow(/valid Solana address/);
+    // a program address (off-curve) can never sign a claim
+    expect(() => normalizeForm({ ...defaultForm(), creatorWallet: treasuryPda(Keypair.generate().publicKey).toBase58() }, BASE)).toThrow(/regular wallet/);
   });
 });
 

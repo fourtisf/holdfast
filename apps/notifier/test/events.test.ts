@@ -188,7 +188,7 @@ describe("floor defence", () => {
     await upsertVaultState(db, {
       mint: coin.mint, floorSol: 0n, holderSol: 0n, burnSol: 0n, holderTokens: 0n,
       ath: solPerTokenToFixed(2e-7), floor: solPerTokenToFixed(1.5e-7), defendCount: 1n, lastDefendTs: NOW - MIN,
-      roundId: 0n, totalFees: 0n, totalDefended: 150_000_000n, totalPaidSol: 0n, totalPaidTokens: 0n, totalBurnedSol: 0n, slot: 1,
+      roundId: 0n, totalFees: 0n, totalDefended: 150_000_000n, totalPaidSol: 0n, totalPaidTokens: 0n, totalBurnedSol: 0n, creatorSol: 0n, totalCreatorClaimed: 0n, slot: 1,
     });
     await insertTrade(db, { sig: "DefSig", ixIndex: 0, mint: coin.mint, wallet: treasury, side: "vault", sol: 150_000_000n, tokens: 1_000_000n * TOK, price: 1.5e-7, ts: NOW - MIN, slot: 10, source: "vault" });
     await insertTrade(db, { sig: "BuySig", ixIndex: 0, mint: coin.mint, wallet: alice, side: "buy", sol: 10_000_000n, tokens: 50n * TOK, price: 2e-7, ts: NOW - MIN, slot: 11, source: "curve" });

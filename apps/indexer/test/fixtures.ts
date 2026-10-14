@@ -27,6 +27,8 @@ export const HOLDFAST = HOLDFAST_PROGRAM_ID.toBase58();
 const TOKEN_2022 = TOKEN_2022_PROGRAM_ID.toBase58();
 
 export const wallet = () => Keypair.generate().publicKey.toBase58();
+/** The creator wallet recorded by `coinInitialized` fixtures. */
+export const FIXTURE_CREATOR = wallet();
 
 export interface CoinFixture {
   mint: string;
@@ -167,10 +169,11 @@ export class TxBuilder {
 }
 
 export const holdfastFields = {
-  coinInitialized: (c: CoinFixture, ts: number, triggerBps = 2500) => ({
+  coinInitialized: (c: CoinFixture, ts: number, triggerBps = 2500, creator = FIXTURE_CREATOR) => ({
     mint: pk(c.mint),
     vault: pk(c.vault),
     treasury: pk(c.treasury),
+    creator: pk(creator),
     trigger_bps: triggerBps,
     bonding_curve: pk(c.bondingCurve),
     ts: bn(ts),
@@ -186,11 +189,19 @@ export const holdfastFields = {
   feesCollected: (c: CoinFixture, amount: bigint, ts: number, tokens = 0n) => ({
     mint: pk(c.mint),
     amount: bn(amount),
-    floor: bn((amount * 6n) / 10n),
-    holder: bn((amount * 3n) / 10n),
-    burn: bn(amount - (amount * 6n) / 10n - (amount * 3n) / 10n),
+    // 50 / 25 / 15 / 10, dust to the floor (as the program does)
+    floor: bn(amount - amount / 4n - (amount * 15n) / 100n - amount / 10n),
+    holder: bn(amount / 4n),
+    creator: bn((amount * 15n) / 100n),
+    burn: bn(amount / 10n),
     unwrapped_wsol: bn(0),
     tokens: bn(tokens),
+    ts: bn(ts),
+  }),
+  creatorFeesClaimed: (c: CoinFixture, amount: bigint, ts: number, creator = FIXTURE_CREATOR) => ({
+    mint: pk(c.mint),
+    creator: pk(creator),
+    amount: bn(amount),
     ts: bn(ts),
   }),
   athUpdated: (c: CoinFixture, ath: bigint, floor: bigint, ts: number) => ({ mint: pk(c.mint), twap: bn(ath), ath: bn(ath), floor: bn(floor), ts: bn(ts) }),

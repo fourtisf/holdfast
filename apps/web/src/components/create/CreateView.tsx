@@ -38,6 +38,7 @@ const EMPTY: LaunchForm = {
   website: "",
   triggerBps: DEFAULT_TRIGGER_BPS,
   devBuy: "",
+  creatorWallet: "",
 };
 const DEV_PRESETS = [0.5, 1, 2];
 
@@ -266,6 +267,23 @@ export function CreateView() {
                 </Field>
               ))}
             </div>
+            <Field
+              label="Creator wallet"
+              optional
+              htmlFor="creatorWallet"
+              error={shown.creatorWallet}
+              hint="Claims your 15% of the coin's fees. Leave empty to use the wallet you send the deposit from; fill it in if you pay from an exchange."
+            >
+              <input
+                id="creatorWallet"
+                value={form.creatorWallet}
+                onChange={(e) => set("creatorWallet", e.target.value)}
+                placeholder="Your Solana wallet address"
+                className={cn(inputClass, "font-mono", border("creatorWallet"))}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </Field>
           </Section>
 
           <Section step={2} title="Choose the floor" subtitle="How far below the ATH the vault starts buying back">
@@ -343,7 +361,7 @@ export function CreateView() {
                 <dd className="text-brand tabular">{formatSolExact(total)} SOL</dd>
               </div>
             </dl>
-            <p className="mt-2 text-xs text-faint">Anything above the total is refunded to the sender. Creator fees go to the coin&apos;s vault: 0% to you.</p>
+            <p className="mt-2 text-xs text-faint">Anything above the total is refunded to the sender. You earn 15% of your coin&apos;s creator fees, claimable on its page.</p>
             {submitError ? <ErrorNote className="mt-3">{submitError}</ErrorNote> : null}
             {touched && Object.keys(errors).length > 0 ? <p className="mt-3 text-xs text-sell">Fix the highlighted fields to continue.</p> : null}
             <Button type="submit" size="lg" className="mt-3 w-full" disabled={paused || submitting || uploading}>

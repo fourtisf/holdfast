@@ -3,12 +3,21 @@
 use crate::constants::*;
 use crate::state::Observation;
 
-/// 60 / 30 / 10 split. Rounding dust goes to the floor bucket so the parts always sum to `amount`.
-pub fn split_fees(amount: u64) -> (u64, u64, u64) {
-    let holder = (amount as u128 * SPLIT_HOLDER_BPS as u128 / BPS_DENOMINATOR as u128) as u64;
-    let burn = (amount as u128 * SPLIT_BURN_BPS as u128 / BPS_DENOMINATOR as u128) as u64;
-    let floor = amount - holder - burn;
-    (floor, holder, burn)
+/// The four buckets of one fee collection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FeeSplit {
+    pub floor: u64,
+    pub holder: u64,
+    pub creator: u64,
+    pub burn: u64,
+}
+
+/// 50 / 25 / 15 / 10 split. Rounding dust goes to the floor bucket so the parts always sum to `amount`.
+pub fn split_fees(amount: u64) -> FeeSplit {
+    let holder = bps_of(amount, SPLIT_HOLDER_BPS);
+    let creator = bps_of(amount, SPLIT_CREATOR_BPS);
+    let burn = bps_of(amount, SPLIT_BURN_BPS);
+    FeeSplit { floor: amount - holder - creator - burn, holder, creator, burn }
 }
 
 pub fn bps_of(amount: u64, bps: u64) -> u64 {
@@ -105,15 +114,20 @@ mod tests {
     }
 
     #[test]
-    fn split_is_exact_and_60_30_10() {
-        assert_eq!(split_fees(1_000_000_000), (600_000_000, 300_000_000, 100_000_000));
+    fn split_is_exact_and_50_25_15_10() {
+        assert_eq!(
+            split_fees(1_000_000_000),
+            FeeSplit { floor: 500_000_000, holder: 250_000_000, creator: 150_000_000, burn: 100_000_000 }
+        );
         for amount in [0u64, 1, 7, 9, 10, 11, 999, 1_234_567, u64::MAX] {
-            let (f, h, b) = split_fees(amount);
-            assert_eq!(f as u128 + h as u128 + b as u128, amount as u128);
-            assert_eq!(h as u128, amount as u128 * 3 / 10);
-            assert_eq!(b as u128, amount as u128 / 10);
+            let s = split_fees(amount);
+            assert_eq!(s.floor as u128 + s.holder as u128 + s.creator as u128 + s.burn as u128, amount as u128);
+            assert_eq!(s.holder as u128, amount as u128 / 4);
+            assert_eq!(s.creator as u128, amount as u128 * 15 / 100);
+            assert_eq!(s.burn as u128, amount as u128 / 10);
         }
-        assert_eq!(split_fees(9), (7, 2, 0)); // rounding dust goes to the floor
+        // rounding dust goes to the floor
+        assert_eq!(split_fees(9), FeeSplit { floor: 6, holder: 2, creator: 1, burn: 0 });
     }
 
     #[test]
