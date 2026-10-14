@@ -79,10 +79,15 @@ export function toRoundSummary(r: RoundRow, decimals: number): RoundSummary {
 export function toCoinDetail(m: CoinMetrics, lastRound: RoundRow | null): CoinDetail {
   const c: CoinRow = m.coin;
   const vaultRound = m.vault ? Number(m.vault.roundId) : 0;
+  const summary = toCoinSummary(m);
   return {
-    ...toCoinSummary(m),
-    description: c.description,
-    socials: c.socials,
+    ...summary,
+    // Moderated coins: withhold everything the launcher supplied (image, text, links).
+    imageUrl: c.hidden ? null : summary.imageUrl,
+    description: c.hidden ? "" : c.description,
+    socials: c.hidden ? {} : c.socials,
+    hidden: c.hidden,
+    hiddenReason: c.hidden ? c.hiddenReason : null,
     launcher: c.creator,
     vaultAddress: c.vault,
     treasuryAddress: c.treasury,

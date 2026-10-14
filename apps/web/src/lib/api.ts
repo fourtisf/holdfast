@@ -13,6 +13,8 @@ import type {
   Page,
   Position,
   Profile,
+  ReportRequest,
+  ReportResponse,
   RoundSnapshot,
   RoundSummary,
   Schedule,
@@ -51,6 +53,7 @@ export interface HoldfastApi {
   launchStatus(launchId: string): Promise<LaunchStatus>;
   /** Deposit needed for a launch, from the launcher's cost model. */
   launchQuote(q?: { devBuySol?: number; name?: string; ticker?: string }): Promise<LaunchQuote>;
+  report(mint: string, req: ReportRequest): Promise<ReportResponse>;
 }
 
 export class ApiError extends Error {
@@ -74,7 +77,7 @@ function withQuery(path: string, query: Record<string, QueryValue>): string {
   return qs ? `${path}?${qs}` : path;
 }
 
-async function request<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+export async function request<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const { json, headers, ...rest } = init;
   let res: Response;
   try {
@@ -125,6 +128,7 @@ export const httpApi: HoldfastApi = {
   launch: (req) => request("/launch", { method: "POST", json: req }),
   launchStatus: (launchId) => request(`/launch/${enc(launchId)}`),
   launchQuote: (q = {}) => request(withQuery("/launch/quote", { devBuySol: q.devBuySol, name: q.name, ticker: q.ticker })),
+  report: (mint, req) => request(`/coins/${enc(mint)}/report`, { method: "POST", json: req }),
 };
 
 let mockApi: Promise<HoldfastApi> | null = null;
@@ -163,6 +167,7 @@ export const api: HoldfastApi = {
   launch: lazy("launch"),
   launchStatus: lazy("launchStatus"),
   launchQuote: lazy("launchQuote"),
+  report: lazy("report"),
 };
 
 export function errorMessage(err: unknown): string {

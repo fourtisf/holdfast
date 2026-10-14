@@ -158,3 +158,27 @@ export async function expireLaunches(q: Queryable, nowMs: number): Promise<Launc
   );
   return res.rows.map(mapLaunch);
 }
+
+/** Admin view: launches in the given statuses (all when empty), newest first. */
+export async function listLaunches(q: Queryable, opts: { statuses?: readonly LaunchStatusKind[]; limit: number }): Promise<LaunchRow[]> {
+  const statuses = opts.statuses ?? [];
+  const res = await q.query(
+    `SELECT * FROM launches ${statuses.length ? "WHERE status = ANY($2::text[])" : ""} ORDER BY created_at DESC LIMIT $1`,
+    statuses.length ? [opts.limit, [...statuses]] : [opts.limit],
+  );
+  return res.rows.map(mapLaunch);
+}
+
+/**
+ * Admin retry: clears the failure count of a launch that is still in progress, so the launcher's
+ * backoff starts over. The in-flight guard (time since the last write) still applies.
+ */
+export async function resetLaunchAttempts(q: Queryable, id: string): Promise<LaunchRow | null> {
+  const res = await q.query("UPDATE launches SET attempts = 0, error = NULL WHERE id = $1 AND status IN ('creating', 'refunding') RETURNING *", [id]);
+  return res.rows[0] ? mapLaunch(res.rows[0]) : null;
+}
+
+export async function countLaunchesByStatus(q: Queryable): Promise<Record<string, number>> {
+  const res = await q.query<{ status: string; n: string }>("SELECT status, count(*) AS n FROM launches GROUP BY status");
+  return Object.fromEntries(res.rows.map((r) => [r.status, Number(r.n)]));
+}

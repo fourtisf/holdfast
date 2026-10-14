@@ -1,4 +1,5 @@
 import { launchPlanFromEnv } from "@holdfast/chain";
+import { DEFAULT_MODERATION_LISTS } from "@holdfast/core";
 import { launchCostSettings } from "../src/launch/settings.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +15,7 @@ import { buildApp, DbLaunchService, MemoryEventSource, type ApiConfig, type Hold
 import { pumpSdk } from "../src/trade/sdk.js";
 
 export const NOW = Date.UTC(2026, 9, 10, 12, 0, 0);
+export const ADMIN_TOKEN = "test-admin-token-0123456789abcdef";
 
 export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
   return {
@@ -33,6 +35,8 @@ export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     trade: { computeUnitPriceMicroLamports: 50_000, computeUnitLimitCurve: 250_000, computeUnitLimitAmm: 300_000 },
     logLevel: "silent",
     production: false,
+    adminToken: ADMIN_TOKEN,
+    moderation: { lists: DEFAULT_MODERATION_LISTS, imageWebhookUrl: null, imageFailClosed: false, autoHideReports: 0, reportSalt: "test-salt" },
     ...overrides,
   };
 }

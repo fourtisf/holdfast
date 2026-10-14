@@ -17,7 +17,7 @@
  * Refunds always send the whole balance (minus the fee), so two refunds can never both succeed.
  */
 import { Keypair, PublicKey, type AddressLookupTableAccount } from "@solana/web3.js";
-import { LAUNCH_FEE_LAMPORTS, PUMP_TOKEN_DECIMALS, type LaunchStatusKind } from "@holdfast/core";
+import { DEFAULT_MODERATION_LISTS, LAUNCH_FEE_LAMPORTS, moderateLaunchText, PUMP_TOKEN_DECIMALS, type LaunchStatusKind, type ModerationLists } from "@holdfast/core";
 import { coinKeys, deriveDepositKeypair, TOKEN_2022_PROGRAM_ID, type CoinKeys } from "@holdfast/chain";
 import {
   addExcluded,
@@ -27,6 +27,7 @@ import {
   insertCoin,
   listPendingLaunches,
   notify,
+  setCoinNeedsReview,
   setLaunchSig,
   updateCoinMetadata,
   updateLaunchStatus,
@@ -92,6 +93,8 @@ export interface LauncherSettings {
   lookupTable: PublicKey | null;
   /** Rejected atomic attempts before a launch falls back to the split flow. */
   atomicAttempts: number;
+  /** Launch text moderation (the API checks first; this is the last gate before the chain). */
+  moderation: ModerationLists;
   priority: PriorityConfig;
   devBuySlippageBps: number;
   /** Close the deposit's pump volume accumulator in tx C (returns its rent to the deposit). */
@@ -114,6 +117,7 @@ export interface LauncherSettings {
 
 export const DEFAULT_SETTINGS = {
   lookupTable: null,
+  moderation: DEFAULT_MODERATION_LISTS,
   atomicAttempts: 2,
   priority: DEFAULT_PRIORITY,
   devBuySlippageBps: 500,
@@ -353,7 +357,9 @@ export class LaunchWorker {
 
   private async beginCreation(l: LaunchRow): Promise<void> {
     try {
-      normalizeForm(l.form, this.s.metadata.publicBaseUrl);
+      const form = normalizeForm(l.form, this.s.metadata.publicBaseUrl);
+      const verdict = moderateLaunchText({ name: form.name, ticker: form.symbol, description: form.description, socials: form.socials }, this.s.moderation);
+      if (verdict.action === "block") throw new ValidationError(`not allowed (${verdict.reasons.join("; ")})`);
     } catch (err) {
       if (!(err instanceof ValidationError)) throw err;
       const next = await this.transition(l, "refunding", { error: `invalid launch: ${err.message}` }, ["deposit_received"]);
@@ -747,6 +753,8 @@ export class LaunchWorker {
       });
       // The indexer may have registered the coin first (from init_coin's CoinInitialized event).
       if (!inserted) await updateCoinMetadata(q, mint, details);
+      const verdict = moderateLaunchText({ name: form.name, ticker: form.symbol, description: form.description, socials: form.socials }, this.s.moderation);
+      if (verdict.action === "review") await setCoinNeedsReview(q, mint, true);
       if (launchSig) {
         if (forceLaunchSigValue) await forceLaunchSig(q, mint, launchSig);
         else await setLaunchSig(q, mint, launchSig);

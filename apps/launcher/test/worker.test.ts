@@ -448,6 +448,25 @@ describe("failures", () => {
     expect(await h.chain.getBalance(from)).toBe(SOL + required - txFee("refund", h.settings.priority));
   });
 
+  it("refunds a launch whose text is blocked (even if the API let it through)", async () => {
+    const { row, deposit, required } = await h.launch({ ...defaultForm(), description: "send sol, get double: claim airdrop" });
+    h.chain.fund(sender(), deposit.publicKey, required);
+    await h.tick();
+    const r = await h.row(row.id);
+    expect(r.status).toBe("failed");
+    expect(r.error).toMatch(/invalid launch: not allowed/);
+    expect(h.chain.landed.map((t) => t.kind)).toEqual(["refund"]);
+  });
+
+  it("flags a coin named after a reserved asset for review", async () => {
+    const { row, deposit, required } = await h.launch({ ...defaultForm(), name: "Holdfast", ticker: "HOLD" });
+    h.chain.fund(sender(), deposit.publicKey, required);
+    await h.tick();
+    const r = await h.row(row.id);
+    expect(r.status).toBe("live");
+    expect(await getCoin(db, r.mint!)).toMatchObject({ needsReview: true, hidden: false });
+  });
+
   it("goes live with the refund pending when the final refund keeps failing; the sweep sends it later", async () => {
     const { row, deposit, required } = await h.launch();
     const from = sender();

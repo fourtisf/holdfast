@@ -11,7 +11,9 @@ import type { ApiConfig } from "./config.js";
 import type { ApiContext } from "./context.js";
 import type { LaunchService } from "./launch/service.js";
 import type { TradeChain } from "./trade/chain.js";
+import { adminRoutes } from "./routes/admin.js";
 import { launchRoutes } from "./routes/launch.js";
+import { moderationRoutes } from "./routes/moderation.js";
 import { marketRoutes } from "./routes/market.js";
 import { meRoutes } from "./routes/me.js";
 import { tradeRoutes } from "./routes/trade.js";
@@ -97,6 +99,8 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   tradeRoutes(app, ctx);
   uploadRoutes(app, ctx);
   launchRoutes(app, ctx);
+  moderationRoutes(app, ctx);
+  adminRoutes(app, ctx);
   await app.register(async (scope) => wsRoutes(scope, ctx));
 
   app.addHook("onReady", async () => {

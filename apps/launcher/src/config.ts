@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { HOLDFAST_PROGRAM_ID, launchPlanFromEnv, parseMasterSecret } from "@holdfast/chain";
+import { DEFAULT_MODERATION_LISTS, parseBlocklist, withExtraBlocked } from "@holdfast/core";
 
 import { assertUriFits, normalizeBaseUrl } from "./metadata.js";
 import { LocalMetadataStorage, PinataMetadataStorage, type MetadataStorage } from "./storage.js";
@@ -79,6 +80,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read?: (path: s
     metadataLocation: plan.metadata,
     lookupTable,
     atomicAttempts: int("LAUNCHER_ATOMIC_ATTEMPTS", env.LAUNCHER_ATOMIC_ATTEMPTS, DEFAULT_SETTINGS.atomicAttempts),
+    moderation: env.MODERATION_BLOCKLIST_FILE
+      ? withExtraBlocked(DEFAULT_MODERATION_LISTS, parseBlocklist((read ?? ((p: string) => readFileSync(p, "utf8")))(resolve(env.MODERATION_BLOCKLIST_FILE))))
+      : DEFAULT_MODERATION_LISTS,
     priority: plan.priority,
     devBuySlippageBps: plan.devBuySlippageBps,
     closeDepositAccumulator: plan.closeDepositAccumulator,

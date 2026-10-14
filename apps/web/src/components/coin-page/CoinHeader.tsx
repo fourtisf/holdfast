@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { GlobeIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
+import { HiddenNotice, ReportButton } from "@/components/moderation/ReportButton";
 import { formatMarketCap, formatPrice, formatRelativeTime, shortAddress } from "@/lib/format";
 import { useNow } from "@/lib/hooks/useNow";
 
@@ -64,9 +65,13 @@ export function CoinHeader({ coin }: { coin: CoinDetail }) {
                 <GlobeIcon size={15} />
               </SocialLink>
             ) : null}
+            <span className="ml-auto">
+              <ReportButton mint={coin.mint} ticker={coin.ticker} />
+            </span>
           </div>
         </div>
       </div>
+      {coin.hidden ? <div className="mt-3"><HiddenNotice reason={coin.hiddenReason} /></div> : null}
       {coin.description ? <p className="mt-3 text-sm leading-relaxed text-muted">{coin.description}</p> : null}
     </Card>
   );

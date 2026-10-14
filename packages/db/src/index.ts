@@ -16,3 +16,4 @@ export * from "./repos/excluded.js";
 export * from "./repos/indexer.js";
 export * from "./repos/market.js";
 export * from "./seed.js";
+export * from "./repos/moderation.js";

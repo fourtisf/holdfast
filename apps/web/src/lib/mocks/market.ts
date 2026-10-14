@@ -581,6 +581,8 @@ function detail(coin: MockCoin): CoinDetail {
     ammPool: coin.graduated ? mockAddress(`pool:${coin.mint}`) : null,
     roundId: coin.roundId,
     lastRound: coin.lastRound,
+    hidden: false,
+    hiddenReason: null,
   };
 }
 

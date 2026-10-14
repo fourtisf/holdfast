@@ -11,6 +11,7 @@
  */
 
 import type { TriggerBps } from "./constants.js";
+import type { ReportReason } from "./moderation.js";
 
 export type CoinSort = "newest" | "trending" | "vault_buying" | "top_payouts" | "biggest_vault";
 
@@ -76,6 +77,12 @@ export interface CoinDetail extends CoinSummary {
   ammPool: string | null;
   roundId: number;
   lastRound: RoundSummary | null;
+  /**
+   * Hidden by Holdfast's moderators. The coin keeps trading on pump.fun and keeps paying its holders;
+   * its image, description and links are withheld (null / empty) and it is not listed.
+   */
+  hidden: boolean;
+  hiddenReason: string | null;
 }
 
 export interface Candle {
@@ -349,6 +356,74 @@ export interface TradeBuildResponse {
 export interface Page<T> {
   items: T[];
   nextCursor: string | null;
+}
+
+// ---- moderation / admin ------------------------------------------------------------------------
+
+/** POST /coins/:mint/report */
+export interface ReportRequest {
+  reason: ReportReason;
+  details?: string;
+}
+
+export interface ReportResponse {
+  /** False when this reporter had already reported the coin. */
+  recorded: boolean;
+}
+
+export interface AdminReport {
+  id: number;
+  targetType: "coin" | "comment";
+  targetId: string;
+  mint: string;
+  reason: ReportReason;
+  details: string;
+  createdAt: number;
+  resolvedAt: number | null;
+  resolution: string | null;
+}
+
+export interface AdminCoin {
+  mint: string;
+  name: string;
+  ticker: string;
+  hidden: boolean;
+  hiddenReason: string | null;
+  hiddenAt: number | null;
+  needsReview: boolean;
+  openReports: number;
+  createdAt: number;
+}
+
+export interface AdminLaunch extends LaunchStatus {
+  name: string;
+  ticker: string;
+  attempts: number;
+  createdAt: number;
+  devBuyLamports: string;
+}
+
+export interface AdminOverview {
+  launches: Record<string, number>;
+  openReports: number;
+  coinsNeedingReview: number;
+  hiddenCoins: number;
+}
+
+export interface AdminLogEntry {
+  id: number;
+  action: string;
+  target: string;
+  actor: string;
+  reason: string;
+  createdAt: number;
+}
+
+/** POST /admin/coins/:mint/hide */
+export interface HideCoinRequest {
+  reason: string;
+  /** Also refuse the coin's image in future uploads. */
+  blockImage?: boolean;
 }
 
 // ---- WebSocket ---------------------------------------------------------------------------------

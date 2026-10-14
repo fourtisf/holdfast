@@ -166,3 +166,16 @@ export const BoltIcon = (p: IconProps) => (
     <path d="M13 3 5 14h6l-1 7 8-11h-6l1-7Z" />
   </svg>
 );
+export const FlagIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M5 21V4" />
+    <path d="M5 4h11l-2 4 2 4H5" />
+  </svg>
+);
+export const EyeOffIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M3 3l18 18" />
+    <path d="M10.6 5.1A9.8 9.8 0 0 1 12 5c5 0 9 5 9 7 0 .8-.7 2.2-2 3.6M6.6 6.6C4.4 8 3 10.2 3 12c0 2 4 7 9 7 1.6 0 3.1-.5 4.4-1.2" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+  </svg>
+);

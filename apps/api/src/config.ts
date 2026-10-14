@@ -1,5 +1,19 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { launchPlanFromEnv, type LaunchPlan } from "@holdfast/chain";
+import { DEFAULT_MODERATION_LISTS, parseBlocklist, withExtraBlocked, type ModerationLists } from "@holdfast/core";
+
+export interface ModerationConfig {
+  lists: ModerationLists;
+  /** Optional image classifier: POST image bytes, answers `{ "flagged": boolean }`. */
+  imageWebhookUrl: string | null;
+  /** Reject uploads when the classifier is unreachable (default: accept and log). */
+  imageFailClosed: boolean;
+  /** Distinct open reports that hide a coin until an admin looks (0 = never automatically). */
+  autoHideReports: number;
+  /** Salt of the reporter IP hash. */
+  reportSalt: string;
+}
 
 export interface ApiConfig {
   databaseUrl: string;
@@ -25,6 +39,15 @@ export interface ApiConfig {
   };
   logLevel: string;
   production: boolean;
+  /** Bearer token for /admin/*; null disables the admin API. */
+  adminToken: string | null;
+  moderation: ModerationConfig;
+}
+
+/** MODERATION_BLOCKLIST_FILE adds terms to the built-in list (one per line, # comments). */
+export function moderationListsFromEnv(env: NodeJS.ProcessEnv, read: (path: string) => string = (p) => readFileSync(p, "utf8")): ModerationLists {
+  const file = env.MODERATION_BLOCKLIST_FILE;
+  return file ? withExtraBlocked(DEFAULT_MODERATION_LISTS, parseBlocklist(read(resolve(file)))) : DEFAULT_MODERATION_LISTS;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -51,5 +74,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     },
     logLevel: env.LOG_LEVEL ?? "info",
     production: env.NODE_ENV === "production",
+    adminToken: env.ADMIN_TOKEN && env.ADMIN_TOKEN.length >= 24 ? env.ADMIN_TOKEN : null,
+    moderation: {
+      lists: moderationListsFromEnv(env),
+      imageWebhookUrl: env.MODERATION_IMAGE_WEBHOOK_URL || null,
+      imageFailClosed: env.MODERATION_IMAGE_FAIL_CLOSED === "true",
+      autoHideReports: Number(env.MODERATION_AUTO_HIDE_REPORTS ?? 0),
+      reportSalt: env.REPORT_SALT ?? env.DEPOSIT_MASTER_SECRET ?? "holdfast-reports",
+    },
   };
 }

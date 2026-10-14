@@ -1,13 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { moderateLaunchText } from "@holdfast/core";
 import type { ApiContext } from "../context.js";
-import { notFound } from "../errors.js";
+import { HttpError, notFound } from "../errors.js";
 import { launchCost, toLaunchQuote } from "../launch/cost.js";
 import { parseLaunchRequest } from "../launch/schema.js";
 import { launchCostSettings } from "../launch/settings.js";
 
 export function launchRoutes(app: FastifyInstance, ctx: ApiContext): void {
-  app.post("/launch", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req) => ctx.launches.create(parseLaunchRequest(req.body)));
+  app.post("/launch", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req) => {
+    const launch = parseLaunchRequest(req.body);
+    // Blocked terms never reach the chain; reserved names are accepted and flagged by the launcher.
+    const verdict = moderateLaunchText(launch, ctx.config.moderation.lists);
+    if (verdict.action === "block") throw new HttpError(422, `This launch is not allowed: ${verdict.reasons.join("; ")}`);
+    return ctx.launches.create(launch);
+  });
 
   /** Deposit needed for a launch (optionally for a given name/ticker/dev buy), from the launcher's cost model. */
   app.get("/launch/quote", async (req) => {

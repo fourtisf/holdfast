@@ -198,6 +198,10 @@ export const mockApi: HoldfastApi = {
     return latency({ imageUrl: await readAsDataUrl(file) }, 400, 900);
   },
   launchQuote: async (q = {}) => latency(mockLaunchQuote(q.devBuySol ?? 0), 60, 160),
+  report: async (mint) => {
+    if (!market.coinDetail(mint)) notFound("Coin");
+    return latency({ recorded: true });
+  },
   launch: async (req) => {
     if (!req.name.trim() || !req.ticker.trim()) throw new ApiError("Name and ticker are required", 400);
     const launchId = randomId();

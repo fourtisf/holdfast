@@ -36,6 +36,8 @@ export interface ListCoinsOptions {
   /** Keyset pagination for `newest`: the last coin of the previous page. */
   after?: { createdAt: number; mint: string } | null;
   now: number;
+  /** Admin views only: also list coins hidden by moderators. */
+  includeHidden?: boolean;
 }
 
 const FLOOR_PRICE = "(COALESCE(v.floor, 0)::float8 * power(10::float8, c.decimals) / 1e27)";
@@ -118,6 +120,7 @@ function searchClause(search: string, params: unknown[]): string {
 export async function listCoinMetrics(q: Queryable, opts: ListCoinsOptions): Promise<CoinMetrics[]> {
   const params: unknown[] = [ts(opts.now)];
   const where: string[] = [];
+  if (!opts.includeHidden) where.push("NOT c.hidden");
   if (opts.search && opts.search.trim()) where.push(searchClause(opts.search, params));
   if (opts.sort === "newest" && opts.after) {
     params.push(ts(opts.after.createdAt), opts.after.mint);
@@ -149,7 +152,7 @@ export interface GlobalStats {
 export async function getGlobalStats(q: Queryable, now: number): Promise<GlobalStats> {
   const res = await q.query(
     `SELECT
-       (SELECT count(*) FROM coins) AS coins,
+       (SELECT count(*) FROM coins WHERE NOT hidden) AS coins,
        (SELECT COALESCE(sum(floor_sol), 0) FROM vault_state) AS vault_sol,
        (SELECT COALESCE(sum(GREATEST(COALESCE(v.total_paid_sol, 0), COALESCE(p.paid, 0))), 0)
           FROM coins c

@@ -23,6 +23,30 @@ Base URL: `NEXT_PUBLIC_API_URL` (default `http://localhost:4000`). All response 
 | GET | `/launch/quote?devBuySol=&name=&ticker=` | `LaunchQuote` | real launch cost (rent + fees) from the launcher's cost model and plan (atomic or split flow, metadata storage); 0.015 SOL for a typical atomic launch, never less |
 | POST | `/launch` | `LaunchResponse` | body `LaunchRequest`; creates a unique deposit address; `requiredLamports` = the quote |
 | GET | `/launch/:id` | `LaunchStatus` | |
+| POST | `/coins/:mint/report` | `ReportResponse` | body `ReportRequest` (`reason`: scam · impersonation · nsfw · hate · illegal · other); one per visitor and coin; 10/hour per IP |
+
+A coin hidden by moderators is left out of `/coins` and `/stats`. `GET /coins/:mint` still answers with `hidden: true` and
+`hiddenReason`, and with `imageUrl`, `description` and `socials` withheld. Launch text with blocked terms is refused by
+`POST /launch` (422), and blocked images by `POST /uploads/image` (422).
+
+## Admin (`Authorization: Bearer $ADMIN_TOKEN`; 404 when ADMIN_TOKEN is unset)
+
+Nothing here can touch funds. Moderation only changes what Holdfast lists and shows, and every action is logged.
+
+| Method | Path | Response | Notes |
+|---|---|---|---|
+| GET | `/admin/overview` | `AdminOverview` | launches by status, open reports, coins to review, hidden coins |
+| GET | `/admin/coins` | `AdminCoin[]` | reported, flagged (reserved name) and hidden coins |
+| POST | `/admin/coins/:mint/hide` | `{ ok }` | body `HideCoinRequest` (`reason`, optional `blockImage`); resolves its reports |
+| POST | `/admin/coins/:mint/unhide` | `{ ok }` | |
+| POST | `/admin/coins/:mint/reviewed` | `{ ok }` | clears the review flag and dismisses its reports |
+| GET | `/admin/reports?all=0\|1` | `AdminReport[]` | open reports (or all) |
+| POST | `/admin/reports/:id/resolve` | `{ ok }` | body `{ resolution }` |
+| GET | `/admin/launches?status=a,b` | `AdminLaunch[]` | |
+| POST | `/admin/launches/:id/retry` | `AdminLaunch` | resets the attempt counter of a `creating` / `refunding` launch (the in-flight guard still applies) |
+| GET | `/admin/log` | `AdminLogEntry[]` | audit trail |
+
+The web app's `/admin` page is a console for these endpoints.
 
 ## WebSocket `/ws`
 

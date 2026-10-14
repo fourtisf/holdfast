@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiContext } from "../context.js";
 import { HttpError } from "../errors.js";
+import { checkImage } from "../moderation.js";
 import { MAX_IMAGE_BYTES, sniffImage, storeImage } from "../uploads.js";
 
 export function uploadRoutes(app: FastifyInstance, ctx: ApiContext): void {
@@ -13,6 +14,7 @@ export function uploadRoutes(app: FastifyInstance, ctx: ApiContext): void {
     if (buf.length === 0) throw new HttpError(400, "Empty file");
     const kind = sniffImage(buf);
     if (!kind) throw new HttpError(415, "Unsupported image type (png, jpg, gif or webp)");
+    await checkImage(ctx.db, ctx.config.moderation, buf, kind.mime, req.log);
     const name = await storeImage(ctx.config.metadataDir, buf, kind);
     return { imageUrl: `${ctx.config.publicMetadataBaseUrl}/${name}` };
   });
