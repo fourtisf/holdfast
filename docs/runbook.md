@@ -105,6 +105,7 @@ Do not deploy to mainnet without an external audit of `programs/holdfast-vault`.
    `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_SOLANA_RPC_URL`, `NEXT_PUBLIC_SOLANA_CLUSTER=mainnet-beta`,
    `NEXT_PUBLIC_SITE_URL`). Keep `PAYOUT_MAX_FEE_BPS` at its default (200) so rounds never cost more than they pay.
    Register the indexer's webhook URL (`/webhooks/helius`, raw transactions) for the program and the launcher.
+   On a single server, [deploy/](../deploy/README.md) sets this up behind Caddy with HTTPS.
 7. **Fund** the keeper and launcher wallets. Run `pnpm --filter @holdfast/launcher cost -- --atomic --ipfs` and
    check the quote is 0.015 SOL.
 8. **Smoke test on mainnet** with a small real launch from a team wallet: deposit, go live, buy, fees collected,

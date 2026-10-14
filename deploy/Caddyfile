@@ -1,0 +1,29 @@
+# Caddy: automatic HTTPS (Let's Encrypt) in front of the web app and the API. The domains come from
+# .env (SITE_DOMAIN, API_DOMAIN); each needs a DNS A record pointing at this server before Caddy can
+# get its certificate.
+
+{$SITE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
+
+www.{$SITE_DOMAIN} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	# Prometheus metrics stay private: scrape them on 127.0.0.1:4000/metrics from the server.
+	handle /metrics {
+		respond 404
+	}
+	# Helius raw-transaction webhooks: https://{$API_DOMAIN}/webhooks/helius
+	handle /webhooks/* {
+		reverse_proxy indexer:4100
+	}
+	# REST, the /ws WebSocket and uploaded metadata
+	handle {
+		reverse_proxy api:4000
+	}
+}

@@ -1,0 +1,38 @@
+# Production override for a single server: Caddy terminates HTTPS for the site and the API, and the
+# services publish their ports on 127.0.0.1 only (ports Docker publishes bypass ufw). deploy/init.sh
+# puts COMPOSE_FILE=docker-compose.yml:deploy/docker-compose.prod.yml in .env, so a plain
+# `docker compose ...` from the repository root uses both files. Paths are relative to the root.
+services:
+  api:
+    ports: !override
+      - "127.0.0.1:4000:4000"
+
+  indexer:
+    ports: !override
+      - "127.0.0.1:4100:4100"
+
+  web:
+    ports: !override
+      - "127.0.0.1:3000:3000"
+
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+
+volumes:
+  caddy_data:
+  caddy_config:
