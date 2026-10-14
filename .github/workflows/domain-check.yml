@@ -1,0 +1,22 @@
+name: Domain check
+
+# Checks name candidates in brand/domain-check/names.txt for registered domains (DNS + RDAP).
+# Runs when that list changes, or by hand.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - brand/domain-check/**
+      - .github/workflows/domain-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check domains
+        run: python3 brand/domain-check/check.py brand/domain-check/names.txt

@@ -1,0 +1,77 @@
+# Name candidates for the launchpad (one per line). The domain-check workflow tests each against the TLDs below.
+# floor
+ironfloor
+steelfloor
+stonefloor
+goldfloor
+hardfloor
+floorforge
+floorkeep
+floorlock
+floorvault
+floorguard
+floorana
+floorix
+floorly
+upfloor
+risefloor
+moonfloor
+floormint
+launchfloor
+floorwise
+# moat
+deepmoat
+moatpad
+moatix
+moatly
+moatana
+goldmoat
+ironmoat
+moatcoin
+diamondmoat
+# keep / fort
+vaultkeep
+tidekeep
+hodlkeep
+holdkeep
+saltkeep
+keepora
+hodlfort
+holdfort
+tidefort
+fortivo
+fortana
+coinfort
+memefort
+# hold
+holdora
+holdana
+holdix
+holdvault
+holdforge
+holdhaus
+hodlhaus
+hodlfloor
+hodlvault
+hodlpad
+holdpad
+holdwise
+# grip / sea
+stonegrip
+gripfloor
+kelvara
+kelpkeep
+limpetpad
+barnaclepad
+tidehold
+seahold
+rockhold
+# coined
+bastio
+rampio
+vaulto
+vaultana
+vaultwise
+floorbase
+basefloor
+diamondfloor
