@@ -9,7 +9,7 @@ Runs the whole stack from `docker-compose.yml` on a single Ubuntu server, behind
 | `https://<API_DOMAIN>` | api: REST, `/ws`, `/metadata` (`/metrics` is blocked) |
 | `https://<API_DOMAIN>/webhooks/helius` | indexer (Helius raw webhooks) |
 
-Every other port is bound to 127.0.0.1; only 80 and 443 are public.
+Only Caddy publishes ports (80 and 443); the other services are reachable inside the compose network only.
 
 ## First deployment
 

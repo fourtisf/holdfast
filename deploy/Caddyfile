@@ -14,7 +14,7 @@ www.{$SITE_DOMAIN} {
 {$API_DOMAIN} {
 	encode zstd gzip
 
-	# Prometheus metrics stay private: scrape them on 127.0.0.1:4000/metrics from the server.
+	# Prometheus metrics stay private: scrape them inside the compose network (api:4000/metrics).
 	handle /metrics {
 		respond 404
 	}
