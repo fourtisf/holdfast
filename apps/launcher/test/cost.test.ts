@@ -95,7 +95,7 @@ describe("computeLaunchCost", () => {
 
 describe("fees", () => {
   it("signatures + compute-unit price × limit, rounded up", () => {
-    const p: PriorityConfig = { microLamports: 1n, units: { create: 1, init: 1_000_001, devBuy: 0, refund: 0 } };
+    const p: PriorityConfig = { microLamports: 1n, units: { create: 1, init: 1_000_001, devBuy: 0, refund: 0, atomic: 0, atomicDevBuy: 0 } };
     expect(priorityFee(1n, 1)).toBe(1n);
     expect(priorityFee(0n, 1_000_000)).toBe(0n);
     expect(txFee("create", p)).toBe(10_001n);

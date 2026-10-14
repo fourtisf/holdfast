@@ -17,12 +17,12 @@ import * as market from "./market";
 
 const SPEC_FEE_SOL = Number(LAUNCH_FEE_LAMPORTS) / 1e9;
 
-/** Mirrors the launcher's cost model (packages/chain/src/launch) at default rent and priority fees. */
+/** Mirrors the launcher's cost model (packages/chain/src/launch): atomic launch + IPFS metadata, default rent and fees. */
 function mockLaunchQuote(devBuySol = 0): LaunchQuote {
-  const launchFeeSol = 0.025329;
-  const devBuyExtraSol = devBuySol > 0 ? 0.00601256 + Math.ceil(devBuySol * 0.05 * 1e9) / 1e9 : 0;
+  const launchFeeSol = SPEC_FEE_SOL;
+  const devBuyExtraSol = devBuySol > 0 ? 0.00691344 + Math.ceil(devBuySol * 0.05 * 1e9) / 1e9 : 0;
   const requiredSol = Math.round((launchFeeSol + devBuySol + devBuyExtraSol) * 1e9) / 1e9;
-  return { launchFeeSol, devBuySol, devBuyExtraSol, requiredSol, requiredLamports: lamports(requiredSol), specFeeSol: SPEC_FEE_SOL, exceedsSpecFee: true };
+  return { launchFeeSol, devBuySol, devBuyExtraSol, requiredSol, requiredLamports: lamports(requiredSol), specFeeSol: SPEC_FEE_SOL, exceedsSpecFee: false };
 }
 const DEPOSIT_WINDOW_MS = 15 * 60_000;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;

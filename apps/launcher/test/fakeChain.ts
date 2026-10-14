@@ -5,9 +5,20 @@
  * fail (missing signers, insufficient lamports, accounts already in use, rent-exemption, packet
  * size, Config.launcher, curve creator == treasury). Failures can be injected per transaction kind.
  */
-import { randomBytes } from "node:crypto";
+import { createPublicKey, randomBytes, verify as verifySignature } from "node:crypto";
 import { BorshCoder, type Idl } from "@coral-xyz/anchor";
-import { ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, type Signer, type Transaction, type TransactionInstruction } from "@solana/web3.js";
+import {
+  AddressLookupTableAccount,
+  ComputeBudgetProgram,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  TransactionMessage,
+  VersionedTransaction,
+  type Signer,
+  type Transaction,
+  type TransactionInstruction,
+} from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import BN from "bn.js";
 import bs58 from "bs58";
@@ -35,7 +46,7 @@ import { PACKET_DATA_SIZE } from "../src/tx.js";
 export const pumpCoder = new BorshCoder(pump.pumpIdl as unknown as Idl);
 export const holdfastCoder = new BorshCoder(HOLDFAST_IDL);
 
-export type FakeTxKind = "create" | "init" | "devBuy" | "refund" | "other";
+export type FakeTxKind = "create" | "init" | "devBuy" | "refund" | "launch" | "deliver" | "other";
 export type InjectionMode = "reject" | "fail" | "expire" | "crash";
 
 export interface Injection {
@@ -52,7 +63,16 @@ export interface LandedTx {
   fee: bigint;
   size: number;
   ok: boolean;
-  tx: Transaction;
+  tx: Transaction | VersionedTransaction;
+  /** The executed instructions (lookup tables resolved for v0 transactions). */
+  instructions: TransactionInstruction[];
+}
+
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+function ed25519Verify(message: Uint8Array, signature: Uint8Array, key: PublicKey): boolean {
+  const publicKey = createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, key.toBuffer()]), format: "der", type: "spki" });
+  return verifySignature(null, message, publicKey, signature);
 }
 
 interface TokenState {
@@ -147,6 +167,7 @@ export class FakeChain implements LaunchChain {
   injections: Injection[] = [];
   private accounts = new Map<string, Acct>();
   private fundings = new Map<string, IncomingTransfer[]>();
+  private readonly tables = new Map<string, AddressLookupTableAccount>();
   private height = 1_000;
   private slot = 10_000;
   private crashWaiters: (() => void)[] = [];
@@ -180,6 +201,11 @@ export class FakeChain implements LaunchChain {
     else this.put(key, { lamports, owner: SystemProgram.programId, data: Buffer.alloc(0) });
   }
 
+  /** Empties an account (e.g. a sender that sent its whole balance). */
+  drain(key: PublicKey): void {
+    this.accounts.delete(key.toBase58());
+  }
+
   /** A user wallet sends `lamports` to `to` (recorded as a funding transfer, block time = now). */
   fund(from: PublicKey, to: PublicKey, lamports: bigint, atMs = this.opts.now()): string {
     const signature = bs58.encode(randomBytes(64));
@@ -189,6 +215,11 @@ export class FakeChain implements LaunchChain {
     list.push({ source: from.toBase58(), lamports, signature, blockTime: Math.floor(atMs / 1000), slot: ++this.slot });
     this.fundings.set(to.toBase58(), list);
     return signature;
+  }
+
+  /** Registers an address lookup table (what `alt create` + `alt sync` would leave on-chain). */
+  addLookupTable(key: PublicKey, addresses: PublicKey[]): void {
+    this.tables.set(key.toBase58(), new AddressLookupTableAccount({ key, state: { deactivationSlot: BigInt("18446744073709551615"), lastExtendedSlot: 0, lastExtendedSlotStartIndex: 0, authority: undefined, addresses } }));
   }
 
   inject(injection: Injection): void {
@@ -267,27 +298,58 @@ export class FakeChain implements LaunchChain {
     return pickFunding(this.fundings.get(address.toBase58()) ?? []);
   }
 
-  async sendAndConfirm(tx: Transaction, signers: Signer[]): Promise<string> {
+  async getLookupTable(address: PublicKey): Promise<AddressLookupTableAccount | null> {
+    return this.tables.get(address.toBase58()) ?? null;
+  }
+
+  /** Signatures, size and the instruction list of a legacy or v0 transaction. */
+  private open(tx: Transaction | VersionedTransaction, signers: Signer[]): { signature: string; size: number; feePayer: string; signerKeys: Set<string>; instructions: TransactionInstruction[] } {
+    if (tx instanceof VersionedTransaction) {
+      tx.sign(signers);
+      const msg = tx.message;
+      const signature = bs58.encode(tx.signatures[0]!);
+      const keys = msg.staticAccountKeys;
+      const required = msg.header.numRequiredSignatures;
+      const bytes = msg.serialize();
+      for (let i = 0; i < required; i++) {
+        const sig = tx.signatures[i]!;
+        if (sig.every((b) => b === 0)) throw new TxError("missing signature", "rejected", signature);
+        if (!ed25519Verify(bytes, sig, keys[i]!)) throw new TxError("signature verification failed", "rejected", signature);
+      }
+      const size = tx.serialize().length;
+      if (size > PACKET_DATA_SIZE) throw new TxError(`transaction too large: ${size} bytes`, "rejected", signature);
+      const tables = msg.addressTableLookups.map((l) => {
+        const t = this.tables.get(l.accountKey.toBase58());
+        if (!t) throw new TxError(`lookup table ${l.accountKey.toBase58()} not found`, "rejected", signature);
+        return t;
+      });
+      const { instructions } = TransactionMessage.decompile(msg, { addressLookupTableAccounts: tables });
+      return { signature, size, feePayer: keys[0]!.toBase58(), signerKeys: new Set(keys.slice(0, required).map((k) => k.toBase58())), instructions };
+    }
     tx.sign(...signers);
     const signature = bs58.encode(tx.signature!);
     if (tx.signatures.some((s) => s.signature === null)) throw new TxError("missing signature", "rejected", signature);
     if (!tx.verifySignatures()) throw new TxError("signature verification failed", "rejected", signature);
     const size = tx.serialize().length;
     if (size > PACKET_DATA_SIZE) throw new TxError(`transaction too large: ${size} bytes`, "rejected", signature);
-    const kind = classify(tx);
-    const feePayer = tx.feePayer!.toBase58();
+    return { signature, size, feePayer: tx.feePayer!.toBase58(), signerKeys: new Set(tx.signatures.map((s) => s.publicKey.toBase58())), instructions: tx.instructions };
+  }
+
+  async sendAndConfirm(tx: Transaction | VersionedTransaction, signers: Signer[], _lastValidBlockHeight?: number): Promise<string> {
+    const { signature, size, feePayer, signerKeys, instructions } = this.open(tx, signers);
+    const kind = classify(instructions);
 
     const injection = this.injections.find((i) => i.kind === kind && (i.times === undefined || i.times > 0));
     if (injection?.times !== undefined) injection.times -= 1;
     if (injection?.mode === "reject") throw new TxError(`injected rejection of ${kind}`, "rejected", signature);
     if (injection?.mode === "expire") throw new TxError(`injected expiry of ${kind}`, "expired", signature);
 
-    const fee = this.fee(tx);
+    const fee = this.fee(instructions, signerKeys.size);
     if (injection?.mode === "fail") {
       const payer = this.accounts.get(feePayer);
       if (!payer || payer.lamports < fee) throw new TxError("insufficient funds for fee", "rejected", signature);
       payer.lamports -= fee;
-      this.landed.push({ kind, signature, feePayer, fee, size, ok: false, tx });
+      this.landed.push({ kind, signature, feePayer, fee, size, ok: false, tx, instructions });
       throw new TxError(`injected failure of ${kind}`, "failed", signature);
     }
 
@@ -299,8 +361,7 @@ export class FakeChain implements LaunchChain {
       const payer = working.get(feePayer);
       if (!payer || payer.lamports < fee) throw new ProgramError("insufficient funds for fee");
       payer.lamports -= fee;
-      const signerKeys = new Set(tx.signatures.map((s) => s.publicKey.toBase58()));
-      for (const ix of tx.instructions) {
+      for (const ix of instructions) {
         for (const k of ix.keys) if (k.isSigner && !signerKeys.has(k.pubkey.toBase58())) throw new ProgramError(`missing signer ${k.pubkey.toBase58()}`);
         this.execute(working, ix, triggers);
       }
@@ -315,7 +376,7 @@ export class FakeChain implements LaunchChain {
     }
     this.accounts = new Map([...working].filter(([, a]) => a.lamports > 0n || a.data.length > 0));
     for (const [k, v] of triggers) this.vaultTriggers.set(k, v);
-    this.landed.push({ kind, signature, feePayer, fee, size, ok: true, tx });
+    this.landed.push({ kind, signature, feePayer, fee, size, ok: true, tx, instructions });
 
     if (injection?.mode === "crash") {
       this.crashes += 1;
@@ -327,15 +388,15 @@ export class FakeChain implements LaunchChain {
 
   // ---- execution ---------------------------------------------------------------------------------
 
-  private fee(tx: Transaction): bigint {
-    let units = 200_000 * tx.instructions.filter((i) => !i.programId.equals(ComputeBudgetProgram.programId)).length;
+  private fee(instructions: readonly TransactionInstruction[], signatures: number): bigint {
+    let units = 200_000 * instructions.filter((i) => !i.programId.equals(ComputeBudgetProgram.programId)).length;
     let price = 0n;
-    for (const ix of tx.instructions) {
+    for (const ix of instructions) {
       if (!ix.programId.equals(ComputeBudgetProgram.programId)) continue;
       if (ix.data[0] === 2) units = ix.data.readUInt32LE(1);
       if (ix.data[0] === 3) price = ix.data.readBigUInt64LE(1);
     }
-    return 5_000n * BigInt(tx.signatures.length) + (price * BigInt(units) + 999_999n) / 1_000_000n;
+    return 5_000n * BigInt(signatures) + (price * BigInt(units) + 999_999n) / 1_000_000n;
   }
 
   private dataLen(a: Acct): number {
@@ -572,15 +633,18 @@ function discriminatorName(coder: BorshCoder, ix: TransactionInstruction): strin
   }
 }
 
-export function classify(tx: Transaction): FakeTxKind {
-  const names = tx.instructions.map((ix) => {
+export function classify(instructions: readonly TransactionInstruction[]): FakeTxKind {
+  const names = instructions.map((ix) => {
     if (ix.programId.equals(PUMP_PROGRAM_ID)) return discriminatorName(pumpCoder, ix);
     if (ix.programId.equals(HOLDFAST_PROGRAM_ID)) return discriminatorName(holdfastCoder, ix);
     return ix.programId.toBase58();
   });
+  if (names.includes("create_v2") && names.includes("init_coin")) return "launch";
   if (names.includes("create_v2")) return "create";
   if (names.includes("init_coin")) return "init";
   if (names.includes("buy_v3")) return "devBuy";
+  const transfersTokens = instructions.some((ix) => (ix.programId.equals(TOKEN_2022_PROGRAM_ID) || ix.programId.equals(TOKEN_PROGRAM_ID)) && ix.data[0] === 12);
+  if (transfersTokens) return "deliver";
   if (names.every((n) => n === SYSTEM || n === COMPUTE_BUDGET)) return "refund";
   return "other";
 }

@@ -2,7 +2,7 @@
  * Everything the launcher needs from Solana, behind an interface so the state machine runs offline
  * against an in-memory fake in tests (test/fakeChain.ts) and against RPC in production (web3Chain.ts).
  */
-import type { PublicKey, Signer, Transaction } from "@solana/web3.js";
+import type { AddressLookupTableAccount, PublicKey, Signer, Transaction, VersionedTransaction } from "@solana/web3.js";
 
 export interface RecentBlockhash {
   blockhash: string;
@@ -36,12 +36,15 @@ export interface LaunchChain {
   getAccountInfo(address: PublicKey): Promise<AccountSnapshot | null>;
   getMinimumBalanceForRentExemption(dataLength: number): Promise<bigint>;
   latestBlockhash(): Promise<RecentBlockhash>;
+  /** An address lookup table (atomic launches), or null if it does not exist. */
+  getLookupTable(address: PublicKey): Promise<AddressLookupTableAccount | null>;
   /**
    * Sign `tx` with `signers` (fee payer and recent blockhash already set), broadcast it and wait
-   * for confirmation until the blockhash's `lastValidBlockHeight`. Resolves with the signature;
-   * rejects with a `TxError`.
+   * for confirmation until `lastValidBlockHeight` (the transaction's own for legacy transactions,
+   * the argument for v0 ones). Resolves with the signature; rejects with a `TxError`.
    */
   sendAndConfirm(tx: Transaction, signers: Signer[]): Promise<string>;
+  sendAndConfirm(tx: VersionedTransaction, signers: Signer[], lastValidBlockHeight: number): Promise<string>;
 }
 
 /**

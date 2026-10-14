@@ -129,7 +129,7 @@ describe("happy path", () => {
       telegram: form.socials!.telegram,
       website: form.socials!.website,
     });
-    const createIx = h.chain.landed.find((t) => t.kind === "create")!.tx.instructions.find((i) => i.programId.equals(pump.PUMP_PROGRAM_ID))!;
+    const createIx = h.chain.landed.find((t) => t.kind === "create")!.instructions.find((i) => i.programId.equals(pump.PUMP_PROGRAM_ID))!;
     const decoded = pumpCoder.instruction.decode(Buffer.from(createIx.data))!;
     expect((decoded.data as { uri: string }).uri).toBe(coin!.metadataUri);
 
@@ -488,7 +488,7 @@ describe("mint keypair", () => {
     expect(done.mintSecret).toBe(first.mintSecret);
     expect(done.mint).toBe((await mintOf(row.id)).toBase58());
     const created = pumpCoder.instruction.decode(
-      Buffer.from(h.chain.landed.find((t) => t.kind === "create")!.tx.instructions.find((i) => i.programId.equals(pump.PUMP_PROGRAM_ID))!.data),
+      Buffer.from(h.chain.landed.find((t) => t.kind === "create")!.instructions.find((i) => i.programId.equals(pump.PUMP_PROGRAM_ID))!.data),
     )!;
     expect((created.data as { creator: PublicKey }).creator.equals(treasuryPda(new PublicKey(done.mint!)))).toBe(true);
     expect(tokenAccountOf).toBeTypeOf("function");

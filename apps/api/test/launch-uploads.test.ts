@@ -3,9 +3,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LaunchQuote, LaunchResponse, LaunchStatus } from "@holdfast/core";
 import { getLaunch, isExcluded, updateLaunchStatus, type Db } from "@holdfast/db";
-import { deriveDepositKeypair, parseMasterSecret } from "@holdfast/chain";
+import { deriveDepositKeypair, launchPlanFromEnv, parseMasterSecret } from "@holdfast/chain";
 import { hkdfDepositAllocator, lamportsToSolString, parseLaunchRequest, sniffImage, solanaPayUrl, tokensToRaw } from "../src/index.js";
-import { launchCost } from "../src/launch/cost.js";
+import { launchCost, toLaunchQuote } from "../src/launch/cost.js";
 import { launchCostSettings } from "../src/launch/settings.js";
 import { freshDb, makeApi, NOW, resetDb, type TestApi } from "./helpers.js";
 
@@ -40,6 +40,15 @@ describe("GET /launch/quote", () => {
     // shorter metadata than the worst case costs slightly less rent
     expect(withBuy.launchFeeSol).toBeLessThanOrEqual(base.launchFeeSol);
     expect((await api.app.inject({ method: "GET", url: "/launch/quote?devBuySol=50" })).statusCode).toBe(400);
+  });
+
+  it("an atomic launcher with IPFS metadata charges exactly the spec's 0.015 SOL for a typical coin", () => {
+    const plan = launchPlanFromEnv({ LAUNCHER_LOOKUP_TABLE: "11111111111111111111111111111111", METADATA_STORAGE: "pinata" }, { publicMetadataBaseUrl: "http://localhost:4000/metadata" });
+    expect(plan.mode).toBe("atomic");
+    const quote = toLaunchQuote(launchCost(plan, { name: "Dog Coin", ticker: "DOG" }));
+    expect(quote).toMatchObject({ launchFeeSol: 0.015, requiredSol: 0.015, exceedsSpecFee: false });
+    // even the longest name and ticker stay within 0.015 SOL of real cost
+    expect(launchCost(plan, {}).consumed).toBeLessThanOrEqual(15_000_000n);
   });
 });
 

@@ -1,3 +1,4 @@
+import { launchPlanFromEnv } from "@holdfast/chain";
 import { launchCostSettings } from "../src/launch/settings.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,8 +28,7 @@ export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     statsIntervalMs: 0,
     wsHeartbeatMs: 30_000,
     launchTtlMs: 30 * 60_000,
-    launchPriorityMicroLamports: 50_000,
-    launchDevBuySlippageBps: 500,
+    launchPlan: launchPlanFromEnv({}, { publicMetadataBaseUrl: "http://localhost:4000/metadata" }),
     depositMasterSecret: null,
     trade: { computeUnitPriceMicroLamports: 50_000, computeUnitLimitCurve: 250_000, computeUnitLimitAmm: 300_000 },
     logLevel: "silent",

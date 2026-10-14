@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { launchPlanFromEnv, type LaunchPlan } from "@holdfast/chain";
 
 export interface ApiConfig {
   databaseUrl: string;
@@ -14,9 +15,8 @@ export interface ApiConfig {
   statsIntervalMs: number;
   wsHeartbeatMs: number;
   launchTtlMs: number;
-  /** Shared with the launcher so quotes match what it charges. */
-  launchPriorityMicroLamports: number;
-  launchDevBuySlippageBps: number;
+  /** Parsed from the launcher's own variables, so quotes match what it charges. */
+  launchPlan: LaunchPlan;
   depositMasterSecret: string | null;
   trade: {
     computeUnitPriceMicroLamports: number;
@@ -29,6 +29,7 @@ export interface ApiConfig {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const port = Number(env.API_PORT ?? env.PORT ?? 4000);
+  const publicMetadataBaseUrl = (env.PUBLIC_METADATA_BASE_URL ?? `http://localhost:${port}/metadata`).replace(/\/+$/, "");
   return {
     databaseUrl: env.DATABASE_URL ?? "",
     port,
@@ -36,13 +37,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     rpcUrl: env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com",
     corsOrigin: env.CORS_ORIGIN ?? "http://localhost:3000",
     metadataDir: resolve(env.METADATA_STORE ?? "./data/metadata"),
-    publicMetadataBaseUrl: (env.PUBLIC_METADATA_BASE_URL ?? `http://localhost:${port}/metadata`).replace(/\/+$/, ""),
+    publicMetadataBaseUrl,
     rateLimitPerMinute: Number(env.API_RATE_LIMIT_PER_MINUTE ?? 600),
     statsIntervalMs: Number(env.API_STATS_INTERVAL_MS ?? 10_000),
     wsHeartbeatMs: Number(env.API_WS_HEARTBEAT_MS ?? 30_000),
     launchTtlMs: Number(env.LAUNCH_TTL_MS ?? 30 * 60_000),
-    launchPriorityMicroLamports: Number(env.LAUNCHER_PRIORITY_FEE_MICROLAMPORTS ?? 50_000),
-    launchDevBuySlippageBps: Number(env.LAUNCHER_DEV_BUY_SLIPPAGE_BPS ?? 500),
+    launchPlan: launchPlanFromEnv(env, { publicMetadataBaseUrl }),
     depositMasterSecret: env.DEPOSIT_MASTER_SECRET || null,
     trade: {
       computeUnitPriceMicroLamports: Number(env.TRADE_CU_PRICE_MICROLAMPORTS ?? 100_000),

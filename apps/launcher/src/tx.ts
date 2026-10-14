@@ -14,10 +14,27 @@
  *             fee payer and signer: deposit.
  * R  refund:  compute budget + System transfer deposit → sender; fee payer and signer: deposit.
  *
- * All four are legacy transactions well under the 1232-byte packet limit (see test/tx.test.ts), so
- * no lookup tables are needed.
+ * All four are legacy transactions well under the 1232-byte packet limit (see test/tx.test.ts).
+ *
+ * L  atomic:  one v0 transaction (with the launcher's address lookup table): compute budget +
+ *             reimbursement + `create_v2` + `init_coin` + (the buy of C | the exact leftover to the
+ *             sender). Fee payer: deposit; signers: deposit, mint, launcher. Nobody can trade between
+ *             the creation and the dev buy, and a failure changes nothing. Without a dev buy the
+ *             deposit ends at exactly 0 lamports; with one, D follows.
+ * D  deliver: compute budget + C's delivery (sender ATA, transfer of the bought tokens, closes);
+ *             fee payer and signer: deposit. The refund follows as usual.
  */
-import { ComputeBudgetProgram, PublicKey, SystemProgram, Transaction, type Signer, type TransactionInstruction } from "@solana/web3.js";
+import {
+  ComputeBudgetProgram,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  TransactionMessage,
+  VersionedTransaction,
+  type AddressLookupTableAccount,
+  type Signer,
+  type TransactionInstruction,
+} from "@solana/web3.js";
 import {
   createAssociatedTokenAccountIdempotentInstruction,
   createCloseAccountInstruction,
@@ -30,7 +47,7 @@ import { coinKeys, initCoinIx, pumpCreatorFor, TOKEN_2022_PROGRAM_ID } from "@ho
 import { PUMP_TOKEN_DECIMALS } from "@holdfast/core";
 
 import type { RecentBlockhash } from "./chain.js";
-import type { PriorityConfig } from "@holdfast/chain";
+import { atomicComputeUnits, type PriorityConfig } from "@holdfast/chain";
 import { PUMP_SDK, type BondingCurve } from "./pump.js";
 
 export const PACKET_DATA_SIZE = 1232;
@@ -105,10 +122,9 @@ export function tokenAccountOf(owner: PublicKey, mint: PublicKey): PublicKey {
   return getAssociatedTokenAddressSync(mint, owner, true, TOKEN_2022_PROGRAM_ID);
 }
 
-export async function buildDevBuyTx(p: DevBuyTxParams): Promise<Transaction> {
-  const depositAta = tokenAccountOf(p.deposit, p.mint);
-  const senderAta = tokenAccountOf(p.sender, p.mint);
-  const buy = await PUMP_SDK.buyV3Instructions({
+/** The buy of tx C: the deposit's token account (idempotent) + pump `buy_v3` of exactly `tokens`. */
+export async function devBuyBuyInstructions(p: Pick<DevBuyTxParams, "deposit" | "mint" | "tokens" | "maxSolCost" | "bondingCurve" | "buybackFeeRecipient">): Promise<TransactionInstruction[]> {
+  return PUMP_SDK.buyV3Instructions({
     bondingCurve: p.bondingCurve,
     associatedUserAccountInfo: null,
     mint: p.mint,
@@ -119,15 +135,104 @@ export async function buildDevBuyTx(p: DevBuyTxParams): Promise<Transaction> {
     tokenProgram: TOKEN_2022_PROGRAM_ID,
     buybackFeeRecipient: p.buybackFeeRecipient,
   });
+}
+
+/** The delivery of tx C: sender token account (idempotent) + transfer of exactly `tokens` + closes. */
+export async function devBuyDeliverInstructions(
+  p: Pick<DevBuyTxParams, "deposit" | "sender" | "mint" | "tokens" | "closeAccumulator">,
+): Promise<TransactionInstruction[]> {
+  const depositAta = tokenAccountOf(p.deposit, p.mint);
+  const senderAta = tokenAccountOf(p.sender, p.mint);
   const ixs = [
-    ...computeBudgetIxs(p.priority.units.devBuy, p.priority.microLamports),
-    ...buy,
     createAssociatedTokenAccountIdempotentInstruction(p.deposit, senderAta, p.sender, p.mint, TOKEN_2022_PROGRAM_ID),
     createTransferCheckedInstruction(depositAta, p.mint, senderAta, p.deposit, p.tokens, PUMP_TOKEN_DECIMALS, [], TOKEN_2022_PROGRAM_ID),
     createCloseAccountInstruction(depositAta, p.deposit, p.deposit, [], TOKEN_2022_PROGRAM_ID),
   ];
   if (p.closeAccumulator) ixs.push(await PUMP_SDK.closeUserVolumeAccumulator(p.deposit));
+  return ixs;
+}
+
+/** C's instructions without the compute budget: buy, then deliver. */
+export async function devBuyInstructions(p: Omit<DevBuyTxParams, "recent" | "priority">): Promise<TransactionInstruction[]> {
+  return [...(await devBuyBuyInstructions(p)), ...(await devBuyDeliverInstructions(p))];
+}
+
+export async function buildDevBuyTx(p: DevBuyTxParams): Promise<Transaction> {
+  return newTx(p.deposit, p.recent, [...computeBudgetIxs(p.priority.units.devBuy, p.priority.microLamports), ...(await devBuyInstructions(p))]);
+}
+
+export interface DeliverTxParams extends Pick<DevBuyTxParams, "deposit" | "sender" | "mint" | "tokens" | "closeAccumulator"> {
+  leftover: { to: PublicKey; lamports: bigint } | null;
+  recent: RecentBlockhash;
+  priority: PriorityConfig;
+}
+
+/** D: deliver the dev-buy tokens bought in the atomic launch tx, and send the leftover on. */
+export async function buildDeliverTx(p: DeliverTxParams): Promise<Transaction> {
+  const ixs = [...computeBudgetIxs(p.priority.units.devBuy, p.priority.microLamports), ...(await devBuyDeliverInstructions(p))];
+  if (p.leftover && p.leftover.lamports > 0n) ixs.push(SystemProgram.transfer({ fromPubkey: p.deposit, toPubkey: p.leftover.to, lamports: p.leftover.lamports }));
   return newTx(p.deposit, p.recent, ixs);
+}
+
+export interface AtomicLaunchParams {
+  deposit: PublicKey;
+  launcher: PublicKey;
+  mint: PublicKey;
+  name: string;
+  symbol: string;
+  uri: string;
+  triggerBps: number;
+  /** Rent the launcher fronts inside `init_coin` (see cost.ts `initReimbursement`). */
+  reimburseLamports: bigint;
+  /**
+   * The buy of tx C, against the curve created in this same transaction (so nobody can buy first).
+   * The tokens stay on the deposit's token account; a small follow-up transaction delivers them
+   * (`devBuyDeliverInstructions`), because the delivery does not fit in the same packet.
+   */
+  devBuy: Pick<DevBuyTxParams, "tokens" | "maxSolCost" | "bondingCurve" | "buybackFeeRecipient"> | null;
+  /** Everything left on the deposit after the launch, when there is no dev buy (the deposit ends at 0). */
+  leftover: { to: PublicKey; lamports: bigint } | null;
+  recent: RecentBlockhash;
+  priority: PriorityConfig;
+}
+
+export async function atomicLaunchInstructions(p: Omit<AtomicLaunchParams, "recent">): Promise<TransactionInstruction[]> {
+  const coin = coinKeys(p.mint, TOKEN_2022_PROGRAM_ID);
+  const ixs = computeBudgetIxs(atomicComputeUnits(p.priority.units, p.devBuy !== null), p.priority.microLamports);
+  if (p.reimburseLamports > 0n) ixs.push(SystemProgram.transfer({ fromPubkey: p.deposit, toPubkey: p.launcher, lamports: p.reimburseLamports }));
+  ixs.push(
+    await PUMP_SDK.createV2Instruction({
+      mint: p.mint,
+      name: p.name,
+      symbol: p.symbol,
+      uri: p.uri,
+      creator: pumpCreatorFor(p.mint),
+      user: p.deposit,
+      mayhemMode: false,
+    }),
+    initCoinIx(coin, p.launcher, p.triggerBps),
+  );
+  if (p.devBuy) ixs.push(...(await devBuyBuyInstructions({ ...p.devBuy, deposit: p.deposit, mint: p.mint })));
+  if (p.devBuy && p.leftover) throw new Error("an atomic launch with a dev buy keeps its leftover for the delivery transaction");
+  if (p.leftover && p.leftover.lamports > 0n) ixs.push(SystemProgram.transfer({ fromPubkey: p.deposit, toPubkey: p.leftover.to, lamports: p.leftover.lamports }));
+  return ixs;
+}
+
+export async function buildAtomicLaunchTx(p: AtomicLaunchParams, lookupTable: AddressLookupTableAccount): Promise<VersionedTransaction> {
+  const message = new TransactionMessage({
+    payerKey: p.deposit,
+    recentBlockhash: p.recent.blockhash,
+    instructions: await atomicLaunchInstructions(p),
+  }).compileToV0Message([lookupTable]);
+  return new VersionedTransaction(message);
+}
+
+/** Sign a v0 transaction in place and return its signature (the fee payer's). */
+export function signVersioned(tx: VersionedTransaction, signers: Signer[]): string {
+  tx.sign(signers);
+  const sig = tx.signatures[0];
+  if (!sig || sig.every((b) => b === 0)) throw new Error("transaction has no fee payer signature");
+  return bs58.encode(sig);
 }
 
 export interface RefundTxParams {

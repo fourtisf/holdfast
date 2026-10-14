@@ -3,6 +3,14 @@
  * fees + the priority-fee budget of each transaction. `computeLaunchCost(rent)` is pure; feed it the
  * cluster's rent (`rentFromChain`) or `DEFAULT_RENT` (the mainnet/devnet parameters).
  *
+ * Two launch modes:
+ * - `atomic` (default when the launcher has an address lookup table): ONE v0 transaction runs
+ *   create_v2 + init_coin + the dev buy, so nobody can buy between the creation and the dev buy.
+ *   Without a dev buy it also sends the leftover back and the deposit ends empty (no rent reserve to
+ *   hold, no refund tx); with one, a small delivery transaction moves the tokens to the sender and
+ *   refunds the rest.
+ * - `split`: the legacy four-transaction flow (A create, B init, C dev buy, refund).
+ *
  * Two kinds of lamports are needed on the deposit address:
  * - consumed: rent of accounts that stay alive (they belong to the coin, its vault, or the sender),
  *   transaction fees and priority fees;
@@ -33,9 +41,13 @@ export interface ComputeUnits {
   init: number;
   devBuy: number;
   refund: number;
+  /** Atomic launch without a dev buy (create_v2 + init_coin + leftover transfer). */
+  atomic: number;
+  /** Added to `atomic` when the launch includes a dev buy. */
+  atomicDevBuy: number;
 }
 
-export const DEFAULT_COMPUTE_UNITS: ComputeUnits = { create: 250_000, init: 250_000, devBuy: 300_000, refund: 2_000 };
+export const DEFAULT_COMPUTE_UNITS: ComputeUnits = { create: 250_000, init: 250_000, devBuy: 300_000, refund: 2_000, atomic: 250_000, atomicDevBuy: 200_000 };
 
 export interface PriorityConfig {
   /** Compute-unit price in micro-lamports (0 = no priority fee instruction). */
@@ -45,9 +57,10 @@ export interface PriorityConfig {
 
 export const DEFAULT_PRIORITY: PriorityConfig = { microLamports: 50_000n, units: DEFAULT_COMPUTE_UNITS };
 
-/** Required signatures per transaction (A: deposit + mint, B: deposit + launcher, C/refund: deposit). */
-export const TX_SIGNATURES = { create: 2, init: 2, devBuy: 1, refund: 1 } as const;
-export type TxKind = keyof typeof TX_SIGNATURES;
+/** Required signatures per transaction (A: deposit + mint, B: deposit + launcher, C/refund: deposit; atomic: all three). */
+export const TX_SIGNATURES = { create: 2, init: 2, devBuy: 1, refund: 1, atomic: 3 } as const;
+export type TxKind = Exclude<keyof typeof TX_SIGNATURES, "atomic">;
+export type LaunchMode = "atomic" | "split";
 
 export function priorityFee(microLamports: bigint, units: number): bigint {
   if (microLamports <= 0n) return 0n;
@@ -57,6 +70,21 @@ export function priorityFee(microLamports: bigint, units: number): bigint {
 /** Fee the fee payer is charged for transaction `kind`: signatures + compute-unit price × limit. */
 export function txFee(kind: TxKind, priority: PriorityConfig): bigint {
   return LAMPORTS_PER_SIGNATURE * BigInt(TX_SIGNATURES[kind]) + priorityFee(priority.microLamports, priority.units[kind]);
+}
+
+/** Fee of the atomic flow's delivery transaction (dev-buy tokens to the sender + leftover). */
+export function deliverTxFee(priority: PriorityConfig): bigint {
+  return LAMPORTS_PER_SIGNATURE + priorityFee(priority.microLamports, priority.units.devBuy);
+}
+
+/** Compute-unit limit of the atomic launch transaction. */
+export function atomicComputeUnits(units: ComputeUnits, withDevBuy: boolean): number {
+  return units.atomic + (withDevBuy ? units.atomicDevBuy : 0);
+}
+
+/** Fee of the atomic launch transaction (3 signatures + priority on its limit). */
+export function atomicTxFee(priority: PriorityConfig, withDevBuy: boolean): bigint {
+  return LAMPORTS_PER_SIGNATURE * BigInt(TX_SIGNATURES.atomic) + priorityFee(priority.microLamports, atomicComputeUnits(priority.units, withDevBuy));
 }
 
 /** Rent-exempt minimum for an account with `dataLen` bytes of data. */
@@ -83,6 +111,8 @@ export interface CostItem {
 }
 
 export interface LaunchCostOptions {
+  /** Default `split` (the flow that works without a lookup table). */
+  mode?: LaunchMode;
   /** Metadata lengths in UTF-8 bytes; default to pump.fun's maximums (worst case). */
   nameBytes?: number;
   symbolBytes?: number;
@@ -103,6 +133,7 @@ export interface DevBuyCost {
 }
 
 export interface LaunchCost {
+  mode: LaunchMode;
   /** Consumed by every launch. */
   items: CostItem[];
   consumed: bigint;
@@ -121,6 +152,7 @@ export interface LaunchCost {
 const sum = (items: readonly CostItem[]) => items.reduce((s, i) => s + i.lamports, 0n);
 
 export function computeLaunchCost(rent: RentFn, opts: LaunchCostOptions = {}): LaunchCost {
+  const mode = opts.mode ?? "split";
   const priority = opts.priority ?? DEFAULT_PRIORITY;
   const nameBytes = opts.nameBytes ?? PUMP_MAX_NAME_BYTES;
   const symbolBytes = opts.symbolBytes ?? PUMP_MAX_SYMBOL_BYTES;
@@ -140,20 +172,38 @@ export function computeLaunchCost(rent: RentFn, opts: LaunchCostOptions = {}): L
     account("treasury_rent", "Holdfast treasury PDA rent-exempt reserve", SYSTEM_ACCOUNT_SIZE),
     // The treasury's token / WSOL accounts and pump volume accumulators are not part of a launch: the
     // vault program's `prepare_treasury` creates them later, paid from the coin's own floor bucket.
-    { key: "fee_create", label: "tx A fee (2 signatures + priority)", lamports: txFee("create", priority) },
-    { key: "fee_init", label: "tx B fee (2 signatures + priority)", lamports: txFee("init", priority) },
-    { key: "fee_refund", label: "refund tx fee (1 signature + priority)", lamports: txFee("refund", priority) },
   ];
-  const float: CostItem[] = [account("deposit_rent", "deposit address rent-exempt reserve (refunded)", SYSTEM_ACCOUNT_SIZE)];
+  const float: CostItem[] = [];
+  const withDevBuy = devBuyLamports > 0n;
+  if (mode === "atomic") {
+    items.push({ key: "fee_launch", label: "launch tx fee (3 signatures + priority)", lamports: atomicTxFee(priority, false) });
+    // One more fee in reserve, so a failed attempt never leaves the deposit short (refunded otherwise).
+    float.push({ key: "retry_fee_reserve", label: "reserve for one retried launch tx (refunded)", lamports: atomicTxFee(priority, withDevBuy) });
+  } else {
+    items.push(
+      { key: "fee_create", label: "tx A fee (2 signatures + priority)", lamports: txFee("create", priority) },
+      { key: "fee_init", label: "tx B fee (2 signatures + priority)", lamports: txFee("init", priority) },
+      { key: "fee_refund", label: "refund tx fee (1 signature + priority)", lamports: txFee("refund", priority) },
+    );
+    float.push(account("deposit_rent", "deposit address rent-exempt reserve (refunded)", SYSTEM_ACCOUNT_SIZE));
+  }
 
   const devItems: CostItem[] = [];
   const devFloat: CostItem[] = [];
-  if (devBuyLamports > 0n) {
+  if (withDevBuy) {
     devItems.push(account("sender_token_account", "sender token account (Token-2022 ATA, owned by the sender)", TOKEN_2022_ATA_SIZE));
-    devItems.push({ key: "fee_dev_buy", label: "tx C fee (1 signature + priority)", lamports: txFee("devBuy", priority) });
-    devFloat.push(account("deposit_token_account", "deposit token account (closed in tx C)", TOKEN_2022_ATA_SIZE));
+    if (mode === "atomic") {
+      const extra = atomicTxFee(priority, true) - atomicTxFee(priority, false);
+      devItems.push({ key: "fee_dev_buy", label: "dev buy compute budget in the launch tx (priority)", lamports: extra });
+      devItems.push({ key: "fee_deliver", label: "delivery tx fee (1 signature + priority)", lamports: deliverTxFee(priority) });
+      // Between the launch tx and the delivery, the deposit holds the tokens and must stay rent-exempt.
+      devFloat.push(account("deposit_rent", "deposit address rent-exempt reserve (refunded)", SYSTEM_ACCOUNT_SIZE));
+    } else {
+      devItems.push({ key: "fee_dev_buy", label: "tx C fee (1 signature + priority)", lamports: txFee("devBuy", priority) });
+    }
+    devFloat.push(account("deposit_token_account", "deposit token account (closed again)", TOKEN_2022_ATA_SIZE));
     const uva = account("deposit_volume_accumulator", "pump.fun UserVolumeAccumulator of the deposit", PUMP_USER_VOLUME_ACCUMULATOR_SIZE);
-    if (closeAccumulator) devFloat.push({ ...uva, label: `${uva.label} (closed in tx C)` });
+    if (closeAccumulator) devFloat.push({ ...uva, label: `${uva.label} (closed again)` });
     else devItems.push(uva);
     const slippage = (devBuyLamports * BigInt(slippageBps) + 9_999n) / 10_000n;
     if (slippage > 0n) devFloat.push({ key: "dev_buy_slippage", label: `dev buy slippage allowance (${slippageBps} bps, refunded if unused)`, lamports: slippage });
@@ -164,6 +214,7 @@ export function computeLaunchCost(rent: RentFn, opts: LaunchCostOptions = {}): L
   const launchFee = consumed + floatTotal > LAUNCH_FEE_LAMPORTS ? consumed + floatTotal : LAUNCH_FEE_LAMPORTS;
   const devBuy: DevBuyCost = { lamports: devBuyLamports, items: devItems, consumed: sum(devItems), float: devFloat, floatTotal: sum(devFloat) };
   return {
+    mode,
     items,
     consumed,
     float,

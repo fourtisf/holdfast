@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Keypair, type PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 import { deriveDepositKeypair } from "@holdfast/chain";
 import type { LaunchRequest } from "@holdfast/core";
@@ -19,8 +19,8 @@ import {
   type LaunchRow,
 } from "@holdfast/db";
 
-import { computeLaunchCost, DEFAULT_PRIORITY, DEFAULT_RENT } from "@holdfast/chain";
-import { metadataUriLength } from "../src/metadata.js";
+import { computeLaunchCost, DEFAULT_IPFS_GATEWAY, DEFAULT_PRIORITY, DEFAULT_RENT, launchCostOptions } from "@holdfast/chain";
+import { launchLookupAddresses } from "../src/lookup.js";
 import { pump, quoteDevBuy, type DevBuyQuote } from "../src/pump.js";
 import { utf8Len } from "@holdfast/chain";
 import { DEFAULT_SETTINGS, LaunchWorker, type LauncherSettings, type Logger } from "../src/worker.js";
@@ -82,6 +82,7 @@ export class Harness {
       masterSecret: MASTER,
       launcher: this.launcher,
       metadata: { storeDir: mkdtempSync(join(tmpdir(), "holdfast-meta-")), publicBaseUrl: BASE_URL, siteUrl: SITE },
+      metadataLocation: { kind: "local", publicBaseUrl: BASE_URL, gatewayUrl: DEFAULT_IPFS_GATEWAY },
       maxAttempts: 3,
       retryBaseMs: 1_000,
       retryMaxMs: 10_000,
@@ -93,8 +94,16 @@ export class Harness {
     this.worker = this.newWorker();
   }
 
-  static async create(db: Db, overrides: Partial<LauncherSettings> = {}, configLauncher?: PublicKey): Promise<Harness> {
-    const h = new Harness(db, overrides, configLauncher);
+  /** `atomic`: the launcher gets an address lookup table (what `alt create` builds), so launches are one transaction. */
+  static async create(db: Db, overrides: Partial<LauncherSettings> & { atomic?: boolean } = {}, configLauncher?: PublicKey): Promise<Harness> {
+    const { atomic, ...rest } = overrides;
+    const h = new Harness(db, rest, configLauncher);
+    if (atomic) {
+      const table = Keypair.generate().publicKey;
+      h.chain.addLookupTable(table, await launchLookupAddresses(h.chain.global, h.launcher.publicKey));
+      (h.settings as { lookupTable: PublicKey | null }).lookupTable = table;
+      h.worker = h.newWorker();
+    }
     h.unlisten = await db.listen(HOLDFAST_EVENTS_CHANNEL, (payload) => {
       const n = parseNotification(payload);
       if (n) h.notes.push(n);
@@ -127,15 +136,19 @@ export class Harness {
 
   /** What a correct API quotes for this form (the launcher's own cost model). */
   quote(form: LaunchRequest, devBuyLamports = 0n): bigint {
-    return computeLaunchCost(DEFAULT_RENT, {
-      nameBytes: utf8Len(form.name.trim()),
-      symbolBytes: utf8Len(form.ticker.trim()),
-      uriBytes: metadataUriLength(BASE_URL),
-      priority: this.settings.priority,
-      devBuyLamports,
-      closeDepositAccumulator: this.settings.closeDepositAccumulator,
-      devBuySlippageBps: this.settings.devBuySlippageBps,
-    }).requiredLamports;
+    return computeLaunchCost(
+      DEFAULT_RENT,
+      launchCostOptions(
+        {
+          mode: this.settings.lookupTable ? "atomic" : "split",
+          metadata: this.settings.metadataLocation,
+          priority: this.settings.priority,
+          devBuySlippageBps: this.settings.devBuySlippageBps,
+          closeDepositAccumulator: this.settings.closeDepositAccumulator,
+        },
+        { nameBytes: utf8Len(form.name.trim()), symbolBytes: utf8Len(form.ticker.trim()), devBuyLamports },
+      ),
+    ).requiredLamports;
   }
 
   async launch(

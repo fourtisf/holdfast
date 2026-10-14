@@ -75,6 +75,28 @@ export async function readPumpBuyState(chain: LaunchChain, mint: PublicKey, toke
   };
 }
 
+/** pump.fun's Global and FeeConfig (what a buy on a brand-new curve is priced with). */
+export async function readPumpGlobals(chain: LaunchChain): Promise<{ global: Global; feeConfig: FeeConfig }> {
+  const [global, feeConfig] = await Promise.all([chain.getAccountInfo(pump.GLOBAL_PDA), chain.getAccountInfo(pump.PUMP_FEE_CONFIG_PDA)]);
+  if (!global) throw new Error("pump Global account not found");
+  if (!feeConfig) throw new Error("pump FeeConfig account not found");
+  return {
+    global: PUMP_SDK.decodeGlobal(asInfo(global.data, pump.PUMP_PROGRAM_ID)),
+    feeConfig: PUMP_SDK.decodeFeeConfig(asInfo(feeConfig.data, pump.PUMP_FEE_PROGRAM_ID)),
+  };
+}
+
+/** The state a curve created in this same transaction starts from (atomic launch dev buy). */
+export function freshCurveBuyState(g: { global: Global; feeConfig: FeeConfig }, creator: PublicKey): PumpBuyState {
+  return {
+    global: g.global,
+    feeConfig: g.feeConfig,
+    bondingCurve: { ...pump.newBondingCurve(g.global), creator },
+    mintSupply: g.global.tokenTotalSupply,
+    curveBaseTokenBalance: g.global.tokenTotalSupply,
+  };
+}
+
 export interface DevBuyQuote {
   /** Exact token amount bought (and transferred on to the sender). */
   tokens: bigint;

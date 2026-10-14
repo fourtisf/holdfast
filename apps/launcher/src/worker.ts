@@ -6,7 +6,9 @@
  *         ├─(expired, nothing arrived)──► expired                                          │ (N failures, vault never initialized)
  *         └─(expired / late / underpaid)──► refunding ──► refunded                         └────► refunding ──► failed
  *
- * `creating` runs: tx A (pump create_v2) → tx B (init_coin + reimbursement)
+ * `creating` runs, with a lookup table configured, ONE atomic transaction (create_v2 + init_coin +
+ * dev buy + leftover back to the sender; see tx.ts) and otherwise — or after `atomicAttempts`
+ * rejected attempts — the split flow: tx A (pump create_v2) → tx B (init_coin + reimbursement)
  * → tx C (dev buy, optional) → coins row → refund of everything left → live. Each step first checks
  * the chain (bonding curve / vault / sender token account exist?) so a crash or retry never repeats
  * an effect, every send is preceded by a DB write that bumps `updated_at`, and a launch in
@@ -14,7 +16,7 @@
  * than a blockhash lives), so a transaction broadcast before a crash has either landed or expired.
  * Refunds always send the whole balance (minus the fee), so two refunds can never both succeed.
  */
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey, type AddressLookupTableAccount } from "@solana/web3.js";
 import { LAUNCH_FEE_LAMPORTS, PUMP_TOKEN_DECIMALS, type LaunchStatusKind } from "@holdfast/core";
 import { coinKeys, deriveDepositKeypair, TOKEN_2022_PROGRAM_ID, type CoinKeys } from "@holdfast/chain";
 import {
@@ -35,21 +37,41 @@ import {
 } from "@holdfast/db";
 
 import { TxError, type LaunchChain } from "./chain.js";
-import { computeLaunchCost, initReimbursement, rentFromChain, txFee, DEFAULT_PRIORITY, type PriorityConfig, type RentFn } from "@holdfast/chain";
-import { decryptMintSecret, encryptMintSecret, mintSecretKey } from "./crypto.js";
 import {
-  buildMetadataJson,
-  metadataUriLength,
-  normalizeForm,
-  ValidationError,
-  writeMetadata,
-  type LaunchForm,
-  type MetadataSettings,
-} from "./metadata.js";
-import { pump, quoteDevBuy, readPumpBuyState } from "./pump.js";
+  atomicTxFee,
+  deliverTxFee,
+  computeLaunchCost,
+  initReimbursement,
+  launchCostOptions,
+  metadataUriBytes,
+  PUMP_BONDING_CURVE_SIZE,
+  pumpMintSize,
+  rentFromChain,
+  txFee,
+  DEFAULT_PRIORITY,
+  type LaunchMode,
+  type MetadataLocation,
+  type PriorityConfig,
+  type RentFn,
+} from "@holdfast/chain";
+import { decryptMintSecret, encryptMintSecret, mintSecretKey } from "./crypto.js";
+import { normalizeForm, ValidationError, type LaunchForm, type MetadataSettings } from "./metadata.js";
+import { freshCurveBuyState, pump, quoteDevBuy, readPumpBuyState, readPumpGlobals } from "./pump.js";
+import { LocalMetadataStorage, type MetadataStorage, type PublishedMetadata } from "./storage.js";
 import { PUMP_MAX_NAME_BYTES, PUMP_MAX_SYMBOL_BYTES, PUMP_USER_VOLUME_ACCUMULATOR_SIZE, SYSTEM_ACCOUNT_SIZE, TOKEN_2022_ATA_SIZE, utf8Len } from "@holdfast/chain";
 import { forceLaunchSig, listRecentTerminalLaunches, setMintSecretOnce } from "./store.js";
-import { buildCreateTx, buildDevBuyTx, buildInitTx, buildRefundTx, signTransaction, tokenAccountOf } from "./tx.js";
+import {
+  buildAtomicLaunchTx,
+  buildCreateTx,
+  buildDeliverTx,
+  buildDevBuyTx,
+  buildInitTx,
+  buildRefundTx,
+  PACKET_DATA_SIZE,
+  signTransaction,
+  signVersioned,
+  tokenAccountOf,
+} from "./tx.js";
 
 export interface Logger {
   debug(obj: object, msg?: string): void;
@@ -64,6 +86,12 @@ export interface LauncherSettings {
   /** Hot wallet; must equal the on-chain Config.launcher. */
   launcher: Keypair;
   metadata: MetadataSettings;
+  /** Where metadata URIs point (their length is part of the launch cost). */
+  metadataLocation: MetadataLocation;
+  /** Address lookup table for atomic launches; null = split flow only. */
+  lookupTable: PublicKey | null;
+  /** Rejected atomic attempts before a launch falls back to the split flow. */
+  atomicAttempts: number;
   priority: PriorityConfig;
   devBuySlippageBps: number;
   /** Close the deposit's pump volume accumulator in tx C (returns its rent to the deposit). */
@@ -85,6 +113,8 @@ export interface LauncherSettings {
 }
 
 export const DEFAULT_SETTINGS = {
+  lookupTable: null,
+  atomicAttempts: 2,
   priority: DEFAULT_PRIORITY,
   devBuySlippageBps: 500,
   closeDepositAccumulator: true,
@@ -107,9 +137,14 @@ export interface WorkerDeps {
   now?: () => number;
   /** Picks the pump buyback fee recipient for tx C among Global.buybackFeeRecipients (default: random). */
   pickBuybackRecipient?: (candidates: readonly PublicKey[]) => PublicKey;
+  /** Metadata storage (default: local files under settings.metadata.storeDir). */
+  storage?: MetadataStorage;
 }
 
-type Step = "create" | "init" | "dev_buy" | "register" | "refund";
+type Step = "create" | "atomic" | "init" | "dev_buy" | "register" | "refund";
+
+/** How long a fetched lookup table is reused before it is read again. */
+const LOOKUP_TABLE_TTL_MS = 10 * 60_000;
 
 const describe = (err: unknown): string => {
   if (err instanceof TxError) return `${err.message} [${err.outcome}${err.signature ? ` ${err.signature}` : ""}]`;
@@ -126,6 +161,8 @@ export class LaunchWorker {
   private rentFn: RentFn | null = null;
   private lastSweep = Number.NEGATIVE_INFINITY;
   private readonly underQuoted = new Set<string>();
+  private readonly storage: MetadataStorage;
+  private table: { account: AddressLookupTableAccount; at: number } | null = null;
 
   constructor(private readonly deps: WorkerDeps) {
     this.db = deps.db;
@@ -134,6 +171,12 @@ export class LaunchWorker {
     this.log = deps.log;
     this.now = deps.now ?? Date.now;
     this.mintKey = mintSecretKey(deps.settings.masterSecret);
+    this.storage = deps.storage ?? new LocalMetadataStorage(deps.settings.metadata);
+  }
+
+  /** The flow new launches are quoted for. */
+  get mode(): LaunchMode {
+    return this.s.lookupTable ? "atomic" : "split";
   }
 
   /** One pass over every pending launch (+ the periodic sweep of finished ones). */
@@ -226,21 +269,30 @@ export class LaunchWorker {
     return row;
   }
 
-  /** What the deposit must hold: the API's quote, raised to the real cost of this launch if needed. */
-  async requiredLamports(l: LaunchRow): Promise<bigint> {
+  /** Real cost of a launch in `mode` (the same model the API quotes with). */
+  async launchCost(l: LaunchRow, mode: LaunchMode = this.mode) {
     const rent = await this.rent();
     // An invalid form is refunded once its deposit arrives, so it is quoted like a valid one.
     const nameBytes = Math.min(utf8Len((l.form.name ?? "").trim()), PUMP_MAX_NAME_BYTES);
     const symbolBytes = Math.min(utf8Len((l.form.ticker ?? "").trim()), PUMP_MAX_SYMBOL_BYTES);
-    const cost = computeLaunchCost(rent, {
-      nameBytes,
-      symbolBytes,
-      uriBytes: metadataUriLength(this.s.metadata.publicBaseUrl),
-      priority: this.s.priority,
-      devBuyLamports: l.devBuyLamports,
-      closeDepositAccumulator: this.s.closeDepositAccumulator,
-      devBuySlippageBps: this.s.devBuySlippageBps,
-    });
+    return computeLaunchCost(
+      rent,
+      launchCostOptions(
+        {
+          mode,
+          metadata: this.s.metadataLocation,
+          priority: this.s.priority,
+          devBuySlippageBps: this.s.devBuySlippageBps,
+          closeDepositAccumulator: this.s.closeDepositAccumulator,
+        },
+        { nameBytes, symbolBytes, devBuyLamports: l.devBuyLamports },
+      ),
+    );
+  }
+
+  /** What the deposit must hold: the API's quote, raised to the real cost of this launch if needed. */
+  async requiredLamports(l: LaunchRow): Promise<bigint> {
+    const cost = await this.launchCost(l);
     if (cost.requiredLamports > l.requiredLamports && !this.underQuoted.has(l.id)) {
       this.underQuoted.add(l.id);
       this.log.warn(
@@ -346,11 +398,27 @@ export class LaunchWorker {
 
     let step: Step = "create";
     try {
-      const meta = await writeMetadata(buildMetadataJson(form, this.s.metadata.siteUrl), this.s.metadata);
+      const meta = await this.storage.publish(form);
       const rent = await this.rent();
+
+      // Atomic: create + init + dev buy (+ leftover) in one transaction (nothing to snipe in between).
+      if (!(await this.chain.accountExists(coin.bondingCurve)) && this.s.lookupTable && l.attempts < this.s.atomicAttempts) {
+        step = "atomic";
+        l = (await this.atomicLaunch(l, form, coin, deposit, mint, sender, meta, rent)) ?? l;
+      }
 
       // A: pump.fun create_v2, creator = treasury PDA.
       if (!(await this.chain.accountExists(coin.bondingCurve))) {
+        // Falling back from atomic: the split flow needs a rent reserve on the deposit as well.
+        const split = await this.launchCost(l, "split");
+        const balance = await this.chain.getBalance(deposit.publicKey);
+        if (balance < split.requiredLamports) {
+          const reason = `atomic launch failed ${l.attempts} times and the deposit (${balance}) cannot cover the multi-transaction launch (${split.requiredLamports})`;
+          this.log.warn({ ...log, reason }, "launch abandoned");
+          const next = await this.transition(l, "refunding", { error: reason }, ["creating"]);
+          if (next) await this.refund(next);
+          return;
+        }
         const tx = await buildCreateTx({
           deposit: deposit.publicKey,
           mint: mint.publicKey,
@@ -395,7 +463,13 @@ export class LaunchWorker {
       let forceSig = false;
       let note: string | null = null;
       if (l.devBuyLamports > 0n) {
-        if (await this.chain.accountExists(tokenAccountOf(sender, mint.publicKey))) {
+        const depositTokens = await this.chain.getAccountInfo(tokenAccountOf(deposit.publicKey, mint.publicKey));
+        if (depositTokens && depositTokens.data.length >= 72 && depositTokens.data.readBigUInt64LE(64) > 0n) {
+          // Bought in the atomic launch transaction (its launch_sig); not delivered yet.
+          launchSig = (await getCoin(this.db, mint.publicKey.toBase58()))?.launchSig ?? launchSig;
+          await this.deliverDevBuy(l, coin, deposit, sender, rent);
+          l = (await getLaunch(this.db, l.id)) ?? l;
+        } else if (await this.chain.accountExists(tokenAccountOf(sender, mint.publicKey))) {
           // tx C already landed (its signature was recorded as launch_sig before it was sent).
           launchSig = (await getCoin(this.db, mint.publicKey.toBase58()))?.launchSig ?? launchSig;
         } else if (l.attempts >= this.s.maxAttempts) {
@@ -425,6 +499,163 @@ export class LaunchWorker {
     } catch (err) {
       await this.onCreateFailure(l, step, err, coin);
     }
+  }
+
+  private async lookupTable(): Promise<AddressLookupTableAccount> {
+    if (!this.s.lookupTable) throw new Error("no lookup table configured");
+    if (this.table && this.now() - this.table.at < LOOKUP_TABLE_TTL_MS) return this.table.account;
+    const account = await this.chain.getLookupTable(this.s.lookupTable);
+    if (!account) throw new Error(`lookup table ${this.s.lookupTable.toBase58()} not found (run: pnpm --filter @holdfast/launcher alt create)`);
+    this.table = { account, at: this.now() };
+    return account;
+  }
+
+  /**
+   * The whole launch in one v0 transaction. The deposit pays the transaction fee, pump.fun's rent and
+   * (through the reimbursement) the vault's, buys the dev tokens on the curve created a few
+   * instructions earlier, and sends exactly what is left to the sender, so it ends at 0 lamports.
+   * Every amount is computed from the state the transaction executes against; if anything is off
+   * the preflight rejects it, nothing happens, and after `atomicAttempts` the split flow takes over.
+   */
+  private async atomicLaunch(
+    l: LaunchRow,
+    form: LaunchForm,
+    coin: CoinKeys,
+    deposit: Keypair,
+    mint: Keypair,
+    sender: PublicKey,
+    meta: PublishedMetadata,
+    rent: RentFn,
+  ): Promise<LaunchRow | null> {
+    const table = await this.lookupTable();
+    const [balance, treasuryLamports, senderBalance] = await Promise.all([
+      this.chain.getBalance(deposit.publicKey),
+      this.chain.getBalance(coin.treasury),
+      this.chain.getBalance(sender),
+    ]);
+    const withDevBuy = l.devBuyLamports > 0n;
+    const fee = atomicTxFee(this.s.priority, withDevBuy);
+    const createRent = rent(pumpMintSize(utf8Len(form.name), utf8Len(form.symbol), utf8Len(meta.uri))) + rent(PUMP_BONDING_CURVE_SIZE) + rent(TOKEN_2022_ATA_SIZE);
+    const reimbursement = initReimbursement(rent, { treasuryLamports }).lamports;
+    let spent = fee + createRent + reimbursement;
+
+    let devBuy: Parameters<typeof buildAtomicLaunchTx>[0]["devBuy"] = null;
+    let quoted: { tokens: bigint; cost: bigint } | null = null;
+    if (withDevBuy) {
+      const state = freshCurveBuyState(await readPumpGlobals(this.chain), coin.treasury);
+      // The buy creates the deposit's token account and volume accumulator (both closed again on
+      // delivery); until then the deposit must stay rent-exempt, and the delivery pays its fee and the
+      // sender's token account.
+      const held = rent(TOKEN_2022_ATA_SIZE) + rent(PUMP_USER_VOLUME_ACCUMULATOR_SIZE) + rent(SYSTEM_ACCOUNT_SIZE);
+      const delivery = deliverTxFee(this.s.priority) + rent(TOKEN_2022_ATA_SIZE);
+      const budget = balance - spent - held - delivery;
+      if (budget <= 0n) throw new Error(`deposit balance ${balance} cannot cover the dev buy`);
+      const affordable = (budget * 10_000n) / BigInt(10_000 + this.s.devBuySlippageBps);
+      const spend = l.devBuyLamports < affordable ? l.devBuyLamports : affordable;
+      const quote = quoteDevBuy(state, spend, budget, this.s.devBuySlippageBps);
+      const candidates = state.global.buybackFeeRecipients.filter((k) => !k.equals(PublicKey.default));
+      if (candidates.length === 0) throw new Error("pump Global lists no buyback fee recipient");
+      const pick = this.deps.pickBuybackRecipient ?? ((c: readonly PublicKey[]) => c[Math.floor(Math.random() * c.length)]!);
+      devBuy = { tokens: quote.tokens, maxSolCost: quote.maxSolCost, bondingCurve: state.bondingCurve, buybackFeeRecipient: pick(candidates) };
+      quoted = { tokens: quote.tokens, cost: quote.cost };
+    }
+    // Without a dev buy the leftover goes back right here (the deposit ends at 0); with one, the
+    // delivery transaction refunds it.
+    const leftover = withDevBuy ? 0n : balance - spent;
+    if (leftover < 0n) throw new Error(`deposit balance ${balance} is below the launch cost ${spent}`);
+    const toTreasury = this.leftoverToTreasury(leftover, senderBalance, rent);
+    const recent = await this.chain.latestBlockhash();
+    const tx = await buildAtomicLaunchTx(
+      {
+        deposit: deposit.publicKey,
+        launcher: this.s.launcher.publicKey,
+        mint: mint.publicKey,
+        name: form.name,
+        symbol: form.symbol,
+        uri: meta.uri,
+        triggerBps: form.triggerBps,
+        reimburseLamports: reimbursement,
+        devBuy,
+        leftover: leftover > 0n ? { to: toTreasury ? coin.treasury : sender, lamports: leftover } : null,
+        recent,
+        priority: this.s.priority,
+      },
+      table,
+    );
+    const size = tx.serialize().length;
+    if (size > PACKET_DATA_SIZE) {
+      // Long metadata + dev buy can exceed one packet: launch this one with the split flow.
+      this.log.warn({ launchId: l.id, bytes: size }, "atomic launch transaction too large; using the split flow");
+      return null;
+    }
+    const signers = [deposit, mint, this.s.launcher];
+    const sig = signVersioned(tx, signers);
+    const row = await this.touch(l, { createSig: sig, ...(leftover > 0n && !toTreasury ? { refundSig: sig } : {}) });
+    await this.chain.sendAndConfirm(tx, signers, recent.lastValidBlockHeight);
+    // The dev buy happened in the launch transaction: it is the coin's launch_sig (no lots, no payouts).
+    await this.registerCoin(form, coin, deposit.publicKey, sender, meta.uri, sig, true);
+    this.log.info(
+      {
+        launchId: l.id,
+        mint: mint.publicKey.toBase58(),
+        sig,
+        bytes: size,
+        uri: meta.uri,
+        trigger: form.triggerBps,
+        devBuyTokens: quoted?.tokens.toString(),
+        devBuyCost: quoted?.cost.toString(),
+        leftover: leftover.toString(),
+        leftoverTo: toTreasury ? "treasury" : "sender",
+      },
+      "coin launched atomically",
+    );
+    return row;
+  }
+
+  /**
+   * The leftover goes back to the sender, unless the sender is an empty account it cannot make
+   * rent-exempt: then it is a donation to the coin's own treasury (booked as fees 60/30/10).
+   */
+  private leftoverToTreasury(leftover: bigint, senderBalance: bigint, rent: RentFn): boolean {
+    return leftover > 0n && senderBalance === 0n && leftover < rent(SYSTEM_ACCOUNT_SIZE);
+  }
+
+  /**
+   * Atomic flow with a dev buy: the tokens bought in the launch transaction sit on the deposit's
+   * token account. Move exactly those to the sender, close the deposit's token account and volume
+   * accumulator, and send everything left over in the same transaction (the deposit ends at 0).
+   */
+  private async deliverDevBuy(l: LaunchRow, coin: CoinKeys, deposit: Keypair, sender: PublicKey, rent: RentFn): Promise<void> {
+    const depositAta = tokenAccountOf(deposit.publicKey, coin.mint);
+    const accumulatorKey = pump.userVolumeAccumulatorPda(deposit.publicKey);
+    const [balance, ataInfo, accumulator, senderAtaExists, senderBalance] = await Promise.all([
+      this.chain.getBalance(deposit.publicKey),
+      this.chain.getAccountInfo(depositAta),
+      this.chain.getAccountInfo(accumulatorKey),
+      this.chain.accountExists(tokenAccountOf(sender, coin.mint)),
+      this.chain.getBalance(sender),
+    ]);
+    if (!ataInfo || ataInfo.data.length < 72) throw new Error("the deposit holds no dev-buy tokens to deliver");
+    const tokens = ataInfo.data.readBigUInt64LE(64);
+    const closeAccumulator = this.s.closeDepositAccumulator && accumulator !== null;
+    const leftover =
+      balance - deliverTxFee(this.s.priority) - (senderAtaExists ? 0n : rent(TOKEN_2022_ATA_SIZE)) + ataInfo.lamports + (closeAccumulator ? accumulator!.lamports : 0n);
+    if (leftover < 0n) throw new Error(`deposit balance ${balance} cannot pay the delivery`);
+    const toTreasury = this.leftoverToTreasury(leftover, senderBalance, rent);
+    const tx = await buildDeliverTx({
+      deposit: deposit.publicKey,
+      sender,
+      mint: coin.mint,
+      tokens,
+      closeAccumulator,
+      leftover: leftover > 0n ? { to: toTreasury ? coin.treasury : sender, lamports: leftover } : null,
+      recent: await this.chain.latestBlockhash(),
+      priority: this.s.priority,
+    });
+    const sig = signTransaction(tx, [deposit]);
+    await this.touch(l, leftover > 0n && !toTreasury ? { refundSig: sig } : {});
+    await this.chain.sendAndConfirm(tx, [deposit]);
+    this.log.info({ launchId: l.id, mint: coin.mint.toBase58(), sig, tokens: tokens.toString(), leftover: leftover.toString() }, "dev buy delivered");
   }
 
   private async devBuy(

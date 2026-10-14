@@ -4,8 +4,7 @@ import { connectDb, migrate } from "@holdfast/db";
 
 import { verifyLauncherAuthority } from "./authority.js";
 import { loadConfig, redactUrl } from "./config.js";
-import { computeLaunchCost, formatSol } from "@holdfast/chain";
-import { metadataUriLength } from "./metadata.js";
+import { formatSol } from "@holdfast/chain";
 import { Web3LaunchChain } from "./web3Chain.js";
 import { LaunchWorker } from "./worker.js";
 
@@ -27,17 +26,23 @@ if (!authority.ok) {
   process.exit(1);
 }
 
-const worker = new LaunchWorker({ db, chain, settings, log });
-const cost = computeLaunchCost(await worker.rent(), {
-  uriBytes: metadataUriLength(settings.metadata.publicBaseUrl),
-  priority: settings.priority,
-});
+if (settings.lookupTable && !(await chain.getLookupTable(settings.lookupTable))) {
+  log.fatal({ lookupTable: settings.lookupTable.toBase58() }, "LAUNCHER_LOOKUP_TABLE does not exist (pnpm --filter @holdfast/launcher alt create)");
+  await db.close();
+  process.exit(1);
+}
+
+const worker = new LaunchWorker({ db, chain, settings, log, storage: config.storage });
+// A typical launch (12-byte name, 5-byte ticker, no dev buy).
+const cost = await worker.launchCost({ form: { name: "x".repeat(12), ticker: "x".repeat(5) }, devBuyLamports: 0n } as Parameters<typeof worker.launchCost>[0]);
 log.info(
   {
     rpc: redactUrl(config.rpcUrl),
     program: config.holdfastProgramId,
     launcher: settings.launcher.publicKey.toBase58(),
     metadataBase: settings.metadata.publicBaseUrl,
+    metadataStorage: config.storage.kind,
+    mode: worker.mode,
     launchCostSol: formatSol(cost.consumed),
     requiredSol: formatSol(cost.launchFee),
   },

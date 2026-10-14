@@ -18,7 +18,8 @@
     "test": "vitest run",
     "start": "tsx src/main.ts",
     "dev": "tsx watch src/main.ts",
-    "cost": "tsx src/cli/cost.ts"
+    "cost": "tsx src/cli/cost.ts",
+    "alt": "tsx src/cli/alt.ts"
   },
   "dependencies": {
     "@holdfast/chain": "workspace:*",

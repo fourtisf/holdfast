@@ -1,5 +1,14 @@
 /** `LaunchChain` over a web3.js `Connection` (SOLANA_RPC_URL). */
-import { Connection, SendTransactionError, type Commitment, type PublicKey, type Signer, type Transaction } from "@solana/web3.js";
+import {
+  Connection,
+  SendTransactionError,
+  VersionedTransaction,
+  type AddressLookupTableAccount,
+  type Commitment,
+  type PublicKey,
+  type Signer,
+  type Transaction,
+} from "@solana/web3.js";
 import bs58 from "bs58";
 
 import { TxError, type AccountSnapshot, type FundingInfo, type LaunchChain, type RecentBlockhash } from "./chain.js";
@@ -73,6 +82,10 @@ export class Web3LaunchChain implements LaunchChain {
     return this.connection.getLatestBlockhash(this.commitment);
   }
 
+  async getLookupTable(address: PublicKey): Promise<AddressLookupTableAccount | null> {
+    return (await this.connection.getAddressLookupTable(address, { commitment: this.commitment })).value;
+  }
+
   async findFundingSender(address: PublicKey): Promise<FundingInfo | null> {
     const sigs = await this.connection.getSignaturesForAddress(address, { limit: this.signatureLimit }, "confirmed");
     const target = address.toBase58();
@@ -85,12 +98,25 @@ export class Web3LaunchChain implements LaunchChain {
     return pickFunding(transfers);
   }
 
-  async sendAndConfirm(tx: Transaction, signers: Signer[]): Promise<string> {
-    if (!tx.recentBlockhash || tx.lastValidBlockHeight === undefined) throw new Error("transaction needs a recent blockhash and lastValidBlockHeight");
-    tx.sign(...signers);
-    const signature = bs58.encode(tx.signature!);
-    const raw = tx.serialize();
-    const lastValid = tx.lastValidBlockHeight;
+  sendAndConfirm(tx: Transaction, signers: Signer[]): Promise<string>;
+  sendAndConfirm(tx: VersionedTransaction, signers: Signer[], lastValidBlockHeight: number): Promise<string>;
+  async sendAndConfirm(tx: Transaction | VersionedTransaction, signers: Signer[], lastValidBlockHeight?: number): Promise<string> {
+    let signature: string;
+    let raw: Uint8Array;
+    let lastValid: number;
+    if (tx instanceof VersionedTransaction) {
+      if (lastValidBlockHeight === undefined) throw new Error("v0 transactions need lastValidBlockHeight");
+      tx.sign(signers);
+      signature = bs58.encode(tx.signatures[0]!);
+      raw = tx.serialize();
+      lastValid = lastValidBlockHeight;
+    } else {
+      if (!tx.recentBlockhash || tx.lastValidBlockHeight === undefined) throw new Error("transaction needs a recent blockhash and lastValidBlockHeight");
+      tx.sign(...signers);
+      signature = bs58.encode(tx.signature!);
+      raw = tx.serialize();
+      lastValid = tx.lastValidBlockHeight;
+    }
 
     try {
       await this.connection.sendRawTransaction(raw, { skipPreflight: false, preflightCommitment: this.commitment, maxRetries: 0 });

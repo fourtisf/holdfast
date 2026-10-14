@@ -1,11 +1,11 @@
 /** Environment configuration (root .env.example). Secrets are loaded here and never logged. */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Keypair } from "@solana/web3.js";
-import { HOLDFAST_PROGRAM_ID, parseMasterSecret } from "@holdfast/chain";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import { HOLDFAST_PROGRAM_ID, launchPlanFromEnv, parseMasterSecret } from "@holdfast/chain";
 
-import { DEFAULT_COMPUTE_UNITS } from "@holdfast/chain";
 import { assertUriFits, normalizeBaseUrl } from "./metadata.js";
+import { LocalMetadataStorage, PinataMetadataStorage, type MetadataStorage } from "./storage.js";
 import { DEFAULT_SETTINGS, type LauncherSettings } from "./worker.js";
 
 export interface LauncherConfig {
@@ -16,6 +16,7 @@ export interface LauncherConfig {
   migrate: boolean;
   logLevel: string;
   settings: LauncherSettings;
+  storage: MetadataStorage;
 }
 
 function bool(v: string | undefined, fallback: boolean): boolean {
@@ -59,23 +60,40 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read?: (path: s
   const publicBaseUrl = normalizeBaseUrl(env.PUBLIC_METADATA_BASE_URL ?? "http://localhost:4000/metadata");
   assertUriFits(publicBaseUrl);
   const siteUrl = (env.PUBLIC_SITE_URL ?? new URL(publicBaseUrl).origin).replace(/\/+$/, "");
+  // Same parser as the API's quotes, so the launcher waits for exactly what users were asked to send.
+  const plan = launchPlanFromEnv(env, { publicMetadataBaseUrl: publicBaseUrl });
+  let lookupTable: PublicKey | null = null;
+  if (env.LAUNCHER_LOOKUP_TABLE) {
+    try {
+      lookupTable = new PublicKey(env.LAUNCHER_LOOKUP_TABLE);
+    } catch {
+      throw new Error("LAUNCHER_LOOKUP_TABLE is not a valid address");
+    }
+  }
 
   const settings: LauncherSettings = {
     ...DEFAULT_SETTINGS,
     masterSecret: parseMasterSecret(env.DEPOSIT_MASTER_SECRET),
     launcher: loadKeypair(env.LAUNCHER_KEYPAIR, read),
     metadata: { storeDir: resolve(store), publicBaseUrl, siteUrl },
-    priority: {
-      microLamports: BigInt(int("LAUNCHER_PRIORITY_FEE_MICROLAMPORTS", env.LAUNCHER_PRIORITY_FEE_MICROLAMPORTS, Number(DEFAULT_SETTINGS.priority.microLamports))),
-      units: DEFAULT_COMPUTE_UNITS,
-    },
-    devBuySlippageBps: int("LAUNCHER_DEV_BUY_SLIPPAGE_BPS", env.LAUNCHER_DEV_BUY_SLIPPAGE_BPS, DEFAULT_SETTINGS.devBuySlippageBps),
-    closeDepositAccumulator: bool(env.LAUNCHER_CLOSE_DEPOSIT_ACCUMULATOR, DEFAULT_SETTINGS.closeDepositAccumulator),
+    metadataLocation: plan.metadata,
+    lookupTable,
+    atomicAttempts: int("LAUNCHER_ATOMIC_ATTEMPTS", env.LAUNCHER_ATOMIC_ATTEMPTS, DEFAULT_SETTINGS.atomicAttempts),
+    priority: plan.priority,
+    devBuySlippageBps: plan.devBuySlippageBps,
+    closeDepositAccumulator: plan.closeDepositAccumulator,
     maxAttempts: int("LAUNCHER_MAX_ATTEMPTS", env.LAUNCHER_MAX_ATTEMPTS, DEFAULT_SETTINGS.maxAttempts, 1),
     retryBaseMs: int("LAUNCHER_RETRY_BASE_MS", env.LAUNCHER_RETRY_BASE_MS, DEFAULT_SETTINGS.retryBaseMs),
     inFlightGuardMs: int("LAUNCHER_IN_FLIGHT_GUARD_MS", env.LAUNCHER_IN_FLIGHT_GUARD_MS, DEFAULT_SETTINGS.inFlightGuardMs),
   };
-  if (settings.devBuySlippageBps > 5_000) throw new Error("LAUNCHER_DEV_BUY_SLIPPAGE_BPS must be ≤ 5000");
+
+  let storage: MetadataStorage;
+  if (plan.metadata.kind === "pinata") {
+    if (!env.PINATA_JWT) throw new Error("METADATA_STORAGE=pinata needs PINATA_JWT");
+    storage = new PinataMetadataStorage(settings.metadata, { jwt: env.PINATA_JWT, gatewayUrl: plan.metadata.gatewayUrl });
+  } else {
+    storage = new LocalMetadataStorage(settings.metadata);
+  }
 
   return {
     databaseUrl,
@@ -85,6 +103,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read?: (path: s
     migrate: bool(env.LAUNCHER_MIGRATE, true),
     logLevel: env.LOG_LEVEL ?? "info",
     settings,
+    storage,
   };
 }
 
