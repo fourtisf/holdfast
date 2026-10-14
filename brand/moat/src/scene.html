@@ -1,0 +1,78 @@
+<!doctype html><html><head><style>html,body{margin:0;background:transparent}</style>
+<script type="importmap">{"imports":{"three":"/package/build/three.module.js","three/addons/":"/package/examples/jsm/"}}</script></head>
+<body><script type="module">
+import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+const q = new URLSearchParams(location.search);
+const variant = q.get("v") || "coin";
+const S = Number(q.get("size") || 1400);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setSize(S, S);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.03).texture;
+scene.environmentIntensity = 1.15;
+
+const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
+camera.position.set(0, 0, 7.4);
+
+const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(-3, 4, 5); scene.add(key);
+const rim = new THREE.DirectionalLight(0x4dffb0, 3.2); rim.position.set(4, -1, -3); scene.add(rim);
+const warm = new THREE.DirectionalLight(0xffd9a0, 1.6); warm.position.set(3, 3, 2); scene.add(warm);
+const spot = new THREE.SpotLight(0xfff1d6, 22, 0, 0.5, 0.6); spot.position.set(-1.5, 2.5, 6); scene.add(spot);
+
+const goldSatin = new THREE.MeshPhysicalMaterial({ color: 0xd9a944, metalness: 1, roughness: 0.42, clearcoat: 0.3, clearcoatRoughness: 0.4 });
+const goldMirror = new THREE.MeshPhysicalMaterial({ color: 0xf3c866, metalness: 1, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08 });
+const goldRing = new THREE.MeshPhysicalMaterial({ color: 0xe9bf62, metalness: 1, roughness: 0.14, clearcoat: 1, clearcoatRoughness: 0.05 });
+const emerald = new THREE.MeshPhysicalMaterial({ color: 0x047a4b, metalness: 0.55, roughness: 0.09, clearcoat: 1, clearcoatRoughness: 0.03, iridescence: 0.15 });
+const obsidian = new THREE.MeshPhysicalMaterial({ color: 0x07080a, metalness: 0.55, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05 });
+
+// Castle M: two pillars ending in battlements with an even merlon / crenel / merlon rhythm
+function castleM() {
+  const w = 0.11, top = 0.45, nd = 0.11;
+  const p = [[-0.56,-0.45],[-0.56,top],[-0.56+w,top],[-0.56+w,top-nd],[-0.56+2*w,top-nd],[-0.56+2*w,top],[-0.23,top],[0,0.06],
+             [0.23,top],[0.56-2*w,top],[0.56-2*w,top-nd],[0.56-w,top-nd],[0.56-w,top],[0.56,top],[0.56,-0.45],[0.23,-0.45],[0.23,-0.02],[0,-0.36],[-0.23,-0.02],[-0.23,-0.45]];
+  const s = new THREE.Shape(); s.moveTo(...p[0]); for (const v of p.slice(1)) s.lineTo(...v); s.closePath(); return s;
+}
+
+function coin(mat) {
+  const prof = [[0,0.055],[0.79,0.055],[0.84,0.105],[0.95,0.105],[0.985,0.09],[1,0.06],[1,-0.06],[0.985,-0.09],[0.95,-0.105],[0.84,-0.105],[0.79,-0.055],[0,-0.055]].map(([x,y]) => new THREE.Vector2(x, y));
+  const g = new THREE.LatheGeometry(prof, 180); g.rotateX(Math.PI / 2);
+  return new THREE.Mesh(g, mat);
+}
+function emblem(mat) {
+  const e = new THREE.ExtrudeGeometry(castleM(), { depth: 0.05, bevelEnabled: true, bevelThickness: 0.026, bevelSize: 0.02, bevelSegments: 6 });
+  const m = new THREE.Mesh(e, mat); m.position.z = 0.035; return m;
+}
+
+const group = new THREE.Group();
+scene.add(group);
+const tilt = variant.startsWith("token") ? [-0.1, 0.12, 0] : [-0.3, 0.34, 0.02];
+const scale = variant.startsWith("token") ? 1.12 : 1.02;
+
+if (variant.endsWith("gold-emerald")) {
+  group.add(coin(goldSatin), emblem(goldMirror), new THREE.Mesh(new THREE.TorusGeometry(1.32, 0.095, 64, 260), emerald));
+} else if (variant.endsWith("obsidian-gold")) {
+  group.add(coin(obsidian), emblem(goldMirror), new THREE.Mesh(new THREE.TorusGeometry(1.32, 0.075, 64, 260), goldRing));
+} else if (variant.endsWith("emerald-gold")) {
+  group.add(coin(emerald), emblem(goldMirror), new THREE.Mesh(new THREE.TorusGeometry(1.32, 0.075, 64, 260), goldRing));
+} else if (variant === "monogram") {
+  const g = new THREE.ExtrudeGeometry(castleM(), { depth: 0.22, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.022, bevelSegments: 6 });
+  g.center();
+  group.add(new THREE.Mesh(g, [obsidian, goldRing]));
+}
+group.rotation.set(...(variant === "monogram" ? [-0.26, 0.4, 0] : tilt));
+group.scale.setScalar(variant === "monogram" ? 2.25 : scale);
+
+renderer.render(scene, camera);
+window.__png = renderer.domElement.toDataURL("image/png");
+document.title = "done";
+</script></body></html>
