@@ -303,6 +303,8 @@ export interface LaunchQuote {
   /** SPEC §2 target (0.015 SOL) and whether the real cost is above it. */
   specFeeSol: number;
   exceedsSpecFee: boolean;
+  /** True while the operator keeps launches closed (LAUNCHES_PAUSED): POST /launch is refused. */
+  launchesPaused?: boolean;
 }
 
 export interface LaunchResponse {

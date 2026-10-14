@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 # First-time setup on a server, run from the repository root:
-#   bash deploy/init.sh moatpad.fun            # API on api.moatpad.fun
-#   bash deploy/init.sh moatpad.fun api.example.com
+#   bash deploy/init.sh moatpad.fun                 # devnet
+#   bash deploy/init.sh moatpad.fun mainnet-beta    # mainnet (set a paid RPC in .env afterwards)
 #
-# Writes .env from .env.example with production URLs and fresh secrets, and creates the keeper and
-# launcher keypairs in keys/. Both steps skip what already exists, so re-running is safe. Back up .env
-# and keys/ off the server: DEPOSIT_MASTER_SECRET derives every launch deposit address.
+# Writes .env from .env.example with production URLs (the API is served at https://<site>/api) and
+# fresh secrets, and creates the keeper and launcher keypairs in keys/. Both steps skip what already
+# exists, so re-running is safe. Launches start paused (LAUNCHES_PAUSED=true) until the on-chain services
+# run. Back up .env and keys/ off the server: DEPOSIT_MASTER_SECRET derives every launch deposit address.
 set -euo pipefail
 
-SITE="${1:?usage: bash deploy/init.sh <site-domain> [api-domain]}"
-API="${2:-api.$SITE}"
+SITE="${1:?usage: bash deploy/init.sh <site-domain> [devnet|mainnet-beta]}"
+CLUSTER="${2:-devnet}"
 ENV_FILE=.env
 NODE_IMAGE=node:22-bookworm-slim
 
 [ -f .env.example ] && [ -f deploy/docker-compose.prod.yml ] || { echo "run this from the repository root" >&2; exit 1; }
+case "$CLUSTER" in
+  devnet) RPC=https://api.devnet.solana.com; WS=wss://api.devnet.solana.com ;;
+  mainnet-beta) RPC=https://api.mainnet-beta.solana.com; WS=wss://api.mainnet-beta.solana.com ;;
+  *) echo "cluster must be devnet or mainnet-beta" >&2; exit 1 ;;
+esac
 
 set_var() {
   if grep -q "^$1=" "$ENV_FILE"; then
@@ -32,20 +38,25 @@ else
   printf '\n# ---- deployment (deploy/init.sh) ------------------------------------------\n' >> "$ENV_FILE"
   set_var COMPOSE_FILE "docker-compose.yml:deploy/docker-compose.prod.yml"
   set_var SITE_DOMAIN "$SITE"
-  set_var API_DOMAIN "$API"
   set_var POSTGRES_PASSWORD "$pg_password"
   set_var DATABASE_URL "postgres://holdfast:$pg_password@postgres:5432/holdfast"
   set_var DEPOSIT_MASTER_SECRET "$(openssl rand -hex 32)"
   set_var ADMIN_TOKEN "$(openssl rand -hex 24)"
   set_var REPORT_SALT "$(openssl rand -hex 16)"
-  set_var PUBLIC_METADATA_BASE_URL "https://$API/metadata"
+  set_var LAUNCHES_PAUSED true
+  set_var SOLANA_CLUSTER "$CLUSTER"
+  set_var SOLANA_RPC_URL "$RPC"
+  set_var SOLANA_WS_URL "$WS"
+  set_var NEXT_PUBLIC_SOLANA_CLUSTER "$CLUSTER"
+  set_var NEXT_PUBLIC_SOLANA_RPC_URL "$RPC"
+  set_var PUBLIC_METADATA_BASE_URL "https://$SITE/api/metadata"
   set_var PUBLIC_SITE_URL "https://$SITE"
   set_var CORS_ORIGIN "https://$SITE"
   set_var WEB_URL "https://$SITE"
-  set_var NEXT_PUBLIC_API_URL "https://$API"
-  set_var NEXT_PUBLIC_WS_URL "wss://$API/ws"
+  set_var NEXT_PUBLIC_API_URL "https://$SITE/api"
+  set_var NEXT_PUBLIC_WS_URL "wss://$SITE/api/ws"
   set_var NEXT_PUBLIC_SITE_URL "https://$SITE"
-  echo "wrote .env for https://$SITE (API https://$API, cluster: devnet)"
+  echo "wrote .env for https://$SITE (cluster: $CLUSTER, launches paused)"
 fi
 
 # The services run as the image's `node` user (uid 1000) and mount keys/ read-only.
@@ -74,11 +85,11 @@ fi
 cat <<NEXT
 
 Next:
-  1. DNS: A records for $SITE, www.$SITE and $API pointing at this server.
+  1. DNS: A records for $SITE and www.$SITE pointing at this server.
   2. docker compose up -d --build postgres migrate api indexer web caddy
-  3. Open https://$SITE and https://$API/healthz
+  3. Open https://$SITE and https://$SITE/api/healthz
 Keeper address:   $(cat keys/keeper.address 2>/dev/null || echo "?")
 Launcher address: ${launcher:-?}
 The keeper, payout, launcher and notifier services need the program deployed and initialized with these
-two addresses first (docs/runbook.md, section 1).
+two addresses first (docs/runbook.md, section 1). Then set LAUNCHES_PAUSED=false and restart the api.
 NEXT

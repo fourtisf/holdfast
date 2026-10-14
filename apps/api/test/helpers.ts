@@ -30,6 +30,7 @@ export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     statsIntervalMs: 0,
     wsHeartbeatMs: 30_000,
     launchTtlMs: 30 * 60_000,
+    launchesPaused: false,
     launchPlan: launchPlanFromEnv({}, { publicMetadataBaseUrl: "http://localhost:4000/metadata" }),
     depositMasterSecret: null,
     trade: { computeUnitPriceMicroLamports: 50_000, computeUnitLimitCurve: 250_000, computeUnitLimitAmm: 300_000 },

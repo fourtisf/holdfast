@@ -8,6 +8,13 @@ export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "1";
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4000/ws";
 export const SOLANA_CLUSTER: Cluster = parseCluster(process.env.NEXT_PUBLIC_SOLANA_CLUSTER);
+export const CLUSTER_LABEL = SOLANA_CLUSTER === "mainnet-beta" ? "mainnet" : SOLANA_CLUSTER;
+
+/** Official X account, linked from the nav, the announcement bar and the sidebar. */
+export const X_URL = process.env.NEXT_PUBLIC_X_URL || "https://x.com/moatpad";
+export const X_HANDLE = `@${X_URL.replace(/\/+$/, "").split("/").pop() || "moatpad"}`;
+/** $MOAT contract address; empty shows "Coming soon". */
+export const MOAT_CA = (process.env.NEXT_PUBLIC_MOAT_CA ?? "").trim();
 
 const DEFAULT_RPC: Record<Cluster, string> = {
   devnet: "https://api.devnet.solana.com",

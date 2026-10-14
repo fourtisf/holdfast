@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useHowItWorks } from "@/components/how-it-works/HowItWorksProvider";
 import { cn } from "@/components/ui/cn";
-import { BookIcon } from "@/components/ui/icons";
-import { USE_MOCKS } from "@/lib/config";
+import { BookIcon, XLogoIcon } from "@/components/ui/icons";
+import { USE_MOCKS, X_HANDLE, X_URL } from "@/lib/config";
 import { CurrencyToggle } from "@/lib/currency";
 import { Logo } from "./Logo";
 import { PayoutCountdownPill } from "./PayoutCountdown";
@@ -54,6 +54,16 @@ export function TopNav() {
         <div className="ml-auto flex items-center gap-2">
           <PayoutCountdownPill className="lg:hidden" />
           <CurrencyToggle className="hidden sm:inline-flex" />
+          <a
+            href={X_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Moatpad on X (${X_HANDLE})`}
+            title={`Moatpad on X (${X_HANDLE})`}
+            className="hidden size-[38px] items-center justify-center rounded-control border border-line-strong text-fg transition-colors hover:bg-surface-2 hover:text-brand sm:inline-flex"
+          >
+            <XLogoIcon size={15} />
+          </a>
           <button
             type="button"
             onClick={how.open}

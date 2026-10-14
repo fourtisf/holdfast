@@ -9,6 +9,7 @@ import { ErrorNote } from "@/components/ui/States";
 import { cn } from "@/components/ui/cn";
 import { GlobeIcon, InfoIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
 import { api, errorMessage } from "@/lib/api";
+import { X_HANDLE, X_URL } from "@/lib/config";
 import { formatSolExact, formatSolAmount } from "@/lib/format";
 import {
   DESCRIPTION_MAX,
@@ -103,13 +104,14 @@ export function CreateView() {
   const { data: quote } = useLaunchQuote(devBuySol);
   const total = requiredDepositSol(devBuySol, quote);
   const devBuyExtra = quote && devBuySol > 0 ? quote.devBuyExtraSol : 0;
+  const paused = quote?.launchesPaused === true;
   const set = <K extends keyof LaunchForm>(key: K, value: LaunchForm[K]) => setForm((f) => ({ ...f, [key]: value }));
   const border = (key: keyof LaunchForm) => (shown[key] ? "border-sell/60" : "border-line-strong");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (Object.keys(errors).length > 0 || uploading) return;
+    if (paused || Object.keys(errors).length > 0 || uploading) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -137,6 +139,18 @@ export function CreateView() {
           No wallet connection. Send {quote ? "" : "≈"}{formatSolExact(launchFeeSol(quote))} SOL to a one-time address and your coin goes live on pump.fun with its own floor vault.
         </p>
       </div>
+
+      {paused ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-brand/30 bg-brand/8 px-4 py-3 text-sm">
+          <span className="text-fg">
+            <b>Launches open soon.</b> <span className="text-muted">Prepare your coin here; the launch button unlocks on launch day.</span>
+          </span>
+          <a href={X_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-brand hover:text-brand-light">
+            <XLogoIcon size={13} />
+            Follow {X_HANDLE} for the date
+          </a>
+        </div>
+      ) : null}
 
       {launch && !modalOpen ? (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-brand/30 bg-brand/8 px-4 py-3 text-sm">
@@ -328,8 +342,14 @@ export function CreateView() {
             <p className="mt-2 text-xs text-faint">Anything above the total is refunded to the sender. Creator fees go to the coin&apos;s vault: 0% to you.</p>
             {submitError ? <ErrorNote className="mt-3">{submitError}</ErrorNote> : null}
             {touched && Object.keys(errors).length > 0 ? <p className="mt-3 text-xs text-sell">Fix the highlighted fields to continue.</p> : null}
-            <Button type="submit" size="lg" className="mt-3 w-full" disabled={submitting || uploading}>
-              {submitting ? "Creating deposit address…" : uploading ? "Waiting for image upload…" : `Launch · send ${formatSolExact(total)} SOL`}
+            <Button type="submit" size="lg" className="mt-3 w-full" disabled={paused || submitting || uploading}>
+              {paused
+                ? "Launches open soon"
+                : submitting
+                  ? "Creating deposit address…"
+                  : uploading
+                    ? "Waiting for image upload…"
+                    : `Launch · send ${formatSolExact(total)} SOL`}
             </Button>
           </Card>
         </div>

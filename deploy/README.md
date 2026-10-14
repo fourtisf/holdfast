@@ -1,19 +1,20 @@
 # Deploying on one server
 
-Runs the whole stack from `docker-compose.yml` on a single Ubuntu server, behind Caddy for HTTPS:
+Runs the whole stack from `docker-compose.yml` on a single Ubuntu server, behind Caddy for HTTPS, on one
+domain:
 
 | URL | Goes to |
 |---|---|
 | `https://<SITE_DOMAIN>` | web (Next.js) |
 | `https://www.<SITE_DOMAIN>` | redirect to the site |
-| `https://<API_DOMAIN>` | api: REST, `/ws`, `/metadata` (`/metrics` is blocked) |
-| `https://<API_DOMAIN>/webhooks/helius` | indexer (Helius raw webhooks) |
+| `https://<SITE_DOMAIN>/api/...` | api: REST, `/api/ws`, `/api/metadata` (prefix stripped; `/api/metrics` is blocked) |
+| `https://<SITE_DOMAIN>/webhooks/helius` | indexer (Helius raw webhooks) |
 
 Only Caddy publishes ports (80 and 443); the other services are reachable inside the compose network only.
 
 ## First deployment
 
-DNS first: A records for `@`, `www` and `api` pointing at the server. Caddy requests the certificates on its
+DNS first: A records for `@` and `www` pointing at the server. Caddy requests the certificates on its
 first start and retries until the records resolve.
 
 ```bash
@@ -24,7 +25,7 @@ ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443 && ufw --force enable
 
 git clone https://github.com/fourtisf/holdfast.git /opt/moatpad
 cd /opt/moatpad
-bash deploy/init.sh moatpad.fun          # .env with fresh secrets + keeper/launcher keypairs
+bash deploy/init.sh moatpad.fun mainnet-beta   # .env with fresh secrets + keeper/launcher keypairs
 docker compose up -d --build postgres migrate api indexer web caddy
 ```
 
@@ -34,7 +35,13 @@ docker compose up -d --build postgres migrate api indexer web caddy
 either. Copy `.env` and `keys/` somewhere safe off the server: `DEPOSIT_MASTER_SECRET` derives every launch
 deposit address.
 
-The cluster stays devnet until you change `SOLANA_*` and `NEXT_PUBLIC_SOLANA_*` in `.env` (then rebuild web).
+The second argument picks the cluster (`devnet` by default). On mainnet, replace the public RPC in `SOLANA_RPC_URL`,
+`SOLANA_WS_URL` and `NEXT_PUBLIC_SOLANA_RPC_URL` with a paid endpoint (Helius, Triton, QuickNode): the public one is
+rate limited. `NEXT_PUBLIC_*` changes need a web rebuild.
+
+Launches start paused (`LAUNCHES_PAUSED=true`): the API hands out no deposit addresses and the create page shows
+"Launches open soon". `NEXT_PUBLIC_MOAT_CA` fills the $MOAT contract address in the announcement bar ("Coming soon"
+while empty); `NEXT_PUBLIC_X_URL` overrides the X link (default https://x.com/moatpad).
 
 ## The on-chain services
 
@@ -46,7 +53,7 @@ launcher addresses that `init.sh` printed (`keys/*.address`), plus `TELEGRAM_BOT
 docker compose up -d keeper payout launcher notifier
 ```
 
-Do not announce the site before this: until the launcher runs, launch deposits are not processed.
+Then open launches: set `LAUNCHES_PAUSED=false` in `.env` and `docker compose up -d api`.
 
 ## Updating and operating
 

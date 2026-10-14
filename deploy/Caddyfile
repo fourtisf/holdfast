@@ -1,29 +1,26 @@
-# Caddy: automatic HTTPS (Let's Encrypt) in front of the web app and the API. The domains come from
-# .env (SITE_DOMAIN, API_DOMAIN); each needs a DNS A record pointing at this server before Caddy can
-# get its certificate.
+# Caddy: automatic HTTPS (Let's Encrypt) in front of the whole stack on one domain, so only the
+# site's own DNS records are needed. SITE_DOMAIN comes from .env.
+#   https://<site>/            web
+#   https://<site>/api/...     api (REST, /api/ws WebSocket, /api/metadata), prefix stripped
+#   https://<site>/webhooks/   indexer (Helius raw webhooks: /webhooks/helius)
 
 {$SITE_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy web:3000
+
+	handle_path /api/* {
+		# Prometheus metrics stay private: scrape them inside the compose network (api:4000/metrics).
+		@metrics path /metrics
+		respond @metrics 404
+		reverse_proxy api:4000
+	}
+	handle /webhooks/* {
+		reverse_proxy indexer:4100
+	}
+	handle {
+		reverse_proxy web:3000
+	}
 }
 
 www.{$SITE_DOMAIN} {
 	redir https://{$SITE_DOMAIN}{uri} permanent
-}
-
-{$API_DOMAIN} {
-	encode zstd gzip
-
-	# Prometheus metrics stay private: scrape them inside the compose network (api:4000/metrics).
-	handle /metrics {
-		respond 404
-	}
-	# Helius raw-transaction webhooks: https://{$API_DOMAIN}/webhooks/helius
-	handle /webhooks/* {
-		reverse_proxy indexer:4100
-	}
-	# REST, the /ws WebSocket and uploaded metadata
-	handle {
-		reverse_proxy api:4000
-	}
 }

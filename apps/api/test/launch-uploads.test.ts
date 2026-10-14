@@ -90,6 +90,19 @@ describe("POST /launch", () => {
     expect((await api.app.inject({ method: "GET", url: "/launch/6f1c5c34-8a32-4bb1-9d0e-6a7a0f8b2a11" })).statusCode).toBe(404);
   });
 
+  it("refuses launches while they are paused, and says so in the quote", async () => {
+    const paused = await makeApi(db, { launchesPaused: true });
+    try {
+      const res = await paused.app.inject({ method: "POST", url: "/launch", payload: valid });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({ error: "Launches are not open yet" });
+      expect((await paused.app.inject({ method: "GET", url: "/launch/quote" })).json<LaunchQuote>().launchesPaused).toBe(true);
+      expect((await api.app.inject({ method: "GET", url: "/launch/quote" })).json<LaunchQuote>().launchesPaused).toBe(false);
+    } finally {
+      await paused.app.close();
+    }
+  });
+
   it.each([
     [{ ...valid, name: "x".repeat(33) }, "name"],
     [{ ...valid, ticker: "TOOLONGTICKER" }, "ticker"],

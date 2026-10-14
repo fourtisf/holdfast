@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
+import { AnnouncementBar } from "@/components/layout/AnnouncementBar";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopNav } from "@/components/layout/TopNav";
@@ -31,6 +32,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable} ${cinzel.variable}`}>
       <body className="font-sans antialiased">
         <AppProviders>
+          <AnnouncementBar />
           <TopNav />
           <div className="mx-auto flex max-w-[1600px]">
             <Sidebar />

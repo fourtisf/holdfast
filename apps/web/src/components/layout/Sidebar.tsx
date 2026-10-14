@@ -6,8 +6,8 @@ import { formatSolAmount } from "@/lib/format";
 import { WeightRamp } from "@/components/coin/WeightRamp";
 import { useHowItWorks } from "@/components/how-it-works/HowItWorksProvider";
 import { ButtonLink } from "@/components/ui/Button";
-import { ChevronRightIcon, RocketIcon } from "@/components/ui/icons";
-import { SOLANA_CLUSTER } from "@/lib/config";
+import { ChevronRightIcon, RocketIcon, XLogoIcon } from "@/components/ui/icons";
+import { CLUSTER_LABEL, X_HANDLE, X_URL } from "@/lib/config";
 import { PayoutCountdownCard } from "./PayoutCountdown";
 
 export function Sidebar() {
@@ -44,7 +44,13 @@ export function Sidebar() {
         <LaunchLabel />
       </ButtonLink>
 
-      <div className="mt-auto pt-2 text-[11px] text-faint">Solana {SOLANA_CLUSTER} · pump.fun launchpad</div>
+      <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-[11px] text-faint">
+        <span>Solana {CLUSTER_LABEL} · pump.fun</span>
+        <a href={X_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted transition-colors hover:text-brand" aria-label={`Moatpad on X (${X_HANDLE})`}>
+          <XLogoIcon size={11} />
+          {X_HANDLE}
+        </a>
+      </div>
     </aside>
   );
 }

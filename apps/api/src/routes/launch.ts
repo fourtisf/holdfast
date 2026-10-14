@@ -9,6 +9,8 @@ import { launchCostSettings } from "../launch/settings.js";
 
 export function launchRoutes(app: FastifyInstance, ctx: ApiContext): void {
   app.post("/launch", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req) => {
+    // No deposit address while launches are closed: nothing would process the deposit.
+    if (ctx.config.launchesPaused) throw new HttpError(503, "Launches are not open yet");
     const launch = parseLaunchRequest(req.body);
     // Blocked terms never reach the chain; reserved names are accepted and flagged by the launcher.
     const verdict = moderateLaunchText(launch, ctx.config.moderation.lists);
@@ -25,7 +27,7 @@ export function launchRoutes(app: FastifyInstance, ctx: ApiContext): void {
         ticker: z.string().max(16).optional(),
       })
       .parse(req.query);
-    return toLaunchQuote(launchCost(launchCostSettings(ctx.config), q));
+    return { ...toLaunchQuote(launchCost(launchCostSettings(ctx.config), q)), launchesPaused: ctx.config.launchesPaused };
   });
 
   app.get("/launch/:id", async (req) => {
