@@ -30,3 +30,6 @@ apps/web/screenshots/
 
 # agent worktrees
 .claude/worktrees/
+
+*.html.generated
+brand/3d/src/header-*.html

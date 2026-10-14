@@ -18,7 +18,8 @@ tracked capitals, outlined to paths. Domain: **moatpad.fun**. Token: **$MOAT**.
 | `moatpad-mark-small.svg` / `moatpad-favicon.svg` | Simplified coin for ≤ 32 px; the favicon sits on an obsidian tile (`apps/web/src/app/icon.svg`) |
 | `moatpad-wordmark.svg` / `moatpad-wordmark-on-light.svg` | Wordmark alone |
 | `3d/renders/` | Real 3D renders (three.js, physically based materials): `coin-*` tilted, `token-*` near front-on, `monogram` the castle M alone, in all three finishes |
-| `png/` | App icon 1024/512, apple-touch-icon 180, avatar 1000/400 (3D), coin 3D, mark 1024, logos on dark / light / transparent, stacked logo, X header 1500×500, brand board |
+| `png/moatpad-x-header-*` | **Premium X header**: 3D coin over a glossy floor with gold dust; `full` (with the fee split) and `minimal`, at 1500×500 and 3000×1000 |
+| `png/` (others) | App icon 1024/512, apple-touch-icon 180, avatar 1000/400 (3D), coin 3D, mark 1024, logos on dark / light / transparent, stacked logo, simple X banner, brand board |
 
 Use the **3D coin** where the logo is large and alone (app icon, avatar, X header, hero) and the **2D logo** in
 interfaces and small sizes.
@@ -46,4 +47,5 @@ pip install fonttools && python3 brand/generate.py      # SVGs (+ copies into ap
 cd apps/web && cp ../../brand/export.mjs .brand-export.mjs && node .brand-export.mjs; rm .brand-export.mjs   # PNGs
 ```
 
-3D renders: `brand/3d/src` (see `brand/3d/README.md`). Cinzel is SIL Open Font License (`fonts/OFL-Cinzel.txt`).
+3D renders: `brand/3d/src` (see `brand/3d/README.md`). The X header: `hero.html` renders the coin,
+`python3 brand/3d/src/header.py` composes it (text stays clear of the profile picture at the bottom left). Cinzel is SIL Open Font License (`fonts/OFL-Cinzel.txt`).
