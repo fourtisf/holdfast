@@ -35,7 +35,8 @@ indexer 33, api 74, keeper 17 incl. end-to-end against the compiled program, lau
 
 Further reading: [pump.fun integration and §8 verification](docs/pump-integration.md) ·
 [payout rounds and verification](docs/payouts.md) · [security model](docs/security.md) ·
-[Telegram notifier](docs/notifier.md) · [**runbook: devnet rehearsal → mainnet**](docs/runbook.md).
+[Telegram notifier](docs/notifier.md) · [**runbook: devnet rehearsal → mainnet**](docs/runbook.md) ·
+[logo and brand assets](brand/README.md).
 
 What a user gets beyond the mechanism: graduation progress, SOL/USD display, a watchlist and filters, PnL and trade
 history per wallet, leaderboards (earners, diamond hands, creators), creator pages, wallet-signed comments with holder

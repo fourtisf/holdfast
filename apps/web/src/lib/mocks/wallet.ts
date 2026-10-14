@@ -13,7 +13,7 @@ const ICON =
   "data:image/svg+xml;base64," +
   (typeof btoa === "function"
     ? btoa(
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#7ef0b8"/><path d="M16 7v14m-6-4a6 6 0 0 0 12 0M12 10h8" stroke="#08090d" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="hf" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9ff5cc"/><stop offset="1" stop-color="#3fd690"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#hf)"/><path d="M21 22 L32 11 L43 22 M32 11 V35" fill="none" stroke="#04170e" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"/><path d="M32 33 C22 33 17.5 40 19.5 48 M32 33 C42 33 46.5 40 44.5 48" fill="none" stroke="#04170e" stroke-linecap="round" stroke-linejoin="round" stroke-width="5.5"/><circle cx="32" cy="45" r="6.5" fill="#04170e"/><path d="M15 55 H49" fill="none" stroke="#04170e" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/></svg>',
       )
     : "");
 
