@@ -208,13 +208,22 @@ NEXT
   alt)
     need "$DEPLOYER"
     docker compose build launcher
+    # A table already in .env (e.g. from a run that was interrupted while filling it) is completed, not replaced.
+    existing="$(env_get LAUNCHER_LOOKUP_TABLE)"
+    action=create
+    [ -n "$existing" ] && action=sync
+    ok=true
     out="$(docker compose run --rm --no-deps -T --user root -v "$ADMIN_DIR:/admin:ro" -e ALT_PAYER_KEYPAIR=/admin/deployer.json \
-      -w /app/apps/launcher launcher tsx src/cli/alt.ts create)"
+      -e LAUNCHER_LOOKUP_TABLE="$existing" -w /app/apps/launcher launcher tsx src/cli/alt.ts "$action" 2>&1)" || ok=false
     echo "$out"
     table="$(printf '%s\n' "$out" | sed -n 's/^LAUNCHER_LOOKUP_TABLE=//p' | tail -1)"
-    [ -n "$table" ] || { echo "no lookup table address in the output" >&2; exit 1; }
-    set_var LAUNCHER_LOOKUP_TABLE "$table"
-    echo "LAUNCHER_LOOKUP_TABLE=$table is in .env"
+    table="${table:-$existing}"
+    [ -n "$table" ] && set_var LAUNCHER_LOOKUP_TABLE "$table"
+    if ! $ok; then
+      echo "the lookup table is not complete yet${table:+ ($table, saved in .env)}: run bash deploy/program.sh alt again to finish it" >&2
+      exit 1
+    fi
+    echo "LAUNCHER_LOOKUP_TABLE=$table is in .env and complete"
     ;;
 
   admin)
