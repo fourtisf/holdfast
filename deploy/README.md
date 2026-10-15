@@ -51,8 +51,12 @@ launcher addresses that `init.sh` printed (`keys/*.address`), plus `TELEGRAM_BOT
 authority, Config admin) and the program keypair in `~/moatpad-admin`, outside the repository and every container:
 
 ```bash
-bash deploy/program.sh keys       # installs the Solana CLI, creates both keypairs, prints their addresses
+bash deploy/program.sh import-deployer   # optional: your own wallet pays and owns the program (hidden prompt)
+bash deploy/program.sh keys              # installs the Solana CLI, creates the program keypair (and a deployer if none)
 ```
+
+With your own wallet as deployer, its private key sits on the server while you deploy and administer. Delete
+`~/moatpad-admin/deployer.json` afterwards and run `import-deployer` again when you need it (upgrades, `admin`).
 
 The program address is compiled into the program, so the binary is built for it on a machine with the toolchain:
 `bash deploy/build-program.sh <PROGRAM_ADDRESS>` writes `deploy/program/` (binary, sha256, address), which is
