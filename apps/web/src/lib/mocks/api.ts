@@ -82,6 +82,9 @@ function unsignedTransaction(wallet: string): string {
   return btoa(binary);
 }
 
+// Capture scripts (brand/video) drive the simulated market from the page.
+if (typeof window !== "undefined") (window as unknown as { __holdfastMock?: typeof market }).__holdfastMock = market;
+
 // ---- launch flow: awaiting_deposit → deposit_received → creating → live over ~10s ------------
 
 interface MockLaunch {

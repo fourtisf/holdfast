@@ -387,6 +387,54 @@ def live():
     master(mix, os.path.join(HERE, "music-live.wav"))
 
 
+# ---- demo: the launch demo (build-demo.sh), synced to the capture's marks (demo-app.json) ------------------
+def demo():
+    import json
+    marks = json.load(open(os.path.join(HERE, "demo-app.json")))
+    intro = 4.0
+    live, buyback, app_end = intro + marks["live"], intro + marks["buyback"], intro + marks["seconds"]
+    total = app_end + 7.0
+    n = int(total * SR)
+    st = lambda x: np.stack([x, x], axis=1)
+    beat, bar = 0.5, 2.0
+
+    fx = np.zeros((n, 2))
+    place(fx, st(impact(2.5)), 0.05, 1.0)
+    place(fx, saw_stack((33, 40, 45), 3.8, attack=0.05, decay=1.6), 0.05, 0.6)
+    for m in CHORDS[0] + (CHORDS[0][0] + 12,):
+        place(fx, pad_note(hz(m), 3.4, attack=0.8, release=0.8, bright=0.5), 0.3, 1.0)
+    place(fx, riser(1.6), intro - 1.6, 0.7)
+
+    # the launch: a steady groove on the bar grid from the end of the intro
+    launch_bars = int((live - intro) // bar)
+    groove, _ = song(total, 120, launch_bars, intro, [
+        (0, 1, {"pad", "kick", "hat", "sub"}),
+        (2, launch_bars, {"pad", "kick", "hat", "bass", "arp"}),
+    ])
+    # live: the drop from the next bar line until the end of the capture
+    drop_at = intro + bar * np.ceil((live - intro) / bar)
+    drop_bars = int((app_end - drop_at) // bar) + 1
+    full, _ = song(total, 120, drop_bars, drop_at, [(0, drop_bars, {"padbright", "kick", "hat", "hat16", "clap", "bass", "bassoct", "arpup"})])
+    full = fade(full, app_end - 0.3, app_end + 0.4)
+    outro, _ = song(total, 120, 4, app_end, [(0, 3, {"pad", "sub", "arp"})])
+
+    hits = np.zeros((n, 2))
+    place(hits, st(impact(3.0)), live, 1.1)
+    place(hits, st(subdrop()), live, 0.9)
+    place(hits, saw_stack((33, 45, 52), 2.2, attack=0.03, decay=1.1), live, 0.6)
+    place(hits, st(whoosh(0.6)), live - 0.55, 0.8)
+    place(hits, st(impact(1.8)), buyback, 0.75)
+    place(hits, st(tom(hz(40), 0.8)), buyback, 0.7)
+    place(hits, st(impact(3.0)), app_end, 1.0)
+    fx += reverb(fx, 2.2, 0.3)
+    hits += reverb(hits, 2.4, 0.25)
+    mix = fx + groove * 0.9 + full + outro * 0.9 + hits
+    mix = fade(mix, total - 1.6, total)
+    master(mix, os.path.join(HERE, "music-demo.wav"))
+
+
 if __name__ == "__main__":
     tour()
     live()
+    if os.path.exists(os.path.join(HERE, "demo-app.json")):
+        demo()

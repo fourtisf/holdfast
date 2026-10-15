@@ -1,0 +1,106 @@
+<!doctype html>
+<!-- X Article header (5:2), rendered at 3000 x 1200 by brand/article/render-banner.mjs. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: Cin; src: url(../fonts/Cinzel-SemiBold.woff); }
+@font-face { font-family: G; font-weight: 300; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Light.woff2); }
+@font-face { font-family: G; font-weight: 400; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Regular.woff2); }
+@font-face { font-family: G; font-weight: 500; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Medium.woff2); }
+@font-face { font-family: G; font-weight: 600; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-SemiBold.woff2); }
+@font-face { font-family: GM; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-mono/GeistMono-Regular.woff2); }
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1500px; height: 600px; overflow: hidden; background: #050506; }
+body { font-family: G, sans-serif; color: #efebe1; -webkit-font-smoothing: antialiased; }
+#b { position: relative; width: 1500px; height: 600px; overflow: hidden;
+  background: radial-gradient(700px 480px at 76% 50%, rgba(232,188,91,.20), transparent 70%), radial-gradient(900px 400px at 10% 120%, rgba(106,166,255,.08), transparent 70%), linear-gradient(180deg, #0d0e12, #060608 70%, #040405); }
+.grain { position: absolute; inset: 0; background-image: radial-gradient(rgba(255,255,255,.035) 1px, transparent 1px); background-size: 3px 3px; mix-blend-mode: screen; }
+.vig { position: absolute; inset: 0; background: radial-gradient(1200px 700px at 50% 50%, transparent 55%, rgba(0,0,0,.65)); }
+.rays { position: absolute; left: 1140px; top: 300px; width: 1800px; height: 1800px; margin: -900px 0 0 -900px;
+  background: repeating-conic-gradient(from 8deg, rgba(255,226,160,.07) 0deg 3deg, transparent 3deg 14deg); -webkit-mask: radial-gradient(circle, #000 6%, rgba(0,0,0,.5) 24%, transparent 50%); }
+.txt { position: absolute; left: 90px; top: 112px; width: 720px; }
+.kicker { font: 500 15px G; letter-spacing: .42em; text-transform: uppercase; color: #e8bc5b; display: flex; align-items: center; gap: 14px; }
+.kicker img { width: 30px; height: 30px; }
+.t { font: 400 66px/1.06 Cin; letter-spacing: .01em; margin-top: 26px; }
+.gold { background: linear-gradient(180deg, #fff6d8 0%, #f1c96f 50%, #a87727 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.s { font: 300 23px/1.45 G; color: #c9c6bd; margin-top: 24px; width: 640px; }
+.s b { font-weight: 500; color: #efebe1; }
+.split { position: absolute; left: 90px; bottom: 74px; width: 620px; }
+.bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; }
+.bar i { display: block; height: 100%; }
+.leg { display: flex; gap: 22px; margin-top: 12px; font: 400 14px G; color: #9aa0ab; white-space: nowrap; }
+.leg b { font-weight: 600; margin-right: 5px; }
+.card { position: absolute; left: 850px; top: 92px; width: 560px; height: 416px; border-radius: 26px; background: linear-gradient(180deg, rgba(24,25,30,.92), rgba(13,14,17,.94));
+  border: 1px solid rgba(232,188,91,.28); box-shadow: 0 40px 100px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.04); transform: perspective(1600px) rotateY(-9deg) rotateX(3deg); }
+.coin { position: absolute; left: 1290px; top: 14px; width: 178px; filter: drop-shadow(0 26px 40px rgba(0,0,0,.65)); }
+.tag { position: absolute; font: 600 14px G; padding: 6px 11px; border-radius: 8px; white-space: nowrap; }
+.url { position: absolute; right: 90px; bottom: 40px; font: 500 16px G; color: #8e939f; letter-spacing: .08em; }
+</style>
+</head>
+<body>
+<div id="b">
+  <div class="rays"></div>
+  <div class="grain"></div>
+  <div class="txt">
+    <div class="kicker"><img src="../../apps/web/public/brand/moatpad-mark.svg">Moatpad · How it works</div>
+    <div class="t">Every coin<br>gets a <span class="gold">moat.</span></div>
+    <div class="s">The pump.fun launchpad where every coin <b>defends its own floor</b>: fees fill an on-chain vault that <b>buys back at the floor</b> and <b>pays holders every 2 minutes</b>.</div>
+  </div>
+  <div class="split">
+    <div class="bar"><i style="width:40%;background:#6aa6ff"></i><i style="width:25%;background:#f2c76a"></i><i style="width:15%;background:#e9a68a"></i><i style="width:10%;background:#ddd6c6"></i><i style="width:10%;background:#a493ff"></i></div>
+    <div class="leg"><span><b style="color:#6aa6ff">40%</b>floor vault</span><span><b style="color:#f2c76a">25%</b>holders</span><span><b style="color:#e9a68a">15%</b>creator</span><span><b style="color:#ddd6c6">10%</b>treasury</span><span><b style="color:#a493ff">10%</b>burn $MOAT</span></div>
+  </div>
+
+  <div class="card">
+    <svg width="560" height="416" viewBox="0 0 560 416" style="position:absolute;inset:0">
+      <defs>
+        <linearGradient id="pf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8bc5b" stop-opacity=".24"/><stop offset="1" stop-color="#e8bc5b" stop-opacity="0"/></linearGradient>
+      </defs>
+      <g stroke="#1c1e24"><line x1="36" y1="110" x2="524" y2="110"/><line x1="36" y1="190" x2="524" y2="190"/><line x1="36" y1="270" x2="524" y2="270"/><line x1="36" y1="350" x2="524" y2="350"/></g>
+      <path id="fill" fill="url(#pf)"/>
+      <path id="ath" fill="none" stroke="#f2c76a" stroke-width="2" stroke-dasharray="5 6" opacity=".85"/>
+      <path id="floor" fill="none" stroke="#6aa6ff" stroke-width="3" style="filter:drop-shadow(0 0 8px rgba(106,166,255,.6))"/>
+      <path id="price" fill="none" stroke="#efc76c" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" style="filter:drop-shadow(0 0 10px rgba(239,199,108,.55))"/>
+      <g id="buy"></g>
+    </svg>
+    <div style="position:absolute;left:36px;top:30px;font:500 13px G;letter-spacing:.22em;color:#8e939f">$KELP · FLOOR −35%</div>
+    <div style="position:absolute;left:36px;top:52px;font:600 30px G">160.1 SOL <span style="font:600 18px G;color:#2bd98a">+455%</span></div>
+    <div class="tag" id="tagAth" style="background:rgba(242,199,106,.14);color:#f2c76a;border:1px solid rgba(242,199,106,.35)">ATH</div>
+    <div class="tag" id="tagFloor" style="background:rgba(106,166,255,.14);color:#6aa6ff;border:1px solid rgba(106,166,255,.35)">Floor follows the ATH</div>
+    <div class="tag" id="tagV" style="background:rgba(106,166,255,.92);color:#07101f">Vault buys back</div>
+  </div>
+  <img class="coin" src="../3d/renders/hero-coin.png">
+  <div class="url">moatpad.fun</div>
+  <div class="vig"></div>
+</div>
+<script>
+// price path: rally, a dump onto the floor, the vault's buyback, recovery
+const W = 488, X0 = 36, Y0 = 380, Y1 = 92;
+const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+function price(u) {
+  const n = 0.02 * Math.sin(u * 70) + 0.012 * Math.sin(u * 151 + 1);
+  if (u < 0.5) return 0.08 + 0.92 * ease(u / 0.5) + n;
+  if (u < 0.6) return 1 + n * 0.6;
+  if (u < 0.72) return 1 - 0.45 * ease((u - 0.6) / 0.12) + n * 0.4;
+  return 0.55 + 0.25 * ease((u - 0.72) / 0.28) + n * 0.6;
+}
+const N = 220, P = [], A = [];
+let m = 0;
+for (let i = 0; i <= N; i++) { const v = price(i / N); P.push(v); m = Math.max(m, v); A.push(m); }
+const px = (i) => X0 + (W * i) / N, py = (v) => Y0 - (Y0 - Y1) * v;
+const path = (arr, f = (v) => v) => "M" + arr.map((v, i) => `${px(i).toFixed(1)} ${py(f(v)).toFixed(1)}`).join(" L");
+document.getElementById("price").setAttribute("d", path(P));
+document.getElementById("fill").setAttribute("d", path(P) + ` L${px(N)} ${Y0} L${X0} ${Y0} Z`);
+document.getElementById("ath").setAttribute("d", path(A));
+document.getElementById("floor").setAttribute("d", path(A, (v) => Math.max(0.06, v * 0.6)));
+const bi = Math.round(0.715 * N), bx = px(bi), by = py(P[bi]);
+document.getElementById("buy").innerHTML = `<circle cx="${bx}" cy="${by}" r="9" fill="#6aa6ff"/><circle cx="${bx}" cy="${by}" r="20" fill="none" stroke="#6aa6ff" stroke-width="2" opacity=".6"/><circle cx="${bx}" cy="${by}" r="32" fill="none" stroke="#6aa6ff" stroke-width="1.5" opacity=".3"/>`;
+const place = (id, x, y) => Object.assign(document.getElementById(id).style, { left: `${x}px`, top: `${y}px` });
+place("tagAth", px(Math.round(N * 0.62)) - 20, py(A[N]) - 36);
+place("tagFloor", px(Math.round(N * 0.8)) - 40, py(A[N] * 0.6) + 46);
+place("tagV", bx - 150, by + 26);
+window.ready = document.fonts.ready.then(() => Promise.all([...document.images].map((i) => (i.complete ? 1 : new Promise((r) => (i.onload = i.onerror = r))))));
+</script>
+</body>
+</html>

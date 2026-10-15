@@ -982,6 +982,16 @@ export interface LiveTick {
 }
 
 /** Simulate one market trade (and a vault buyback when the floor is touched). */
+/**
+ * Demo hook for capture scripts (brand/video): a coin's live trades follow a price path, given as the
+ * target price relative to the launch price per millisecond since launch. Fees, the ATH, the floor and
+ * vault buybacks still come from the normal mechanism.
+ */
+const scripted = new Map<string, (elapsedMs: number) => number>();
+export function scriptPricePath(mint: string, path: (elapsedMs: number) => number): void {
+  scripted.set(mint, path);
+}
+
 export function simulateTrade(mint: string): LiveTick | null {
   const coin = getCoin(mint);
   if (!coin) return null;
@@ -991,10 +1001,12 @@ export function simulateTrade(mint: string): LiveTick | null {
   const rand = coin.rand;
   const nearFloor = floor > 0 && price < floor * 1.03;
   const buyBias = nearFloor ? 0.46 : 0.53;
-  const side: "buy" | "sell" = rand() < buyBias ? "buy" : "sell";
+  const path = scripted.get(mint);
+  const target = path ? LAUNCH_PRICE * path(now - coin.createdAt) : 0;
+  const side: "buy" | "sell" = path ? (target >= price ? "buy" : "sell") : rand() < buyBias ? "buy" : "sell";
   const sol = Math.max(0.01, coin.activity * (0.08 + rand() ** 2 * 1.4));
   const impact = (sol / (30 + marketCapSol(price) * 0.25)) * (side === "buy" ? 1 : -1);
-  const next = price * (1 + impact + gaussian(rand) * 0.002);
+  const next = path ? price + (target - price) * 0.35 + price * gaussian(rand) * 0.004 : price * (1 + impact + gaussian(rand) * 0.002);
   const trades: Trade[] = [];
   const trade: Trade = {
     sig: randomSignature(),

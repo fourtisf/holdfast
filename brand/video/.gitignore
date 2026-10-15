@@ -2,3 +2,4 @@
 *.wav
 still-*.png
 __pycache__/
+demo-*.mp4

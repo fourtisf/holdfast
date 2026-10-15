@@ -17,10 +17,10 @@ const ICON =
       )
     : "");
 
-export const MockWalletName = "Demo Wallet (mock)" as WalletName<"Demo Wallet (mock)">;
+export const MockWalletName = "Demo Wallet" as WalletName<"Demo Wallet">;
 
 /** Wallet adapter used only in mock mode: connects as MOCK_WALLET and "sends" without touching an RPC. */
-export class MockWalletAdapter extends BaseWalletAdapter<"Demo Wallet (mock)"> {
+export class MockWalletAdapter extends BaseWalletAdapter<"Demo Wallet"> {
   name = MockWalletName;
   url = "https://holdfast.local/mock-wallet";
   icon = ICON;
