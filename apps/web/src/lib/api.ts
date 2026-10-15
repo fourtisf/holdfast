@@ -74,7 +74,7 @@ export interface HoldfastApi {
   walletLaunchStatus(mint: string): Promise<WalletLaunchStatus>;
   /** A wallet-signed transaction, sent through the API's RPC (browsers cannot use the public endpoint). */
   sendTransaction(transaction: string): Promise<{ signature: string }>;
-  txStatus(signature: string): Promise<{ status: "pending" | "confirmed" | "failed"; error: string | null }>;
+  txStatus(signature: string): Promise<{ status: "pending" | "confirmed" | "failed" | "expired"; error: string | null }>;
   balance(wallet: string): Promise<{ lamports: string; sol: number }>;
   /** Deposit needed for a launch, from the launcher's cost model. */
   launchQuote(q?: { devBuySol?: number; name?: string; ticker?: string }): Promise<LaunchQuote>;

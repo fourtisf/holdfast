@@ -2,7 +2,7 @@ import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { HOLDFAST_PROGRAM_ID, PUMP_AMM_PROGRAM_ID, PUMP_PROGRAM_ID } from "@holdfast/chain";
 import { HttpError } from "./errors.js";
 
-export type TxState = "pending" | "confirmed" | "failed";
+export type TxState = "pending" | "confirmed" | "failed" | "expired";
 
 /**
  * The browser never talks to an RPC node directly (the public endpoint refuses browsers): it signs in the wallet and
@@ -35,12 +35,23 @@ export function checkRelayable(base64: string): Uint8Array {
   return raw;
 }
 
+/** How often a relayed transaction is sent again until it lands, and for how long at most (a blockhash lives ~80 s). */
+const REBROADCAST_MS = 2_000;
+const REBROADCAST_FOR_MS = 90_000;
+
 export class RpcTxRelay implements TxRelay {
-  constructor(private readonly connection: Connection) {}
+  /** Blockhashes of the transactions relayed recently, to tell "still pending" from "expired". */
+  private readonly sent = new Map<string, { blockhash: string; until: number }>();
+
+  constructor(
+    private readonly connection: Connection,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   async send(raw: Uint8Array): Promise<string> {
+    let signature: string;
     try {
-      return await this.connection.sendRawTransaction(raw, { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
+      signature = await this.connection.sendRawTransaction(raw, { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 0 });
     } catch (err) {
       const logs = (err as { logs?: string[] }).logs;
       const message = err instanceof Error ? err.message : String(err);
@@ -50,12 +61,41 @@ export class RpcTxRelay implements TxRelay {
       }
       throw new HttpError(503, "The network is busy, try again in a moment");
     }
+    const blockhash = VersionedTransaction.deserialize(raw).message.recentBlockhash;
+    this.sent.set(signature, { blockhash, until: this.now() + REBROADCAST_FOR_MS });
+    void this.rebroadcast(raw, signature);
+    return signature;
+  }
+
+  /** Leaders drop transactions under load: keep sending the same signed bytes until it lands or its blockhash expires. */
+  private async rebroadcast(raw: Uint8Array, signature: string): Promise<void> {
+    const entry = this.sent.get(signature);
+    while (entry && this.now() < entry.until) {
+      await new Promise((r) => setTimeout(r, REBROADCAST_MS));
+      try {
+        const { value } = await this.connection.getSignatureStatuses([signature]);
+        if (value[0]) break;
+        if (!(await this.connection.isBlockhashValid(entry.blockhash, { commitment: "processed" })).value) break;
+        await this.connection.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 });
+      } catch {
+        // a failed resend is retried on the next tick
+      }
+    }
   }
 
   async status(signature: string): Promise<{ status: TxState; error: string | null }> {
     const { value } = await this.connection.getSignatureStatuses([signature], { searchTransactionHistory: false });
     const s = value[0];
-    if (!s) return { status: "pending", error: null };
+    if (!s) {
+      const entry = this.sent.get(signature);
+      if (entry && !(await this.connection.isBlockhashValid(entry.blockhash, { commitment: "processed" })).value) {
+        // one last look: it may have landed in the final slots
+        const late = (await this.connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+        if (!late) return { status: "expired", error: null };
+        return late.err ? { status: "failed", error: JSON.stringify(late.err) } : { status: "confirmed", error: null };
+      }
+      return { status: "pending", error: null };
+    }
     if (s.err) return { status: "failed", error: JSON.stringify(s.err) };
     return { status: s.confirmationStatus === "confirmed" || s.confirmationStatus === "finalized" ? "confirmed" : "pending", error: null };
   }

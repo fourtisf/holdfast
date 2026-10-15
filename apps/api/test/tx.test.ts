@@ -63,3 +63,24 @@ describe("/tx and /balance", () => {
     expect(bal.json()).toEqual({ lamports: "4200000000", sol: 4.2 });
   });
 });
+
+describe("RpcTxRelay", () => {
+  it("reports a transaction whose blockhash ran out without landing as expired, and maps simulation errors to 422", async () => {
+    const { RpcTxRelay } = await import("../src/relay.js");
+    let valid = true;
+    const conn = {
+      sendRawTransaction: async () => "3".repeat(88),
+      getSignatureStatuses: async () => ({ value: [null] }),
+      isBlockhashValid: async () => ({ value: valid }),
+    };
+    const relay = new RpcTxRelay(conn as never, () => 0);
+    const raw = Buffer.from(tx(PUMP_PROGRAM_ID), "base64");
+    expect(await relay.send(raw)).toBe("3".repeat(88));
+    expect(await relay.status("3".repeat(88))).toEqual({ status: "pending", error: null });
+    valid = false;
+    expect(await relay.status("3".repeat(88))).toEqual({ status: "expired", error: null });
+
+    const failing = new RpcTxRelay({ ...conn, sendRawTransaction: async () => { throw new Error("Transaction simulation failed: Blockhash not found"); } } as never);
+    await expect(failing.send(raw)).rejects.toMatchObject({ statusCode: 422, message: "The transaction expired before it was sent. Try again." });
+  });
+});

@@ -99,6 +99,11 @@ export interface LauncherSettings {
   /** Launch text moderation (the API checks first; this is the last gate before the chain). */
   moderation: ModerationLists;
   priority: PriorityConfig;
+  /**
+   * Compute-unit price of wallet-signed launches (µlamports): the creator's wallet pays it, and a launch sent from a
+   * browser must land on the first try, so it is set well above the deposit flow's (which can retry on its own).
+   */
+  walletPriorityMicroLamports: bigint;
   devBuySlippageBps: number;
   /** Close the deposit's pump volume accumulator in tx C (returns its rent to the deposit). */
   closeDepositAccumulator: boolean;
@@ -123,6 +128,7 @@ export const DEFAULT_SETTINGS = {
   moderation: DEFAULT_MODERATION_LISTS,
   atomicAttempts: 2,
   priority: DEFAULT_PRIORITY,
+  walletPriorityMicroLamports: 1_000_000n,
   devBuySlippageBps: 500,
   closeDepositAccumulator: true,
   maxAttempts: 6,
@@ -561,6 +567,7 @@ export class LaunchWorker {
       devBuyMax = quote.maxSolCost;
     }
 
+    const priority = { ...this.s.priority, microLamports: this.s.walletPriorityMicroLamports > this.s.priority.microLamports ? this.s.walletPriorityMicroLamports : this.s.priority.microLamports };
     const recent = await this.chain.latestBlockhash();
     const tx = await buildAtomicLaunchTx(
       {
@@ -576,7 +583,7 @@ export class LaunchWorker {
         devBuy,
         leftover: null,
         recent,
-        priority: this.s.priority,
+        priority,
       },
       table,
     );
@@ -586,7 +593,7 @@ export class LaunchWorker {
 
     const createRent = rent(pumpMintSize(utf8Len(form.name), utf8Len(form.symbol), utf8Len(meta.uri))) + rent(PUMP_BONDING_CURVE_SIZE) + rent(TOKEN_2022_ATA_SIZE);
     const buyerAccounts = devBuy ? rent(TOKEN_2022_ATA_SIZE) + rent(PUMP_USER_VOLUME_ACCUMULATOR_SIZE) : 0n;
-    const maxCost = atomicTxFee(this.s.priority, devBuy !== null) + createRent + reimbursement + devBuyMax + buyerAccounts;
+    const maxCost = atomicTxFee(priority, devBuy !== null) + createRent + reimbursement + devBuyMax + buyerAccounts;
     const expiresAt = this.now() + WALLET_LAUNCH_TTL_MS;
     // Before anything can be bought: the launcher never earns payouts (the wallet is a regular holder).
     await addExcluded(this.db, [{ address: this.s.launcher.publicKey.toBase58(), reason: "launcher" }]);

@@ -33,6 +33,7 @@ export async function waitForConfirmation(signature: string, timeoutMs = 90_000)
     const s = await api.txStatus(signature).catch(() => null);
     if (s?.status === "confirmed") return;
     if (s?.status === "failed") throw new Error("Transaction failed on-chain");
+    if (s?.status === "expired") throw new Error("The network dropped the transaction before it landed. Nothing was charged: try again.");
     await sleep(1_500);
   }
   throw new Error("Not confirmed in time. Check the transaction on the explorer before trying again.");

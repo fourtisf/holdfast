@@ -89,6 +89,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, read?: (path: s
       ? withExtraBlocked(DEFAULT_MODERATION_LISTS, parseBlocklist((read ?? ((p: string) => readFileSync(p, "utf8")))(resolveFromLaunchDir(env.MODERATION_BLOCKLIST_FILE, env))))
       : DEFAULT_MODERATION_LISTS,
     priority: plan.priority,
+    walletPriorityMicroLamports: BigInt(int("LAUNCHER_WALLET_PRIORITY_MICROLAMPORTS", env.LAUNCHER_WALLET_PRIORITY_MICROLAMPORTS, Number(DEFAULT_SETTINGS.walletPriorityMicroLamports))),
     devBuySlippageBps: plan.devBuySlippageBps,
     closeDepositAccumulator: plan.closeDepositAccumulator,
     maxAttempts: int("LAUNCHER_MAX_ATTEMPTS", env.LAUNCHER_MAX_ATTEMPTS, DEFAULT_SETTINGS.maxAttempts, 1),
