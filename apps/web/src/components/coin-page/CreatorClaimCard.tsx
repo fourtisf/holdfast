@@ -13,7 +13,8 @@ import { SOLANA_CLUSTER } from "@/lib/config";
 import { explorerTxUrl } from "@/lib/explorer";
 import { formatSol } from "@/lib/format";
 import { keys } from "@/lib/hooks/queries";
-import { confirmSignature, decodeTransaction } from "@/lib/solana";
+import { decodeTransaction } from "@/lib/solana";
+import { signAndSend, waitForConfirmation } from "@/lib/submit";
 
 type Phase = "idle" | "building" | "signing" | "confirming" | "done" | "error";
 
@@ -22,7 +23,7 @@ type Phase = "idle" | "building" | "signing" | "confirming" | "done" | "error";
  * to the creator wallet recorded at launch and checks that wallet's signature itself.
  */
 export function CreatorClaimCard({ coin }: { coin: CoinDetail }) {
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, sendTransaction, signTransaction } = useWallet();
   const { connection } = useConnection();
   const { mutate } = useSWRConfig();
   const [phase, setPhase] = useState<Phase>("idle");
@@ -41,10 +42,10 @@ export function CreatorClaimCard({ coin }: { coin: CoinDetail }) {
       const built = await api.buildCreatorClaim({ mint: coin.mint, wallet: publicKey.toBase58() });
       const tx = decodeTransaction(built.transaction);
       setPhase("signing");
-      const sig = await sendTransaction(tx, connection);
+      const sig = await signAndSend({ signTransaction, sendTransaction }, connection, tx);
       setSignature(sig);
       setPhase("confirming");
-      await confirmSignature(connection, sig, tx, built.lastValidBlockHeight);
+      await waitForConfirmation(sig);
       setClaimed(built.claimableSol);
       setPhase("done");
       setTimeout(() => void mutate(keys.coin(coin.mint)), 1500);

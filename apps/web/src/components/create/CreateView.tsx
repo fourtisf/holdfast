@@ -13,7 +13,8 @@ import { GlobeIcon, InfoIcon, TelegramIcon, XLogoIcon } from "@/components/ui/ic
 import { api, errorMessage } from "@/lib/api";
 import { TELEGRAM_URL, X_HANDLE, X_URL } from "@/lib/config";
 import { formatSolExact, formatSolAmount } from "@/lib/format";
-import { confirmSignature, decodeTransaction } from "@/lib/solana";
+import { decodeTransaction } from "@/lib/solana";
+import { signAndSend, waitForConfirmation } from "@/lib/submit";
 import {
   DESCRIPTION_MAX,
   launchFeeSol,
@@ -126,7 +127,7 @@ export function CreateView() {
   const set = <K extends keyof LaunchForm>(key: K, value: LaunchForm[K]) => setForm((f) => ({ ...f, [key]: value }));
 
   // The connected wallet is the creator unless the user types another one; it follows connects and disconnects.
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, sendTransaction, signTransaction } = useWallet();
   const { connection } = useConnection();
   const { setVisible } = useWalletModal();
   const connected = publicKey?.toBase58() ?? null;
@@ -166,10 +167,10 @@ export function CreateView() {
       const tx = decodeTransaction(prepared.transaction);
       at = 1;
       show({ step: "confirm" });
-      const signature = await sendTransaction(tx, connection);
+      const signature = await signAndSend({ signTransaction, sendTransaction }, connection, tx);
       at = 2;
       show({ step: "launching", signature });
-      await confirmSignature(connection, signature, tx, prepared.lastValidBlockHeight);
+      await waitForConfirmation(signature);
       // The launcher registers the coin within seconds of the transaction landing.
       for (let i = 0; i < 40; i++) {
         if ((await api.walletLaunchStatus(prepared.mint).catch(() => null))?.status === "live") break;

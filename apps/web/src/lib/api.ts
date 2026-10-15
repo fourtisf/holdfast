@@ -72,6 +72,10 @@ export interface HoldfastApi {
   /** The whole launch as one transaction for the connected wallet to sign and send (no deposit address). */
   walletLaunch(req: WalletLaunchRequest): Promise<WalletLaunchPrepared>;
   walletLaunchStatus(mint: string): Promise<WalletLaunchStatus>;
+  /** A wallet-signed transaction, sent through the API's RPC (browsers cannot use the public endpoint). */
+  sendTransaction(transaction: string): Promise<{ signature: string }>;
+  txStatus(signature: string): Promise<{ status: "pending" | "confirmed" | "failed"; error: string | null }>;
+  balance(wallet: string): Promise<{ lamports: string; sol: number }>;
   /** Deposit needed for a launch, from the launcher's cost model. */
   launchQuote(q?: { devBuySol?: number; name?: string; ticker?: string }): Promise<LaunchQuote>;
   report(mint: string, req: ReportRequest): Promise<ReportResponse>;
@@ -169,6 +173,9 @@ export const httpApi: HoldfastApi = {
   launchStatus: (launchId) => request(`/launch/${enc(launchId)}`),
   walletLaunch: (req) => request("/launch/wallet", { method: "POST", json: req }),
   walletLaunchStatus: (mint) => request(`/launch/wallet/${enc(mint)}`),
+  sendTransaction: (transaction) => request("/tx/send", { method: "POST", json: { transaction } }),
+  txStatus: (signature) => request(`/tx/${enc(signature)}`),
+  balance: (wallet) => request(withQuery("/balance", { wallet })),
   launchQuote: (q = {}) => request(withQuery("/launch/quote", { devBuySol: q.devBuySol, name: q.name, ticker: q.ticker })),
   report: (mint, req) => request(`/coins/${enc(mint)}/report`, { method: "POST", json: req }),
   walletTrades: (wallet, opts = {}) => request(withQuery("/me/trades", { wallet, limit: opts.limit, before: opts.before })),
@@ -217,6 +224,9 @@ export const api: HoldfastApi = {
   launchStatus: lazy("launchStatus"),
   walletLaunch: lazy("walletLaunch"),
   walletLaunchStatus: lazy("walletLaunchStatus"),
+  sendTransaction: lazy("sendTransaction"),
+  txStatus: lazy("txStatus"),
+  balance: lazy("balance"),
   launchQuote: lazy("launchQuote"),
   report: lazy("report"),
   walletTrades: lazy("walletTrades"),

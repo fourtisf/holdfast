@@ -15,7 +15,7 @@ import {
 } from "@holdfast/core";
 import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { ApiError, type HoldfastApi } from "../api";
-import { base58Encode, mockAddress, mockSignature, randomAddress, randomId } from "./ids";
+import { base58Encode, mockAddress, mockSignature, randomAddress, randomId, randomSignature } from "./ids";
 import * as market from "./market";
 
 const SPEC_FEE_SOL = Number(LAUNCH_FEE_LAMPORTS) / 1e9;
@@ -249,6 +249,9 @@ export const mockApi: HoldfastApi = {
     const { requiredSol } = mockLaunchQuote(req.devBuySol ?? 0);
     return latency({ mint, transaction: unsignedTransaction(req.wallet), lastValidBlockHeight: 1, maxCostLamports: lamports(requiredSol), expiresAt: Date.now() + 180_000 }, 400, 800);
   },
+  sendTransaction: async () => latency({ signature: randomSignature() }, 300, 700),
+  txStatus: async () => latency({ status: "confirmed" as const, error: null }, 200, 500),
+  balance: async () => latency({ lamports: "4200000000", sol: 4.2 }, 60, 160),
   walletLaunchStatus: async (mint) => {
     const l = walletLaunches.get(mint) ?? notFound("Launch");
     const live = Date.now() - l.createdAt > 2_500;

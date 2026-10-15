@@ -72,7 +72,7 @@ export interface TestApi extends HoldfastApi {
 }
 
 let depositCounter = 0;
-export async function makeApi(db: Db, overrides: Partial<ApiConfig> = {}, now = () => NOW, extra: Pick<AppDeps, "prices" | "walletLauncher"> = {}): Promise<TestApi> {
+export async function makeApi(db: Db, overrides: Partial<ApiConfig> = {}, now = () => NOW, extra: Pick<AppDeps, "prices" | "walletLauncher" | "relay"> = {}): Promise<TestApi> {
   const config = testConfig(overrides);
   const events = new MemoryEventSource();
   const chain = new FakeTradeChain();

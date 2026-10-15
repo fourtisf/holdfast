@@ -25,6 +25,9 @@ Base URL: `NEXT_PUBLIC_API_URL` (default `http://localhost:4000`). All response 
 | POST | `/comments/:id/report` | `ReportResponse` | like coin reports; `MODERATION_AUTO_HIDE_REPORTS` hides a comment too |
 | POST | `/trade/quote` | `TradeQuote` | body `TradeQuoteRequest` (optional `priorityMicroLamports` ≤ 40,000,000 sets the compute-unit price of the built transaction) |
 | POST | `/trade/build` | `TradeBuildResponse` | body `TradeQuoteRequest`; returns unsigned tx for the wallet to sign |
+| POST | `/tx/send` | `{ signature }` | body `{ transaction }`: a wallet-signed transaction (base64) that invokes pump.fun, PumpSwap or the Holdfast program, sent through the API's RPC (browsers cannot use the public endpoint); 30/min per IP |
+| GET | `/tx/:signature` | `{ status, error }` | `pending` · `confirmed` · `failed`, from the API's RPC |
+| GET | `/balance?wallet=` | `{ lamports, sol }` | a wallet's SOL balance, from the API's RPC |
 | POST | `/uploads/image` | `{ imageUrl: string }` | `multipart/form-data` field `file` (png/jpg/gif/webp, ≤ 5 MB) |
 | GET | `/launch/quote?devBuySol=&name=&ticker=` | `LaunchQuote` | real launch cost (rent + fees) from the launcher's cost model and plan (atomic or split flow, metadata storage); 0.015 SOL for a typical atomic launch, never less |
 | POST | `/launch` | `LaunchResponse` | body `LaunchRequest`; creates a unique deposit address; `requiredLamports` = the quote |

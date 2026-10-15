@@ -5,6 +5,7 @@ import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
+import { Connection } from "@solana/web3.js";
 import { ZodError } from "zod";
 import { Metrics } from "@holdfast/ops";
 import type { Db } from "@holdfast/db";
@@ -12,6 +13,7 @@ import type { ApiConfig } from "./config.js";
 import type { ApiContext } from "./context.js";
 import type { LaunchService } from "./launch/service.js";
 import { HttpWalletLauncher, type WalletLauncher } from "./launch/wallet.js";
+import { RpcTxRelay, type TxRelay } from "./relay.js";
 import type { TradeChain } from "./trade/chain.js";
 import { NO_PRICE, type SolPriceSource } from "./services/price.js";
 import { commentRoutes } from "./routes/comments.js";
@@ -23,6 +25,7 @@ import { moderationRoutes } from "./routes/moderation.js";
 import { marketRoutes } from "./routes/market.js";
 import { meRoutes } from "./routes/me.js";
 import { tradeRoutes } from "./routes/trade.js";
+import { txRoutes } from "./routes/tx.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import type { EventSource } from "./ws/events.js";
 import { LiveFeed } from "./ws/feed.js";
@@ -36,6 +39,8 @@ export interface AppDeps {
   launches: LaunchService;
   /** Wallet-signed launches (default: the launcher's internal endpoint at config.launcherUrl). */
   walletLauncher?: WalletLauncher;
+  /** Sends signed transactions for the browser (default: config.rpcUrl). */
+  relay?: TxRelay;
   events: EventSource;
   /** SOL/USD for Stats.solUsd (default: none). Started and stopped with the app when it has start/stop. */
   prices?: SolPriceSource & { start?(): void; stop?(): void };
@@ -75,7 +80,8 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   const prices = deps.prices ?? NO_PRICE;
   const feed = new LiveFeed({ db: deps.db, hub, launches: deps.launches, prices, now, log: app.log, statsIntervalMs: deps.config.statsIntervalMs });
   const walletLauncher = deps.walletLauncher ?? new HttpWalletLauncher(deps.config.launcherUrl);
-  const ctx: ApiContext = { db: deps.db, config: deps.config, tradeChain: deps.tradeChain, launches: deps.launches, walletLauncher, hub, feed, prices, now };
+  const relay = deps.relay ?? new RpcTxRelay(new Connection(deps.config.rpcUrl, "confirmed"));
+  const ctx: ApiContext = { db: deps.db, config: deps.config, tradeChain: deps.tradeChain, launches: deps.launches, walletLauncher, relay, hub, feed, prices, now };
 
   app.setErrorHandler((err: FastifyError | ZodError | { statusCode?: number; error?: string; message?: string }, req, reply) => {
     if (err instanceof ZodError) return reply.code(400).send({ error: formatZodError(err) });
@@ -120,6 +126,7 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   marketRoutes(app, ctx);
   meRoutes(app, ctx);
   tradeRoutes(app, ctx);
+  txRoutes(app, ctx);
   uploadRoutes(app, ctx);
   launchRoutes(app, ctx);
   creatorRoutes(app, ctx);

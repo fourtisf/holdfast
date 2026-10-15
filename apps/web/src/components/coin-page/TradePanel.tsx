@@ -17,7 +17,8 @@ import { formatPct, formatSol, formatSolAmount, formatTokens, shortAddress } fro
 import { keys } from "@/lib/hooks/queries";
 import { useDebounced } from "@/lib/hooks/useDebounced";
 import { useStoredState } from "@/lib/hooks/useStoredState";
-import { confirmSignature, decodeTransaction, getSolBalance } from "@/lib/solana";
+import { decodeTransaction } from "@/lib/solana";
+import { signAndSend, waitForConfirmation } from "@/lib/submit";
 
 type Side = "buy" | "sell";
 type Phase = "idle" | "building" | "signing" | "confirming" | "done" | "error";
@@ -47,7 +48,7 @@ function friendlyError(err: unknown): string {
 }
 
 export function TradePanel({ coin, position }: { coin: CoinDetail; position: Position | null | undefined }) {
-  const { publicKey, sendTransaction, connected } = useWallet();
+  const { publicKey, sendTransaction, signTransaction, connected } = useWallet();
   const { connection } = useConnection();
   const { setVisible } = useWalletModal();
   const { mutate } = useSWRConfig();
@@ -78,13 +79,14 @@ export function TradePanel({ coin, position }: { coin: CoinDetail; position: Pos
       return;
     }
     let cancelled = false;
-    getSolBalance(connection, publicKey)
-      .then((b) => !cancelled && setSolBalance(b))
+    api
+      .balance(publicKey.toBase58())
+      .then((b) => !cancelled && setSolBalance(b.sol))
       .catch(() => !cancelled && setSolBalance(null));
     return () => {
       cancelled = true;
     };
-  }, [publicKey, connection, phase]);
+  }, [publicKey, phase]);
 
   useEffect(() => {
     setQuote(null);
@@ -126,10 +128,10 @@ export function TradePanel({ coin, position }: { coin: CoinDetail; position: Pos
       const built = await api.buildTrade({ mint: coin.mint, wallet, side, amount: value, slippageBps, priorityMicroLamports });
       const tx = decodeTransaction(built.transaction);
       setPhase("signing");
-      const sig = await sendTransaction(tx, connection);
+      const sig = await signAndSend({ signTransaction, sendTransaction }, connection, tx);
       setSignature(sig);
       setPhase("confirming");
-      await confirmSignature(connection, sig, tx, built.lastValidBlockHeight);
+      await waitForConfirmation(sig);
       setPhase("done");
       setAmount("");
       setTimeout(() => {
