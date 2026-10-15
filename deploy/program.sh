@@ -7,6 +7,8 @@
 #   bash deploy/program.sh init          create the on-chain Config with the keeper and launcher from keys/
 #   bash deploy/program.sh alt           create the launcher's lookup table and put it in .env
 #   bash deploy/program.sh admin <cmd>   any command of apps/keeper/src/admin.ts, signed by the deployer
+#   bash deploy/program.sh revenue <wallet>   the keeper becomes the platform treasury: the 10% share pays for its
+#                                        transactions and the rest is forwarded to <wallet>
 #   bash deploy/program.sh launches open|pause
 #   bash deploy/program.sh status        addresses and balances
 #
@@ -26,7 +28,7 @@ export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
 
 [ -f .env ] && [ -f deploy/docker-compose.prod.yml ] || { echo "run this from the repository root, after deploy/init.sh" >&2; exit 1; }
 
-env_get() { grep -E "^$1=" .env | tail -1 | cut -d= -f2-; }
+env_get() { grep -E "^$1=" .env | tail -1 | cut -d= -f2- || true; }
 set_var() {
   if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi
 }
@@ -122,6 +124,17 @@ NEXT
     admin_cli "$@"
     ;;
 
+  revenue)
+    need "$DEPLOYER"
+    wallet="${2:?usage: bash deploy/program.sh revenue <your wallet address>}"
+    [[ "$wallet" =~ ^[1-9A-HJ-NP-Za-km-z]{32,44}$ ]] || { echo "not a wallet address: $wallet" >&2; exit 1; }
+    admin_cli set-platform-treasury "$(cat keys/keeper.address)"
+    set_var KEEPER_PROFIT_WALLET "$wallet"
+    docker compose up -d keeper
+    reserve="$(env_get KEEPER_RESERVE_LAMPORTS)"
+    echo "platform treasury: the keeper; it keeps $(sol_amount "${reserve:-300000000}") SOL for fees and forwards the rest to $wallet"
+    ;;
+
   launches)
     case "${2:-}" in
       open) set_var LAUNCHES_PAUSED false ;;
@@ -146,7 +159,7 @@ NEXT
     ;;
 
   *)
-    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

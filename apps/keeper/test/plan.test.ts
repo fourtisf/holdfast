@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
 import { coinKeys, type CoinVaultAccount, type ConfigAccount } from "@holdfast/chain";
 
-import { applySlippage, floorMinTokens, MIN_FLOOR_AFTER_PREPARE, planCrank, prepareCost, quoteBuy, type PlanOptions } from "../src/plan.js";
+import { applySlippage, floorMinTokens, MIN_FLOOR_AFTER_PREPARE, newCrankMemory, observeMarket, planCrank, prepareCost, quoteBuy, surplusToForward, type CrankMemory, type PlanOptions } from "../src/plan.js";
 import { mergeCarries, planBatches } from "../src/payout/worker.js";
 import type { CoinChainState, TreasuryAccounts } from "../src/state.js";
 
@@ -99,10 +99,14 @@ function state(v: Partial<CoinVaultAccount> = {}, curve: { vsol?: bigint; comple
   };
 }
 
-const mem = (over: Partial<{ lastCollectAt: number; lastBurnAt: number; lastSweepAt: number }> = {}) => ({
+/** By default the coin just traded and its price was just above the ATH. */
+const mem = (over: Partial<CrankMemory> = {}): CrankMemory => ({
   lastCollectAt: NOW,
   lastBurnAt: NOW,
   lastSweepAt: NOW,
+  lastSpot: SPOT,
+  lastTradeAt: NOW,
+  lastAboveAthAt: NOW,
   ...over,
 });
 const kinds = (s: CoinChainState, m = mem(), o = opts) => planCrank(s, params, m, NOW, o).map((a) => a.kind);
@@ -177,6 +181,42 @@ describe("planCrank", () => {
     expect(kinds(state({ lastObservationTs: NOW, platformSol: 5_000_000n }), mem({ lastSweepAt: 0 }))).toEqual([]);
     // no token accounts needed: it is a plain SOL transfer
     expect(kinds(state({ lastObservationTs: NOW, floorSol: 0n, platformSol: 20_000_000n }, {}, false, BARE), mem({ lastSweepAt: 0 }))).toEqual(["sweep"]);
+  });
+});
+
+describe("crank costs", () => {
+  const ATH_TAIL = params.twapWindowSecs + params.athConfirmSecs + params.twapMaxGapSecs;
+  const quiet = { lastCollectAt: NOW - 10_000, lastTradeAt: NOW - 20_000, lastAboveAthAt: NOW - 20_000 };
+
+  it("sends nothing for a coin that stopped trading below its ATH", () => {
+    expect(kinds(state({ lastObservationTs: NOW - 5_000 }), mem(quiet))).toEqual([]);
+  });
+
+  it("collects once after the coin trades, at most once per interval", () => {
+    expect(kinds(state({ lastObservationTs: NOW }), mem({ ...quiet, lastTradeAt: NOW - 30 }))).toEqual(["collect"]);
+    expect(kinds(state({ lastObservationTs: NOW }), mem({ ...quiet, lastTradeAt: NOW - 30, lastCollectAt: NOW - 60 }))).toEqual([]);
+  });
+
+  it("samples the TWAP only while the price is above the ATH and for a tail after", () => {
+    expect(kinds(state({ lastObservationTs: NOW - 60, athPrice: SPOT - 1n }), mem(quiet))).toEqual(["update_ath"]);
+    expect(kinds(state({ lastObservationTs: NOW - 60 }), mem({ ...quiet, lastAboveAthAt: NOW - ATH_TAIL }))).toEqual(["update_ath"]);
+    expect(kinds(state({ lastObservationTs: NOW - 60 }), mem({ ...quiet, lastAboveAthAt: NOW - ATH_TAIL - 1 }))).toEqual([]);
+  });
+
+  it("records trades and time above the ATH; a fresh keeper treats its first look as a trade", () => {
+    const m = newCrankMemory();
+    observeMarket(m, state(), NOW);
+    expect(m).toMatchObject({ lastSpot: SPOT, lastTradeAt: NOW, lastAboveAthAt: 0 });
+    observeMarket(m, state(), NOW + 30);
+    expect(m.lastTradeAt).toBe(NOW);
+    observeMarket(m, state({ athPrice: SPOT / 2n }, { vsol: VSOL + 1_000_000n }), NOW + 60);
+    expect(m).toMatchObject({ lastTradeAt: NOW + 60, lastAboveAthAt: NOW + 60 });
+  });
+
+  it("forwards only the surplus above the reserve, in chunks worth the fee", () => {
+    expect(surplusToForward(400_000_000n, 500_000_000n, 50_000_000n)).toBe(0n);
+    expect(surplusToForward(540_000_000n, 500_000_000n, 50_000_000n)).toBe(0n);
+    expect(surplusToForward(1_250_000_000n, 500_000_000n, 50_000_000n)).toBe(750_000_000n);
   });
 });
 

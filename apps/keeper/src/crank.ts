@@ -22,7 +22,7 @@ import {
 import type { Logger } from "pino";
 
 import type { KeeperChain } from "./chain.js";
-import { applySlippage, planCrank, quoteBuy, type CrankAction, type CrankMemory, type PlanOptions } from "./plan.js";
+import { applySlippage, observeMarket, planCrank, quoteBuy, type CrankAction, type CrankMemory, type PlanOptions } from "./plan.js";
 import type { PumpGateway } from "./pump.js";
 import { loadCoinState, loadPool, type CoinChainState } from "./state.js";
 
@@ -31,7 +31,8 @@ export interface CrankContext {
   pump: PumpGateway;
   keeper: Keypair;
   log: Logger;
-  options: Omit<PlanOptions, "holdMintSet" | "platformTreasurySet"> & { defendJitterMs: number; burnSlippageBps: number };
+  /** `routineMicroLamports`: priority fee for everything but buybacks, which use the chain's (higher) default. */
+  options: Omit<PlanOptions, "holdMintSet" | "platformTreasurySet"> & { defendJitterMs: number; burnSlippageBps: number; routineMicroLamports: number };
   /** Called with the fresh vault after any action (DB mirror). */
   onVault?: (coin: CoinKeys, vault: CoinVaultAccount) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
@@ -63,6 +64,7 @@ export async function crankCoin(ctx: CrankContext, coin: CoinKeys, config: Confi
   if (!state) return result;
   result.creatorOk = state.vault.venue === "amm" && state.pool ? state.pool.coinCreator.equals(coin.treasury) : state.curve.creator.equals(coin.treasury);
   const nowSec = Math.floor(ctx.chain.nowMs() / 1000);
+  observeMarket(memory, state, nowSec);
   const actions = planCrank(state, config.params, memory, nowSec, {
     ...ctx.options,
     holdMintSet: config.holdMint !== null,
@@ -90,8 +92,9 @@ export async function crankCoin(ctx: CrankContext, coin: CoinKeys, config: Confi
   return result;
 }
 
-async function send(ctx: CrankContext, ixs: TransactionInstruction[], computeUnits = 300_000): Promise<string> {
-  return ctx.chain.send(ixs, [ctx.keeper], { computeUnits });
+/** Routine cranks are not time critical; only buybacks pay the full priority fee. */
+async function send(ctx: CrankContext, ixs: TransactionInstruction[], computeUnits = 300_000, urgent = false): Promise<string> {
+  return ctx.chain.send(ixs, [ctx.keeper], { computeUnits, microLamports: urgent ? undefined : ctx.options.routineMicroLamports });
 }
 
 async function execute(ctx: CrankContext, s: CoinChainState, config: ConfigAccount, action: CrankAction): Promise<string | null> {
@@ -117,7 +120,7 @@ async function execute(ctx: CrankContext, s: CoinChainState, config: ConfigAccou
           ? await ctx.pump.ammBuyAccounts(s.pool.address, coin.treasury)
           : await ctx.pump.curveBuyAccounts(coin.mint, coin.treasury, coin.tokenProgram, s.curve.creator);
       // Anyone may defend; the keeper just makes sure someone does.
-      return send(ctx, [defendIx(coin, keeper, s.priceAccounts, venueAccounts, action.minTokensOut)], 500_000);
+      return send(ctx, [defendIx(coin, keeper, s.priceAccounts, venueAccounts, action.minTokensOut)], 500_000, true);
     }
     case "burn": {
       const holdMint = config.holdMint;

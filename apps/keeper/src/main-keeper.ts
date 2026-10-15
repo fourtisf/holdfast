@@ -1,4 +1,4 @@
-import { Connection } from "@solana/web3.js";
+import { Connection, SystemProgram } from "@solana/web3.js";
 import { connectDb } from "@holdfast/db";
 import pino from "pino";
 
@@ -6,11 +6,13 @@ import { Web3Chain } from "./chain.js";
 import { loadConfig, loadKeypair } from "./config.js";
 import { crankCoin, loadProgramConfig } from "./crank.js";
 import { Monitor, opsPort } from "./monitor.js";
-import type { CrankMemory } from "./plan.js";
+import { newCrankMemory, surplusToForward, type CrankMemory } from "./plan.js";
 import { SdkPumpGateway } from "./pump.js";
 import { loadCoinKeys, mapLimit, mirrorVault, sleep } from "./util.js";
 
 const log = pino({ name: "keeper" });
+/** Forward at least this much at a time, so the transfer fee stays negligible. */
+const MIN_FORWARD_LAMPORTS = 50_000_000n;
 
 async function main() {
   const cfg = loadConfig();
@@ -27,7 +29,10 @@ async function main() {
   }
   const monitor = new Monitor({ service: "keeper", lowBalanceLamports: cfg.payout.keeperMinBalanceLamports * 4n, maxLoopAgeMs: Math.max(cfg.tickMs * 4, 120_000) }, log);
   const ops = await monitor.start(opsPort(process.env, "KEEPER_OPS_PORT", 9101));
-  log.info({ keeper: keeper.publicKey.toBase58(), tickMs: cfg.tickMs, opsPort: ops?.port ?? null, alerts: monitor.alerter.enabled }, "keeper started");
+  log.info(
+    { keeper: keeper.publicKey.toBase58(), tickMs: cfg.tickMs, profitWallet: cfg.profitWallet?.toBase58() ?? null, opsPort: ops?.port ?? null, alerts: monitor.alerter.enabled },
+    "keeper started",
+  );
 
   let configLoadedAt = Date.now();
   let stopping = false;
@@ -46,10 +51,24 @@ async function main() {
       } else {
         const coins = await loadCoinKeys(db);
         const [keeperInfo] = await chain.getAccounts([keeper.publicKey]);
-        await monitor.keeperBalance(BigInt(keeperInfo?.lamports ?? 0));
+        const balance = BigInt(keeperInfo?.lamports ?? 0);
+        await monitor.keeperBalance(balance);
+        // With the keeper as platform treasury, the 10% share pays for its transactions and the rest goes to the owner.
+        const forward = cfg.profitWallet ? surplusToForward(balance, cfg.reserveLamports, MIN_FORWARD_LAMPORTS) : 0n;
+        if (cfg.profitWallet && forward > 0n) {
+          try {
+            const sig = await chain.send([SystemProgram.transfer({ fromPubkey: keeper.publicKey, toPubkey: cfg.profitWallet, lamports: forward })], [keeper], {
+              computeUnits: 1_000,
+              microLamports: cfg.routinePriorityMicroLamports,
+            });
+            log.info({ to: cfg.profitWallet.toBase58(), lamports: String(forward), sig }, "forwarded surplus to the profit wallet");
+          } catch (err) {
+            log.warn({ err: (err as Error).message }, "surplus forward failed");
+          }
+        }
         await mapLimit(coins, cfg.coinConcurrency, async (coin) => {
           const key = coin.mint.toBase58();
-          const mem = memory.get(key) ?? { lastCollectAt: 0, lastBurnAt: 0, lastSweepAt: 0 };
+          const mem = memory.get(key) ?? newCrankMemory();
           memory.set(key, mem);
           try {
             const res = await crankCoin(
@@ -69,6 +88,7 @@ async function main() {
                   platformSweepEverySecs: cfg.platformSweepEverySecs,
                   defendJitterMs: cfg.defendJitterMs,
                   burnSlippageBps: cfg.burnSlippageBps,
+                  routineMicroLamports: cfg.routinePriorityMicroLamports,
                 },
                 onVault: (c, v) => mirrorVault(db, c, v),
               },

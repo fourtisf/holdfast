@@ -12,7 +12,6 @@ import {
 import {
   associatedTokenAddress,
   closeRoundIx,
-  collectFeesIx,
   decodeCoinVault,
   decodePayoutRound,
   openRoundIx,
@@ -26,15 +25,12 @@ import type { Logger } from "pino";
 
 import type { KeeperChain } from "../chain.js";
 import type { PayoutConfig } from "../config.js";
-import type { PumpGateway } from "../pump.js";
-import { loadTreasuryAccounts } from "../state.js";
 import { gatherRoundInputs } from "./inputs.js";
 
 export interface PayoutDeps {
   db: Db;
   chain: KeeperChain;
   keeper: Keypair;
-  pump: PumpGateway | null;
   cfg: PayoutConfig;
   log: Logger;
 }
@@ -75,19 +71,9 @@ export async function runPayoutRound(deps: PayoutDeps, coin: CoinKeys): Promise<
     const [info] = await chain.getAccounts([coin.vault]);
     return info ? decodeCoinVault(info.data) : null;
   };
-  let vault = await readVault();
+  // Fees are collected by the keeper, only after the coin trades: a round never pays to collect.
+  const vault = await readVault();
   if (!vault) return { kind: "skipped", reason: "vault not found" };
-
-  if (cfg.collectBeforeRound && !vault.roundOpen) {
-    try {
-      const claims = deps.pump ? await deps.pump.feeClaimInstructions(coin, keeper.publicKey, vault.venue === "amm") : [];
-      const existing = await loadTreasuryAccounts(chain, coin, vault.venue);
-      await chain.send([...claims, collectFeesIx(coin, existing)], [keeper], { computeUnits: 400_000 });
-      vault = (await readVault()) ?? vault;
-    } catch (err) {
-      log.debug({ mint, err: (err as Error).message }, "pre-round fee collection failed (continuing)");
-    }
-  }
 
   if (vault.roundOpen) return resumeRound(deps, coin, vault.roundId);
 

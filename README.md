@@ -152,7 +152,7 @@ CI (`.github/workflows/ci.yml`) builds and tests the program, runs the TypeScrip
 | Criterion | Status |
 |---|---|
 | Launch by only sending SOL; fees flow to the vault PDA | Implemented and tested against an instruction-executing fake chain (`apps/launcher`), in one atomic transaction (anti-snipe) or the four-transaction fallback. `init_coin` refuses a coin unless `creator == treasury`. **0.015 SOL**, as specified ([decisions #20](docs/decisions.md)). **Devnet run pending**: `devnet-poc` automates it ([runbook](docs/runbook.md)) |
-| Fee split proven on-chain (40/25/15/10/10, [decisions #23, #24](docs/decisions.md)) | ✅ program tests `fees_split_exactly_40_25_15_10_10`, keeper e2e |
+| Fee split proven on-chain (40/25/15/10/10, [decisions #23, #28](docs/decisions.md)) | ✅ program tests `fees_split_exactly_40_25_15_10_10`, keeper e2e |
 | No way to withdraw SOL except the five paths: buybacks, payouts, $MOAT burns, the creator's own claim, the platform sweep to the configured treasury (proven by tests) | ✅ `tests/program/tests/no_withdraw.rs` (instruction set pinned, admin powers, randomised lamport conservation) |
 | Price ≤ floor triggers a 10% buyback, cooldown works, tokens go to the holder pool | ✅ `ath_defend.rs`, keeper e2e |
 | Payout every 2 minutes per the weight formula, snapshot re-verifiable | ✅ `packages/core` tests, keeper e2e (snapshot root = on-chain `RoundOpened` root), `verify-round` CLI |

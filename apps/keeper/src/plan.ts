@@ -32,6 +32,38 @@ export interface CrankMemory {
   lastCollectAt: number;
   lastBurnAt: number;
   lastSweepAt: number;
+  /** Spot price at the previous pass, and when it last moved (a trade) or last stood above the ATH. */
+  lastSpot: bigint | null;
+  lastTradeAt: number;
+  lastAboveAthAt: number;
+}
+
+export const newCrankMemory = (): CrankMemory => ({
+  lastCollectAt: 0,
+  lastBurnAt: 0,
+  lastSweepAt: 0,
+  lastSpot: null,
+  lastTradeAt: 0,
+  lastAboveAthAt: 0,
+});
+
+/**
+ * Records what the market did since the previous pass. Fees only accrue when the coin trades, and the ATH
+ * can only move while the price is above it, so a quiet coin costs the keeper nothing. A keeper that
+ * restarts treats its first look as a trade and collects once.
+ */
+export function observeMarket(memory: CrankMemory, s: CoinChainState, nowSec: number): void {
+  if (memory.lastSpot !== s.spot) {
+    memory.lastSpot = s.spot;
+    memory.lastTradeAt = nowSec;
+  }
+  if (s.spot > s.vault.athPrice) memory.lastAboveAthAt = nowSec;
+}
+
+/** SOL above the keeper's working reserve, forwarded to the owner once there is at least `minForward` of it. */
+export function surplusToForward(balance: bigint, reserve: bigint, minForward: bigint): bigint {
+  const surplus = balance - reserve;
+  return surplus >= minForward ? surplus : 0n;
 }
 
 export interface PlanOptions {
@@ -77,9 +109,13 @@ export function planCrank(s: CoinChainState, params: ConfigAccount["params"], me
     return actions;
   }
 
-  if (nowSec - memory.lastCollectAt >= o.collectEverySecs) actions.push({ kind: "collect" });
+  // Collect only after trading (pending fees wait safely in pump.fun's creator vault), at most once per interval.
+  if (memory.lastTradeAt > memory.lastCollectAt && nowSec - memory.lastCollectAt >= o.collectEverySecs) actions.push({ kind: "collect" });
 
-  if (v.observationCount === 0 || nowSec - v.lastObservationTs >= params.twapMinSampleIntervalSecs) {
+  // Sample the TWAP while the price is above the ATH, and long enough after it to let a candidate confirm.
+  const athTail = params.twapWindowSecs + params.athConfirmSecs + params.twapMaxGapSecs;
+  const athInPlay = s.spot > v.athPrice || nowSec - memory.lastAboveAthAt <= athTail;
+  if (athInPlay && (v.observationCount === 0 || nowSec - v.lastObservationTs >= params.twapMinSampleIntervalSecs)) {
     actions.push({ kind: "update_ath" });
   }
 

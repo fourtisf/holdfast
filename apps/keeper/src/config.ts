@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Keypair } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import { RENT_EXEMPT_MIN_LAMPORTS } from "@holdfast/core";
 
 export interface KeeperConfig {
@@ -26,6 +26,10 @@ export interface KeeperConfig {
   platformSweepThresholdLamports: bigint;
   platformSweepEverySecs: number;
   priorityMicroLamports: number;
+  routinePriorityMicroLamports: number;
+  /** Where the keeper forwards SOL above `reserveLamports` (the platform's revenue when it is the platform treasury). */
+  profitWallet: PublicKey | null;
+  reserveLamports: bigint;
   payout: PayoutConfig;
 }
 
@@ -36,8 +40,6 @@ export interface PayoutConfig {
   carryExpiryMs: number;
   maxRecipients: number;
   coinConcurrency: number;
-  /** Run `collect_fees` right before computing each round so the pot is fresh. */
-  collectBeforeRound: boolean;
   /** Compute-unit price of payout transactions (not time critical, so cheap by default). */
   priorityMicroLamports: number;
   /** Most a round may spend on fees, relative to what it pays (bps). Rounds above wait for a bigger pot. */
@@ -72,7 +74,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     keeperKeypairPath: required(env, "KEEPER_KEYPAIR"),
     tickMs: int(env, "KEEPER_TICK_MS", 30_000),
     coinConcurrency: int(env, "KEEPER_COIN_CONCURRENCY", 8),
-    collectEverySecs: int(env, "KEEPER_COLLECT_EVERY_SECS", 120),
+    collectEverySecs: int(env, "KEEPER_COLLECT_EVERY_SECS", 600),
     defendSlippageBps: int(env, "KEEPER_DEFEND_SLIPPAGE_BPS", 300),
     curveFeeBpsEstimate: int(env, "KEEPER_CURVE_FEE_BPS_ESTIMATE", 200),
     ammFeeBpsEstimate: int(env, "KEEPER_AMM_FEE_BPS_ESTIMATE", 100),
@@ -83,6 +85,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     platformSweepThresholdLamports: bigintEnv(env, "KEEPER_PLATFORM_SWEEP_LAMPORTS", 10_000_000n),
     platformSweepEverySecs: int(env, "KEEPER_PLATFORM_SWEEP_EVERY_SECS", 3_600),
     priorityMicroLamports: int(env, "KEEPER_PRIORITY_MICROLAMPORTS", 50_000),
+    routinePriorityMicroLamports: int(env, "KEEPER_ROUTINE_PRIORITY_MICROLAMPORTS", 1_000),
+    profitWallet: env.KEEPER_PROFIT_WALLET ? new PublicKey(env.KEEPER_PROFIT_WALLET) : null,
+    reserveLamports: bigintEnv(env, "KEEPER_RESERVE_LAMPORTS", 300_000_000n),
     payout: {
       minSolLamports: bigintEnv(env, "PAYOUT_MIN_SOL_LAMPORTS", 20_000n),
       minTokensRaw: bigintEnv(env, "PAYOUT_MIN_TOKENS_RAW", 1_000n),
@@ -90,7 +95,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
       carryExpiryMs: int(env, "PAYOUT_CARRY_EXPIRY_MS", 30 * 24 * 3600 * 1000),
       maxRecipients: int(env, "PAYOUT_MAX_RECIPIENTS", 1_024),
       coinConcurrency: int(env, "PAYOUT_COIN_CONCURRENCY", 4),
-      collectBeforeRound: (env.PAYOUT_COLLECT_BEFORE_ROUND ?? "true") !== "false",
       priorityMicroLamports: int(env, "PAYOUT_PRIORITY_MICROLAMPORTS", 1_000),
       maxFeeBps: int(env, "PAYOUT_MAX_FEE_BPS", 200),
       keeperMinBalanceLamports: bigintEnv(env, "KEEPER_MIN_BALANCE_LAMPORTS", 50_000_000n),

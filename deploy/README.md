@@ -57,13 +57,13 @@ bash deploy/program.sh keys       # installs the Solana CLI, creates both keypai
 The program address is compiled into the program, so the binary is built for it on a machine with the toolchain:
 `bash deploy/build-program.sh <PROGRAM_ADDRESS>` writes `deploy/program/` (binary, sha256, address), which is
 committed. Then, with the deployer funded (about 4.7 SOL: rent for the 653 KB program, kept for as long as the program
-exists, plus fees; send 5) and the keeper and launcher funded (0.5 and 0.1 SOL):
+exists, plus fees; send 5) and the keeper and launcher funded (0.2 and 0.05 SOL to start):
 
 ```bash
 git pull
 bash deploy/program.sh deploy     # checks the hash, the address and the balance; sets HOLDFAST_PROGRAM_ID in .env
 bash deploy/program.sh init       # Config with the keeper, the launcher and the mainnet parameters
-bash deploy/program.sh admin set-platform-treasury <TREASURY_WALLET>
+bash deploy/program.sh revenue <YOUR_WALLET>   # the 10% share funds the keeper; the surplus goes to your wallet
 bash deploy/program.sh alt        # the launcher's lookup table, written to LAUNCHER_LOOKUP_TABLE
 docker compose up -d --build      # every service, launches still paused
 bash deploy/program.sh status     # addresses, balances, the program, the pause flag

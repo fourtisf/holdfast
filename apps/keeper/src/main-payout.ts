@@ -8,7 +8,6 @@ import { loadConfig, loadKeypair } from "./config.js";
 import { loadProgramConfig } from "./crank.js";
 import { Monitor, opsPort } from "./monitor.js";
 import { runPayoutRound } from "./payout/worker.js";
-import { SdkPumpGateway } from "./pump.js";
 import { loadCoinKeys, mapLimit, sleep } from "./util.js";
 
 const log = pino({ name: "payout" });
@@ -20,7 +19,6 @@ async function main() {
   const connection = new Connection(cfg.rpcUrl, "confirmed");
   const chain = new Web3Chain(connection, cfg.priorityMicroLamports);
   const keeper = loadKeypair(cfg.keeperKeypairPath);
-  const pump = new SdkPumpGateway(connection);
 
   const programConfig = await loadProgramConfig(chain);
   if (!programConfig.keeper.equals(keeper.publicKey)) throw new Error("KEEPER_KEYPAIR is not Config.keeper");
@@ -42,7 +40,7 @@ async function main() {
     const outcomes = await mapLimit(coins, cfg.payout.coinConcurrency, async (coin) => {
       const mint = coin.mint.toBase58();
       try {
-        const outcome = await runPayoutRound({ db, chain, keeper, pump, cfg: cfg.payout, log }, coin);
+        const outcome = await runPayoutRound({ db, chain, keeper, cfg: cfg.payout, log }, coin);
         await monitor.round(mint, outcome);
         return outcome;
       } catch (err) {

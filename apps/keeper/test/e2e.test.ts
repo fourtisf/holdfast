@@ -7,6 +7,7 @@ import { associatedTokenAddress, decodeCoinVault, HOLDFAST_IDL, HOLDFAST_PROGRAM
 import { getRound, insertCoin, insertLot, listPayouts, loadCarries } from "@holdfast/db";
 
 import { crankCoin, loadProgramConfig, type CrankContext } from "../src/crank.js";
+import { newCrankMemory } from "../src/plan.js";
 import type { PayoutConfig } from "../src/config.js";
 import { runPayoutRound, type PayoutDeps } from "../src/payout/worker.js";
 import { createWorld, programsBuilt, SOL, type World } from "./harness.js";
@@ -25,7 +26,6 @@ const payoutCfg: PayoutConfig = {
   carryExpiryMs: 0,
   maxRecipients: 1_024,
   coinConcurrency: 1,
-  collectBeforeRound: true,
   priorityMicroLamports: 1_000,
   maxFeeBps: 200,
   keeperMinBalanceLamports: 50_000_000n,
@@ -48,12 +48,13 @@ function crankCtx(w: World): CrankContext {
       platformSweepEverySecs: 3_600,
       defendJitterMs: 0,
       burnSlippageBps: 400,
+      routineMicroLamports: 1_000,
     },
   };
 }
 
 function payoutDeps(w: World): PayoutDeps {
-  return { db: w.db, chain: w.chain, keeper: w.keeper, pump: w.pump, cfg: payoutCfg, log };
+  return { db: w.db, chain: w.chain, keeper: w.keeper, cfg: payoutCfg, log };
 }
 
 async function vaultOf(w: World, coin: CoinKeys) {
@@ -84,9 +85,9 @@ async function holder(w: World, coin: CoinKeys, amount: bigint, ageMs: number, l
   return { wallet, ata };
 }
 
-/** Crank every 30s for `secs` (keeper cadence). */
+/** Crank every 40s for `secs` with a freshly started keeper, which collects on its first look. */
 async function crankFor(w: World, coin: CoinKeys, secs: number) {
-  const memory = { lastCollectAt: 0, lastBurnAt: 0, lastSweepAt: 0 };
+  const memory = newCrankMemory();
   const config = await loadProgramConfig(w.chain);
   const ctx = crankCtx(w);
   for (let t = 0; t <= secs; t += 40) {
@@ -179,6 +180,7 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     const coin = await w.launch(2500);
     await registerCoin(w, coin);
     w.airdrop(coin.treasury, 10n * SOL);
+    await crankFor(w, coin, 0); // the keeper collects; payout rounds never do
     const holders = await Promise.all([0, 1, 2, 3, 4].map((i) => holder(w, coin, 1_000_000_000n, i * HOUR, SOL)));
     const before = holders.map((h) => w.lamports(h.wallet));
 
@@ -219,6 +221,7 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     await registerCoin(w, coin);
     await Promise.all([0, 1, 2].map((i) => holder(w, coin, 1_000_000_000n, i * HOUR, SOL)));
     w.airdrop(coin.treasury, 2_000_000n); // 0.002 SOL of fees → 0.0005 SOL holder pot for 3 wallets
+    await crankFor(w, coin, 0);
     const small = await runPayoutRound(payoutDeps(w), coin);
     expect(small.kind).toBe("skipped");
     expect(small.kind === "skipped" && small.reason).toMatch(/pot too small for its fees/);
@@ -229,6 +232,7 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     // more fees arrive: now the round is worth it and pays everything accumulated
     w.airdrop(coin.treasury, SOL);
     w.advance(120);
+    await crankFor(w, coin, 0);
     const paid = await runPayoutRound(payoutDeps(w), coin);
     expect(paid.kind).toBe("paid");
     v = await vaultOf(w, coin);
@@ -241,6 +245,7 @@ describe.skipIf(!programsBuilt)("keeper + payout worker against the compiled pro
     await registerCoin(w, coin);
     await holder(w, coin, 1_000_000_000n, 0, SOL);
     w.airdrop(coin.treasury, 10n * SOL);
+    await crankFor(w, coin, 0);
     const outcome = await runPayoutRound({ ...payoutDeps(w), cfg: { ...payoutCfg, keeperMinBalanceLamports: 10n ** 15n } }, coin);
     expect(outcome).toEqual({ kind: "skipped", reason: "keeper balance too low" });
     expect((await vaultOf(w, coin)).roundOpen).toBe(false);
