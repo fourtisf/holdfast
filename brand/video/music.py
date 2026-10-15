@@ -1,10 +1,10 @@
 """Original soundtracks for the promo videos, synthesized from scratch (no samples, no third-party music).
 
-    python3 brand/video/music.py            # writes brand/video/music-tour.wav (60 s) and music-live.wav (17 s)
+    python3 brand/video/music.py            # writes brand/video/music-tour.wav (60 s) and music-live.wav (24 s)
 
 Cinematic electronic in A minor: warm detuned pads, a sub bass ducked by the kick, plucked arpeggios through a
 dotted-eighth delay, hats and claps, risers and impacts on the cuts. Every section boundary lands on a scene change
-of tour.html / ad.html?v=live. Loudness is normalized afterwards with ffmpeg (loudnorm) when the audio is muxed.
+of tour.html / live.html. Loudness is normalized afterwards with ffmpeg (loudnorm) when the audio is muxed.
 """
 import os
 import wave
@@ -272,25 +272,118 @@ def tour():
     master(mix, os.path.join(HERE, "music-tour.wav"))
 
 
-# ---- live: 120 BPM, drop at 5.6 s on "MOATPAD IS LIVE" (ad.html?v=live) --------------------------------------
+# ---- live: 120 BPM, 24 s (live.html) --------------------------------------------------------------------------
+def saw_stack(midis, dur, attack=0.25, decay=2.0, detunes=(-0.004, 0.0, 0.003), cutoff=2400):
+    """Low brass-like "braam": detuned saws whose harmonics open up over the attack."""
+    t = tt(dur)
+    out = np.zeros((len(t), 2))
+    bright = np.minimum(1, t / max(attack, 1e-3))
+    for m in midis:
+        f0 = hz(m)
+        for ch, dts in ((0, detunes), (1, tuple(-d for d in detunes))):
+            for dt in dts:
+                f = f0 * (1 + dt)
+                for h in range(1, int(cutoff / f) + 1):
+                    out[:, ch] += np.sin(2 * np.pi * f * h * t + h * 0.7) / h ** (2.0 - 0.8 * bright)
+    env = np.minimum(1, t / attack) * np.exp(-np.maximum(0, t - attack) / decay)
+    return np.tanh(out * env[:, None] * 0.12) * 0.9
+
+
+def tom(freq=70, dur=0.9):
+    t = tt(dur)
+    body = np.sin(2 * np.pi * (freq * t + freq * 0.7 * 0.06 * (1 - np.exp(-t / 0.06)))) * np.exp(-t / 0.4)
+    hit = fft_filter(rng.standard_normal(len(t)), lo=300, hi=3000) * np.exp(-t / 0.02) * 0.4
+    return np.tanh((body + hit) * 1.5) * 0.8
+
+
+def snare(dur=0.25):
+    t = tt(dur)
+    tone = np.sin(2 * np.pi * 190 * t) * np.exp(-t / 0.045) * 0.5
+    noise = fft_filter(rng.standard_normal(len(t)), lo=1200, hi=9000)
+    return (tone + noise / np.max(np.abs(noise)) * np.exp(-t / 0.08)) * 0.45
+
+
+def tick(dur=0.05):
+    t = tt(dur)
+    noise = fft_filter(rng.standard_normal(len(t)), lo=3000, hi=11000)
+    return (noise / np.max(np.abs(noise)) * np.exp(-t / 0.004) + np.sin(2 * np.pi * 2600 * t) * np.exp(-t / 0.006)) * 0.25
+
+
+def reverse_cymbal(dur):
+    t = tt(dur)
+    noise = fft_filter(rng.standard_normal(len(t)), lo=3500)
+    return noise / np.max(np.abs(noise)) * (t / dur) ** 3 * 0.5
+
+
+def whoosh(dur=0.7):
+    t = tt(dur)
+    noise = rng.standard_normal(len(t))
+    out = np.zeros_like(t)
+    n = 16
+    for k in range(n):
+        a, b = int(k * len(t) / n), int((k + 1) * len(t) / n)
+        c = 600 * 10 ** (np.sin(np.pi * (k + 0.5) / n) * 1.0)
+        seg = fft_filter(noise[a:b], lo=c / 2, hi=c * 2)
+        out[a:b] = seg / (np.max(np.abs(seg)) + 1e-9)
+    return out * np.sin(np.pi * t / dur) ** 2 * 0.3
+
+
+def subdrop(dur=1.6):
+    t = tt(dur)
+    f = 30 + 60 * np.exp(-t / 0.35)
+    return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.9) * 0.9
+
+
 def live():
-    total = 17.0
-    bar = 2.0
-    drop = 5.6
-    S = [
-        (0, 7, {"pad", "kick", "hat", "hat16", "clap", "bass", "bassoct", "arpup"}),
-    ]
-    mix, _ = song(total, 120, 6, drop, [(0, 3, S[0][2]), (4, 5, {"padbright", "sub", "arp"})])
-    intro = np.zeros_like(mix)
+    total, beat, drop = 24.0, 0.5, 8.0
+    n = int(total * SR)
+    st = lambda x: np.stack([x, x], axis=1)
+    fx = np.zeros((n, 2))
+
+    # 0-4: cold open, a braam and a pad over a drone, a riser into the countdown
+    place(fx, saw_stack((33, 40, 45), 4.2, attack=1.4, decay=2.5), 0.0, 0.9)
     for m in CHORDS[0] + (CHORDS[0][0] + 12,):
-        place(intro, pad_note(hz(m), drop - 0.3, attack=1.5, release=0.6), 0.0, 1.2)
-    for k, at in enumerate((2.6, 3.6, 4.6)):  # countdown hits, the riser climbing under them
-        place(intro, np.stack([impact(1.0) * (0.55 + 0.15 * k)] * 2, axis=1), at)
-    place(intro, riser(3.0), 2.6, 0.9)
-    intro += reverb(intro, 2.0, 0.35)
-    mix = mix + intro
-    place(mix, np.stack([impact(3.0)] * 2, axis=1), drop, 1.1)
-    mix = fade(mix, 14.8, 17.0)
+        place(fx, pad_note(hz(m), 3.6, attack=1.6, release=1.0, bright=0.4), 0.0, 1.0)
+    place(fx, riser(2.2), 1.8, 0.7)
+    # 4-7.75: the vault dial: a hit on every count, ticks on the 8ths, a snare roll and a reverse cymbal into the gap
+    for k, at in enumerate((4.0, 5.0, 6.0)):
+        place(fx, st(impact(1.4)) * (0.7 + 0.1 * k), at)
+        place(fx, st(tom(hz(33 + 3 * k), 0.9)), at, 0.9)
+        place(fx, saw_stack((33 + 3 * k, 40 + 3 * k), 0.9, attack=0.02, decay=0.35), at, 0.8)
+    for i in range(int(3.75 / (beat / 2))):
+        at = 4.0 + i * beat / 2
+        place(fx, tick(), at, 0.5 + 0.25 * (i % 2 == 0), pan=0.3 if i % 2 else -0.3)
+    roll = 6.0
+    while roll < 7.7:
+        gap = 0.125 if roll < 6.9 else 0.0625
+        place(fx, snare(), roll, 0.25 + 0.55 * (roll - 6.0) / 1.7, pan=0.1)
+        roll += gap
+    place(fx, riser(1.75), 6.0, 0.9)
+    place(fx, reverse_cymbal(1.6), 6.15, 0.9)
+    fx[int(7.75 * SR): int(drop * SR)] *= np.linspace(1, 0, int(drop * SR) - int(7.75 * SR))[:, None] ** 3  # the breath before the drop
+
+    # 8-20: the drop, then 20-24 the outro
+    groove, _ = song(total, 120, 6, drop, [
+        (0, 4, {"padbright", "kick", "hat", "hat16", "clap", "bass", "bassoct", "arpup"}),
+        (5, 5, {"padbright", "kick", "hat", "hat16", "clap", "bass", "arpup", "riser"}),
+    ])
+    outro, _ = song(total, 120, 2, 20.0, [(0, 1, {"pad", "sub", "arp"})])
+    hits = np.zeros((n, 2))
+    place(hits, st(impact(3.0)), drop, 1.2)
+    place(hits, st(subdrop()), drop, 1.0)
+    place(hits, saw_stack((33, 45, 52), 2.5, attack=0.03, decay=1.2), drop, 0.7)
+    for at in (11.75, 13.25, 14.75, 16.25):  # whooshes into each feature hit
+        place(hits, st(whoosh(0.5)), at, 0.8, )
+    for i in range(8):  # fill into the fee split
+        place(hits, snare(), 17.0 + i * beat / 4 + 0.5, 0.5 + 0.06 * i)
+    for i in range(5):  # one hit per segment of the fee split
+        place(hits, st(tom(hz(45 + i * 2), 0.5)), 18.25 + i * 0.25, 0.6)
+    place(hits, st(impact(3.5)), 20.0, 1.1)
+    place(hits, saw_stack((33, 40, 45), 3.5, attack=0.03, decay=1.6), 20.0, 0.6)
+    fx += reverb(fx, 2.2, 0.3)
+    hits += reverb(hits, 2.6, 0.25)
+    mix = fx + groove + outro * 0.9 + hits
+    mix = fade(mix, 22.4, 24.0)
     master(mix, os.path.join(HERE, "music-live.wav"))
 
 

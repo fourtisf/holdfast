@@ -1,5 +1,5 @@
 // Renders a promo video frame by frame into an MP4 (H.264, 1920x1080, 30 fps), or a few stills to check a cut.
-// "tour" is tour.html, "review" and "live" are ad.html?v=…; music-<video>.wav, when present, is muxed in (AAC,
+// "tour" is tour.html, "live" is live.html, "review" is ad.html?v=review; music-<video>.wav, when present, is muxed in (AAC,
 // loudness-normalized to -14 LUFS). Run from apps/web, where Playwright is installed:
 //   cp ../../brand/video/render.mjs .render.mjs && node .render.mjs tour ../../brand/video/moatpad-tour.mp4; rm .render.mjs
 //   node .render.mjs live ../../brand/video/moatpad-live.mp4
@@ -13,7 +13,7 @@ import { pathToFileURL } from "node:url";
 const [video = "review", out = `moatpad-${video}.mp4`, flag, list] = process.argv.slice(2);
 const FPS = 30;
 const page = await (await chromium.launch()).newPage({ viewport: { width: 1920, height: 1080 } });
-const html = video === "tour" ? "tour.html" : "ad.html";
+const html = { tour: "tour.html", live: "live.html" }[video] ?? "ad.html";
 await page.goto(`${pathToFileURL(resolve(`../../brand/video/${html}`)).href}?v=${video}`);
 await page.evaluate(() => window.ready);
 const duration = await page.evaluate(() => window.DURATION);

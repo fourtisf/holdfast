@@ -1,0 +1,416 @@
+<!doctype html>
+<!--
+  "Moatpad is live" (24 s), rendered frame by frame by render.mjs (`node .render.mjs live …`). Everything on screen is
+  a pure function of `t` in window.render(t). Synced to music-live.wav (120 BPM): cold open, a vault-dial countdown on
+  4 / 5 / 6 s, a breath at 7.75, the drop at 8, four feature hits from 12 s, the fee split at 18, call to action at 20.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: Cin; src: url(../fonts/Cinzel-SemiBold.woff); }
+@font-face { font-family: G; font-weight: 300; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Light.woff2); }
+@font-face { font-family: G; font-weight: 400; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Regular.woff2); }
+@font-face { font-family: G; font-weight: 500; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Medium.woff2); }
+@font-face { font-family: G; font-weight: 600; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-SemiBold.woff2); }
+@font-face { font-family: GM; font-weight: 600; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-mono/GeistMono-SemiBold.woff2); }
+
+:root { --ivory: #efebe1; --muted: #8e939f; --gold: #e8bc5b; --floor: #6aa6ff; --holder: #f2c76a; --creator: #e9a68a; --platform: #ddd6c6; --burn: #a493ff; --green: #2bd98a; }
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+body { font-family: G, sans-serif; color: var(--ivory); -webkit-font-smoothing: antialiased; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #030304; }
+.layer { position: absolute; inset: 0; }
+#glow { background: radial-gradient(1100px 700px at 50% 48%, rgba(var(--gc, 232,188,91), var(--ga, .1)), transparent 70%), radial-gradient(1600px 520px at 50% 115%, rgba(232,188,91,.05), transparent 70%), linear-gradient(180deg, #0b0c0f, #050506 60%, #030304); }
+canvas { position: absolute; inset: 0; }
+#rays { left: 50%; top: 50%; width: 2600px; height: 2600px; margin: -1300px 0 0 -1300px; inset: auto; opacity: 0;
+  background: repeating-conic-gradient(from 0deg, rgba(255,226,160,.13) 0deg 3deg, transparent 3deg 15deg);
+  -webkit-mask: radial-gradient(circle, #000 4%, rgba(0,0,0,.6) 22%, transparent 48%); }
+#cam { transform-origin: 50% 50%; }
+.scene { position: absolute; inset: 0; display: none; }
+.center { position: absolute; left: 0; right: 0; text-align: center; }
+.cin { font-family: Cin, serif; }
+.goldtext { background: linear-gradient(180deg, #fff6d8 0%, #f1c96f 50%, #a87727 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.shine { position: relative; display: inline-block; }
+.shine::after { content: attr(data-text); position: absolute; inset: 0; background: linear-gradient(100deg, transparent 40%, rgba(255,255,255,.95) 50%, transparent 60%); background-size: 300% 100%;
+  background-position: var(--sp, 150%) 0; -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kicker { font: 500 22px G; letter-spacing: .42em; text-transform: uppercase; color: var(--gold); }
+.coin { position: absolute; }
+.coin img { width: 100%; display: block; }
+.coin .sweep { position: absolute; inset: 0; -webkit-mask: url(../3d/renders/hero-coin.png) center / contain no-repeat; background: linear-gradient(105deg, transparent 40%, rgba(255,250,230,.6) 50%, transparent 60%); background-size: 300% 100%; mix-blend-mode: screen; }
+#flare { position: absolute; left: 0; right: 0; top: 539px; height: 2px; opacity: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,214,140,.25) 20%, #fff3d0 50%, rgba(255,214,140,.25) 80%, transparent); box-shadow: 0 0 30px 6px rgba(255,200,110,.35); }
+#flare i { position: absolute; left: 50%; top: 50%; width: 360px; height: 120px; margin: -60px 0 0 -180px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255,240,205,.9), rgba(255,200,110,.25) 45%, transparent); }
+.lb { position: absolute; left: 0; right: 0; height: 132px; background: #000; z-index: 20; }
+#grain, #flash, #fade, #vig { pointer-events: none; }
+#vig { background: radial-gradient(1500px 880px at 50% 48%, transparent 55%, rgba(0,0,0,.72)); }
+#flash { background: radial-gradient(circle at 50% 48%, #fffaf0, rgba(255,226,160,.85) 25%, rgba(255,190,90,.25) 55%, transparent 75%); opacity: 0; }
+#fade { background: #000; opacity: 0; }
+#leak { background: radial-gradient(700px 500px at var(--lx, 20%) 40%, rgba(255,170,80,.22), transparent 70%), radial-gradient(600px 600px at calc(100% - var(--lx, 20%)) 70%, rgba(255,215,140,.14), transparent 70%); mix-blend-mode: screen; opacity: 0; }
+
+/* countdown dial */
+#dial { position: absolute; left: 960px; top: 540px; width: 0; height: 0; }
+#dial svg { position: absolute; left: -400px; top: -400px; }
+#num { position: absolute; left: 0; right: 0; top: 330px; text-align: center; font: 400 400px/1 Cin; }
+
+/* feature hits */
+.hit .idx { font: 600 22px GM; color: #8b7a55; letter-spacing: .12em; }
+.hit .t { font: 400 74px/1.06 Cin; letter-spacing: .01em; margin-top: 22px; }
+.hit .s { font: 300 32px/1.4 G; color: #c9c6bd; margin-top: 26px; }
+.hit .txt { position: absolute; left: 140px; top: 330px; width: 760px; }
+.card3d { position: absolute; right: 120px; top: 50%; transform-style: preserve-3d; border-radius: 24px; overflow: hidden; border: 1px solid rgba(232,188,91,.35);
+  box-shadow: 0 60px 140px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.04), 0 0 90px rgba(232,188,91,.14); background-color: #0a0b0e; background-repeat: no-repeat; }
+.card3d::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255,248,225,.16) 50%, transparent 65%); background-size: 300% 100%; background-position: var(--gl, 150%) 0; }
+.cd { position: absolute; background: #111216; }
+.cd span { position: absolute; left: 12px; top: 2.3px; font: 600 34px/1 GM; letter-spacing: -.025em; color: #f3efe4; white-space: nowrap; }
+
+/* fee split */
+.fee { display: flex; height: 70px; border-radius: 18px; overflow: hidden; background: #121317; border: 1px solid #23252c; }
+.fee i { display: block; height: 100%; width: 0; }
+.legend { display: flex; justify-content: space-between; margin-top: 40px; }
+.legend > div { width: 300px; opacity: 0; }
+.legend .pct { font: 400 70px Cin; }
+.legend .lbl { font: 400 26px G; margin-top: 6px; }
+
+.pill { display: inline-flex; align-items: center; gap: 16px; padding: 18px 34px; border-radius: 999px; border: 1px solid rgba(232,188,91,.55); background: rgba(232,188,91,.07); }
+.social { display: inline-flex; align-items: center; gap: 12px; font: 400 30px G; color: #cfccc3; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="glow"></div>
+  <div class="layer" id="rays"></div>
+  <canvas id="dust" width="1920" height="1080"></canvas>
+  <div class="layer" id="leak"></div>
+
+  <div class="layer" id="cam">
+    <!-- cold open -->
+    <div class="scene" id="s1">
+      <div id="flare"><i></i></div>
+      <div class="center kicker" id="s1k" style="top:430px;color:var(--muted)">Solana · pump.fun</div>
+      <div class="center" style="top:470px"><span class="cin goldtext shine" id="s1t" data-text="THE MOAT IS OPEN" style="font-size:88px">THE MOAT IS OPEN</span></div>
+    </div>
+
+    <!-- countdown -->
+    <div class="scene" id="s2">
+      <div id="dial"><svg width="800" height="800" viewBox="-400 -400 800 800" id="dialsvg"></svg></div>
+      <div id="num" class="goldtext">3</div>
+      <div class="center kicker" id="s2k" style="top:905px;opacity:0">Unlocking the vault</div>
+    </div>
+
+    <!-- the drop -->
+    <div class="scene" id="s3">
+      <div class="coin" id="s3coin" style="left:770px;top:110px;width:380px"><img src="../3d/renders/hero-coin.png"><div class="sweep" id="s3sweep"></div></div>
+      <div class="center" style="top:540px"><span class="cin goldtext shine" id="s3t" data-text="MOATPAD" style="font-size:150px">MOATPAD</span></div>
+      <div class="center" id="s3live" style="top:760px"><span class="pill" style="font: 600 30px G; letter-spacing: .34em"><span id="s3dot" style="width:14px;height:14px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)"></span>IS LIVE ON SOLANA</span></div>
+    </div>
+
+    <!-- feature hits -->
+    <div class="scene hit" id="h1">
+      <div class="txt"><div class="idx" data-at=".05">01 — FLOOR VAULT</div><div class="t" data-at=".12">The floor defends<br>itself.</div><div class="s" data-at=".3">40% of every fee fills the coin's own on-chain vault.</div></div>
+      <div class="card3d" data-src="home" data-box="296,404,419,229" data-w="800"></div>
+    </div>
+    <div class="scene hit" id="h2">
+      <div class="txt"><div class="idx" data-at=".05">02 — BUYBACKS</div><div class="t" data-at=".12">Price hits the floor,<br>the vault buys back.</div><div class="s" data-at=".3">The floor follows the ATH and never falls.</div></div>
+      <div class="card3d" data-src="coin" data-box="296,500,904,456" data-w="860"></div>
+    </div>
+    <div class="scene hit" id="h3">
+      <div class="txt"><div class="idx" data-at=".05">03 — HOLDER PAYOUTS</div><div class="t" data-at=".12">Holders get paid<br>every 2 minutes.</div><div class="s" data-at=".3">SOL and bought-back tokens, split by tokens × weight.</div></div>
+      <div class="card3d" id="h3card" data-src="coin" data-box="24,118,248,198" data-w="700"></div>
+    </div>
+    <div class="scene hit" id="h4">
+      <div class="txt"><div class="idx" data-at=".05">04 — LAUNCH</div><div class="t" data-at=".12">Launch a coin<br>for 0.015 SOL.</div><div class="s" data-at=".3">One transaction. Pick your floor. Done.</div></div>
+      <div class="card3d" data-src="create-floor35" data-slice="509" data-box="396,879,720,378" data-w="840"></div>
+    </div>
+
+    <!-- fee split -->
+    <div class="scene" id="s5">
+      <div class="center kicker" data-at=".05" style="top:300px">Every fee, split on-chain</div>
+      <div style="position:absolute;left:210px;right:210px;top:400px">
+        <div class="fee" id="feebar"><i style="background:var(--floor)"></i><i style="background:var(--holder)"></i><i style="background:var(--creator)"></i><i style="background:var(--platform)"></i><i style="background:var(--burn)"></i></div>
+        <div class="legend" id="legend">
+          <div><div class="pct" style="color:var(--floor)">40%</div><div class="lbl">Floor vault</div></div>
+          <div><div class="pct" style="color:var(--holder)">25%</div><div class="lbl">Holders</div></div>
+          <div><div class="pct" style="color:var(--creator)">15%</div><div class="lbl">Creator</div></div>
+          <div><div class="pct" style="color:var(--platform)">10%</div><div class="lbl">Treasury</div></div>
+          <div><div class="pct" style="color:var(--burn)">10%</div><div class="lbl">Buy &amp; burn $MOAT</div></div>
+        </div>
+      </div>
+      <div class="center" data-at=".9" style="top:800px;font:300 32px G;color:#c9c6bd">Floor and holder funds can never be withdrawn.</div>
+    </div>
+
+    <!-- call to action -->
+    <div class="scene" id="s6">
+      <div class="coin" id="s6coin" style="left:830px;top:95px;width:260px"><img src="../3d/renders/hero-coin.png"><div class="sweep" id="s6sweep"></div></div>
+      <div class="center kicker" data-at=".2" style="top:395px">Launches are open</div>
+      <div class="center" data-at=".35" style="top:440px"><span class="cin goldtext" style="font-size:128px">MOATPAD</span></div>
+      <div class="center" data-at=".7" style="top:620px;font:300 40px G">Every coin gets a moat.</div>
+      <div class="center" data-at="1.05" style="top:720px"><span class="pill" style="font:600 36px G;padding:20px 46px"><span class="goldtext">moatpad.fun</span></span></div>
+      <div class="center" data-at="1.4" style="top:870px">
+        <span class="social"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="#cfccc3" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>@moatpad</span>
+        <span class="social" style="margin-left:70px"><svg width="30" height="30" viewBox="0 0 24 24"><path fill="#cfccc3" d="M21.5 4.3 18.4 19.6c-.23 1.03-.85 1.28-1.72.8l-4.75-3.5-2.3 2.2c-.25.25-.47.47-.95.47l.34-4.83 8.8-7.95c.38-.34-.08-.53-.6-.19L6.33 13.45l-4.68-1.46c-1.02-.32-1.04-1.02.21-1.5L20.2 3.4c.85-.31 1.6.2 1.3.9Z"/></svg>t.me/MOATPAD</span>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="sparks" width="1920" height="1080"></canvas>
+  <div class="layer" id="vig"></div>
+  <div class="lb" id="lbt" style="top:0"></div>
+  <div class="lb" id="lbb" style="bottom:0"></div>
+  <div class="layer" id="flash"></div>
+  <canvas id="grain" width="480" height="270" style="width:1920px;height:1080px;opacity:.07;mix-blend-mode:screen"></canvas>
+  <div class="layer" id="fade"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, d) => clamp((t - a) / d);
+const lerp = (a, b, p) => a + (b - a) * p;
+const E = {
+  out3: (x) => 1 - Math.pow(1 - x, 3),
+  in3: (x) => x * x * x,
+  inOut3: (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2),
+  outExpo: (x) => (x === 1 ? 1 : 1 - Math.pow(2, -10 * x)),
+  outBack: (x) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+};
+window.DURATION = 24;
+const COUNTS = [4.0, 5.0, 6.0], DROP = 8.0;
+const HITS = [["h1", 12.0], ["h2", 13.5], ["h3", 15.0], ["h4", 16.5]];
+
+// ---- setup ------------------------------------------------------------------------------------------------------
+let seed = 11;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const DUST = Array.from({ length: 170 }, () => ({ x: rnd() * 1920, y: rnd() * 1080, s: rnd() < 0.14 ? 6 + rnd() * 12 : 1 + rnd() * 2.8, v: 5 + rnd() * 22, ph: rnd() * 6.28, a: 0.25 + rnd() * 0.7 }));
+const SPARKS = Array.from({ length: 340 }, () => { const a = rnd() * 6.283, v = 300 + Math.pow(rnd(), 0.6) * 1700; return { vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.75 - 120, life: 0.7 + rnd() * 1.5, s: 1 + rnd() * 2.6, hot: rnd() }; });
+const dctx = $("dust").getContext("2d"), sctx = $("sparks").getContext("2d"), gctx = $("grain").getContext("2d");
+const grainImg = gctx.createImageData(480, 270);
+
+// the vault dial: 120 ticks, a numbered bezel and an inner ring of notches
+const svg = $("dialsvg"), NS = "http://www.w3.org/2000/svg";
+const mk = (tag, attrs, parent = svg) => { const el = document.createElementNS(NS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); parent.appendChild(el); return el; };
+mk("circle", { r: 352, fill: "none", stroke: "rgba(232,188,91,.18)", "stroke-width": 2 });
+const outer = mk("g", {}), inner = mk("g", {}), lit = [];
+for (let i = 0; i < 120; i++) {
+  const long = i % 10 === 0, a = (i / 120) * 360;
+  const l = mk("line", { x1: 0, y1: -340, x2: 0, y2: long ? -300 : -320, stroke: long ? "#d9b25e" : "#5e5440", "stroke-width": long ? 4 : 2, transform: `rotate(${a})`, "stroke-linecap": "round" }, outer);
+  lit.push(l);
+  if (long) mk("text", { x: 0, y: -270, fill: "#8b7a55", "font-family": "GM", "font-size": 20, "text-anchor": "middle", transform: `rotate(${a})` }, outer).textContent = String(i).padStart(2, "0");
+}
+mk("circle", { r: 236, fill: "none", stroke: "rgba(232,188,91,.35)", "stroke-width": 3 }, inner);
+for (let i = 0; i < 24; i++) mk("rect", { x: -5, y: -252, width: 10, height: 22, rx: 3, fill: "#2a2620", stroke: "rgba(232,188,91,.4)", transform: `rotate(${i * 15})` }, inner);
+const marker = mk("path", { d: "M0 -372 L-14 -396 L14 -396 Z", fill: "#f2c76a" });
+const wave = mk("circle", { r: 0, fill: "none", stroke: "#f2c76a", "stroke-width": 4, opacity: 0 });
+
+// UI crops from the tour captures (2x screenshots of the 1600 px wide app)
+for (const el of document.querySelectorAll(".card3d")) {
+  const [x, y, w, h] = el.dataset.box.split(",").map(Number), W = +el.dataset.w, k = W / w, top = y - (+el.dataset.slice || 0);
+  Object.assign(el.style, { width: `${W}px`, height: `${h * k}px`, marginTop: `${(-h * k) / 2}px`, backgroundImage: `url(tour/${el.dataset.src}.jpg)`, backgroundSize: `${1600 * k}px auto`, backgroundPosition: `${-x * k}px ${-top * k}px` });
+  el.dataset.k = k;
+}
+// live countdown on the payout card (crop origin 24,118; digits from page x 120 at y 160, ring at 40,168)
+const h3 = $("h3card"), k3 = +h3.dataset.k;
+const cd = document.createElement("div"); cd.className = "cd"; cd.innerHTML = "<span></span>";
+Object.assign(cd.style, { left: `${84 * k3}px`, top: `${42 * k3}px`, width: "120px", height: "40px", transformOrigin: "0 0", transform: `scale(${k3})` });
+h3.appendChild(cd);
+
+// ---- render helpers -----------------------------------------------------------------------------------------------
+function dust(t, speed, burst) {
+  dctx.clearRect(0, 0, 1920, 1080);
+  for (const d of DUST) {
+    let x = d.x + Math.sin(t * 0.5 + d.ph) * 30, y = ((d.y - t * d.v * speed) % 1080 + 1080) % 1080;
+    if (burst) { const dx = x - 960, dy = y - 540, r = Math.hypot(dx, dy) + 1; x += (dx / r) * burst * 420; y += (dy / r) * burst * 420; }
+    const a = d.a * (0.6 + 0.4 * Math.sin(t * 2.3 + d.ph * 3)) * (d.s > 5 ? 0.16 : 1);
+    const g = dctx.createRadialGradient(x, y, 0, x, y, d.s);
+    g.addColorStop(0, `rgba(255,243,207,${a})`); g.addColorStop(0.45, `rgba(240,196,106,${a * 0.8})`); g.addColorStop(1, "rgba(240,196,106,0)");
+    dctx.fillStyle = g; dctx.beginPath(); dctx.arc(x, y, d.s, 0, 6.283); dctx.fill();
+  }
+}
+function sparks(t) {
+  sctx.clearRect(0, 0, 1920, 1080);
+  const age = t - DROP;
+  if (age < 0 || age > 3.2) return;
+  sctx.globalCompositeOperation = "lighter";
+  for (const p of SPARKS) {
+    if (age > p.life) continue;
+    const drag = (1 - Math.exp(-2.2 * age)) / 2.2;
+    const x = 960 + p.vx * drag, y = 470 + p.vy * drag + 160 * age * age;
+    const tail = 0.035, d2 = (1 - Math.exp(-2.2 * Math.max(0, age - tail))) / 2.2;
+    const x0 = 960 + p.vx * d2, y0 = 470 + p.vy * d2 + 160 * Math.max(0, age - tail) ** 2;
+    const fade = 1 - age / p.life;
+    sctx.strokeStyle = p.hot > 0.6 ? `rgba(255,250,235,${fade})` : `rgba(255,${190 + p.hot * 50},${90 + p.hot * 60},${fade})`;
+    sctx.lineWidth = p.s; sctx.lineCap = "round";
+    sctx.beginPath(); sctx.moveTo(x0, y0); sctx.lineTo(x, y); sctx.stroke();
+  }
+  sctx.globalCompositeOperation = "source-over";
+}
+function grain(frame) {
+  let s = (frame * 7919 + 13) % 2147483647 || 1;
+  const d = grainImg.data;
+  for (let i = 0; i < d.length; i += 4) { s = (s * 48271) % 2147483647; const v = s & 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+  gctx.putImageData(grainImg, 0, 0);
+}
+function reveal(scene, lt) {
+  for (const el of scene.querySelectorAll("[data-at]")) {
+    const p = E.out3(prog(lt, +el.dataset.at, +(el.dataset.d || 0.5)));
+    el.style.opacity = p;
+    el.style.transform = `translateY(${(1 - p) * 34}px)`;
+    el.style.filter = p < 1 ? `blur(${(1 - p) * 12}px)` : "none";
+  }
+}
+function show(id, t, a, b) {
+  const el = $(id), on = t >= a && t < b;
+  el.style.display = on ? "block" : "none";
+  if (on) reveal(el, t - a);
+  return on ? t - a : -1;
+}
+const aberr = (amt) => (amt > 0.01 ? `${-amt * 12}px 0 rgba(255,60,80,${0.55 * amt}), ${amt * 12}px 0 rgba(60,200,255,${0.55 * amt})` : "none");
+const kickAt = (t, list, d = 0.35) => Math.max(0, ...list.map((h) => (t >= h ? 1 - prog(t, h, d) : 0)));
+
+// ---- render ---------------------------------------------------------------------------------------------------------
+window.render = (t) => {
+  const frame = Math.round(t * 30);
+  // camera shake on the big hits
+  const shake = kickAt(t, [...COUNTS, DROP, 20.0], 0.45) ** 2;
+  const sx = Math.sin(frame * 2.1) * 16 * shake, sy = Math.cos(frame * 2.9) * 12 * shake;
+  let zoom = 1;
+  if (t >= DROP && t < 12) zoom = 1 + 0.035 * prog(t, DROP, 4);
+  if (t >= 20) zoom = 1 + 0.03 * prog(t, 20, 4);
+  $("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${zoom})`;
+
+  // letterbox until the drop, then it opens
+  const lb = 132 * (1 - E.outExpo(prog(t, DROP, 0.5)));
+  $("lbt").style.height = $("lbb").style.height = `${lb}px`;
+
+  // background
+  const glowA = t < 4 ? 0.05 + 0.05 * prog(t, 0.5, 3) : t < DROP ? 0.08 + 0.06 * kickAt(t, COUNTS, 0.6) : t < 12 ? 0.22 - 0.08 * prog(t, DROP, 3) : 0.12;
+  $("glow").style.setProperty("--ga", glowA * (t >= 7.75 && t < DROP ? 0.2 : 1));
+  const hitColor = { h1: "106,166,255", h2: "106,166,255", h3: "242,199,106", h4: "232,188,91" };
+  const curHit = HITS.filter(([, a]) => t >= a && t < 18).at(-1);
+  $("glow").style.setProperty("--gc", curHit ? hitColor[curHit[0]] : "232,188,91");
+  dust(t, t < 4 ? 0.6 : t < DROP ? 1 + (t - 4) * 0.9 : 1.2, t >= DROP ? E.outExpo(prog(t, DROP, 1.4)) * (1 - prog(t, 9.4, 2.4)) : 0);
+  $("dust").style.opacity = t >= 7.75 && t < DROP ? 0.25 : 1;
+  sparks(t);
+  grain(frame);
+  const rays = t >= DROP && t < 12 ? E.out3(prog(t, DROP, 0.6)) * (1 - prog(t, 11.4, 0.6)) : t >= 20 ? 0.45 * E.out3(prog(t, 20, 1)) : 0;
+  $("rays").style.opacity = rays * 0.9;
+  $("rays").style.transform = `rotate(${t * 6}deg)`;
+  $("leak").style.opacity = t >= DROP ? 0.9 * (1 - prog(t, DROP + 0.2, 3)) + (t >= 20 ? 0.5 * prog(t, 20, 1) : 0) : 0;
+  $("leak").style.setProperty("--lx", `${lerp(10, 60, prog(t, DROP, 16))}%`);
+  $("flash").style.opacity = Math.max(t >= DROP ? 1 - prog(t, DROP, 0.7) : 0, 0.45 * kickAt(t, COUNTS, 0.25), t >= 20 ? 0.6 * (1 - prog(t, 20, 0.6)) : 0, 0.3 * kickAt(t, HITS.map((h) => h[1]), 0.2));
+  $("fade").style.opacity = Math.max(t >= 7.75 && t < DROP ? 0.75 * prog(t, 7.75, 0.08) : 0, E.inOut3(prog(t, 23.0, 1.0)));
+
+  // 1. cold open
+  const l1 = show("s1", t, 0, 4.0);
+  if (l1 >= 0) {
+    const w = E.inOut3(prog(l1, 0.2, 1.5));
+    const fl = $("flare");
+    fl.style.opacity = w * (1 - E.out3(prog(l1, 3.1, 0.6)));
+    fl.style.left = `${960 - w * 900}px`; fl.style.right = `${960 - w * 900}px`;
+    $("s1k").style.opacity = E.out3(prog(l1, 0.9, 0.8)) * (1 - prog(l1, 3.3, 0.5));
+    const p = E.out3(prog(l1, 1.5, 1.6)), out = E.in3(prog(l1, 3.35, 0.65));
+    const tt = $("s1t");
+    tt.style.opacity = p * (1 - out);
+    tt.style.letterSpacing = `${lerp(0.62, 0.22, p) + out * 0.25}em`;
+    tt.style.filter = `blur(${(1 - p) * 14 + out * 16}px)`;
+    tt.style.display = "inline-block";
+    tt.style.transform = `scale(${1 + out * 0.35})`;
+    tt.style.setProperty("--sp", `${lerp(160, -60, E.inOut3(prog(l1, 2.3, 1.1)))}%`);
+  }
+
+  // 2. countdown on the vault dial
+  const l2 = show("s2", t, 4.0, DROP);
+  if (l2 >= 0) {
+    const k = Math.min(2, Math.floor(l2)), f = l2 - k;
+    // the dial snaps on every count, then spins up into the drop
+    const snaps = COUNTS.reduce((acc, c, i) => acc + (t >= c ? 40 * E.outBack(clamp((t - c) / 0.45)) : 0), 0);
+    const spin = 360 * 2.4 * E.in3(prog(t, 6.9, 0.85));
+    outer.setAttribute("transform", `rotate(${-snaps - spin})`);
+    inner.setAttribute("transform", `rotate(${snaps * 1.5 + spin * 1.6})`);
+    const fill = prog(t, 6.2, 1.5);
+    lit.forEach((l, i) => { const on = i / 120 < fill; l.setAttribute("stroke", on ? "#ffd987" : i % 10 === 0 ? "#d9b25e" : "#5e5440"); l.style.filter = on ? "drop-shadow(0 0 6px rgba(255,210,120,.9))" : "none"; });
+    const dIn = E.outExpo(prog(l2, 0, 0.6));
+    $("dial").style.opacity = dIn * (t >= 7.75 ? 0.15 : 1);
+    $("dial").style.transform = `scale(${lerp(0.7, 1, dIn) * (1 + 0.04 * kickAt(t, COUNTS, 0.3))})`;
+    const wv = clamp(f / 0.8);
+    wave.setAttribute("r", 240 + E.out3(wv) * 520); wave.setAttribute("opacity", l2 < 3 ? (1 - wv) * 0.9 : 0);
+    const num = $("num");
+    if (l2 < 3) {
+      num.textContent = 3 - k;
+      const p = E.outExpo(clamp(f / 0.35));
+      num.style.opacity = clamp(p * 1.5) * (1 - E.out3(prog(f, 0.72, 0.28)));
+      num.style.transform = `scale(${lerp(1.7, 1, p) * (1 - 0.06 * prog(f, 0.35, 0.6))})`;
+      num.style.filter = `blur(${(1 - p) * 20}px)`;
+      num.style.textShadow = "none";
+      $("num").style.webkitTextStroke = "0";
+    } else num.style.opacity = 0;
+    const kk = $("s2k");
+    kk.style.opacity = E.out3(prog(l2, 3.0, 0.4)) * (t >= 7.75 ? 0 : 1);
+    kk.style.letterSpacing = `${lerp(0.7, 0.42, E.out3(prog(l2, 3.0, 0.7)))}em`;
+  }
+
+  // 3. the drop: MOATPAD IS LIVE
+  const l3 = show("s3", t, DROP, 12.0);
+  if (l3 >= 0) {
+    const c = $("s3coin"), p = E.outExpo(prog(l3, 0, 0.7));
+    c.style.opacity = clamp(p * 2);
+    c.style.transform = `perspective(1400px) scale(${lerp(2.4, 1, p) * (1 + 0.012 * Math.sin(l3 * 2))}) rotateY(${lerp(-80, 0, p) + 4 * Math.sin(l3 * 1.2)}deg) translateY(${6 * Math.sin(l3 * 1.6)}px)`;
+    c.querySelector("img").style.filter = `drop-shadow(0 0 ${60 * (1 - prog(l3, 0, 2))}px rgba(255,210,120,.8)) drop-shadow(0 40px 70px rgba(0,0,0,.6))`;
+    $("s3sweep").style.backgroundPosition = `${lerp(160, -60, E.inOut3(prog(l3, 0.5, 1.0)))}% 0`;
+    const w = E.out3(prog(l3, 0.2, 0.9)), tt = $("s3t");
+    tt.style.opacity = w; tt.style.letterSpacing = `${lerp(0.5, 0.12, w)}em`; tt.style.filter = `blur(${(1 - w) * 14}px)`;
+    tt.style.setProperty("--sp", `${lerp(160, -60, E.inOut3(prog(l3, 1.1, 1.0)))}%`);
+    const lv = E.outBack(prog(l3, 0.75, 0.6));
+    $("s3live").style.opacity = clamp(lv); $("s3live").style.transform = `scale(${lerp(0.7, 1, lv)})`;
+    $("s3dot").style.opacity = 0.5 + 0.5 * Math.sin(l3 * 8);
+    // zoom through into the features
+    const out = E.in3(prog(l3, 3.55, 0.45));
+    $("s3").style.transform = `scale(${1 + out * 0.8})`; $("s3").style.opacity = 1 - out; $("s3").style.filter = out > 0 ? `blur(${out * 18}px)` : "none";
+  }
+
+  // 4. feature hits, one every 1.5 s
+  HITS.forEach(([id, a], i) => {
+    const lt = show(id, t, a, a + 1.5);
+    if (lt < 0) return;
+    const el = $(id), card = el.querySelector(".card3d");
+    const inP = E.outExpo(prog(lt, 0, 0.55)), outP = E.in3(prog(lt, 1.28, 0.22));
+    card.style.transform = `perspective(1800px) translateX(${(1 - inP) * 700 - outP * 900}px) rotateY(${lerp(32, -9, inP) - outP * 20}deg) rotateX(${lerp(8, 3, inP)}deg) translateZ(${Math.sin(lt * 2) * 10}px)`;
+    card.style.opacity = clamp(inP * 1.6) * (1 - outP);
+    card.style.setProperty("--gl", `${lerp(150, -50, E.inOut3(prog(lt, 0.35, 0.9)))}%`);
+    const txt = el.querySelector(".txt");
+    txt.style.transform = `translateX(${-outP * 160}px)`; txt.style.opacity = 1 - outP; txt.style.filter = outP > 0 ? `blur(${outP * 12}px)` : "none";
+    txt.querySelector(".t").style.textShadow = aberr(1 - prog(lt, 0.12, 0.25));
+  });
+  // the payout countdown reaches zero during its hit
+  const rem = Math.max(0, 16.0 - t), paid = t >= 16.0;
+  cd.firstChild.textContent = paid ? "02:00" : `00:${String(Math.ceil(rem)).padStart(2, "0")}`;
+  cd.firstChild.style.color = paid ? "#f2c76a" : "#f3efe4";
+  cd.firstChild.style.textShadow = paid ? "0 0 14px rgba(242,199,106,.8)" : "none";
+
+  // 5. fee split, one segment per eighth note
+  const l5 = show("s5", t, 18.0, 20.0);
+  if (l5 >= 0) {
+    const widths = [40, 25, 15, 10, 10];
+    $("feebar").querySelectorAll("i").forEach((s, i) => { s.style.width = `${widths[i] * E.outExpo(prog(t, 18.25 + i * 0.25, 0.3))}%`; });
+    $("legend").querySelectorAll(":scope > div").forEach((d, i) => { const p = E.outBack(prog(t, 18.25 + i * 0.25, 0.4)); d.style.opacity = clamp(p); d.style.transform = `translateY(${(1 - p) * 30}px)`; });
+    const out = E.in3(prog(l5, 1.75, 0.25));
+    $("s5").style.opacity = 1 - out; $("s5").style.filter = out > 0 ? `blur(${out * 12}px)` : "none";
+  }
+
+  // 6. call to action
+  const l6 = show("s6", t, 20.0, 24.01);
+  if (l6 >= 0) {
+    const c = $("s6coin"), p = E.outExpo(prog(l6, 0, 0.8));
+    c.style.opacity = clamp(p * 1.6);
+    c.style.transform = `perspective(1400px) scale(${lerp(1.6, 1, p) * (1 + 0.012 * Math.sin(l6 * 1.6))}) rotateY(${lerp(-50, 0, p) + 4 * Math.sin(l6 * 0.9)}deg)`;
+    c.querySelector("img").style.filter = "drop-shadow(0 30px 60px rgba(0,0,0,.6))";
+    $("s6sweep").style.backgroundPosition = `${lerp(160, -60, E.inOut3(prog(l6, 0.6, 1.2)))}% 0`;
+  }
+};
+window.ready = document.fonts.ready.then(() => Promise.all([...document.images].map((i) => (i.complete ? 1 : new Promise((r) => (i.onload = i.onerror = r)))))).then(() => {
+  // background images of the crops
+  return Promise.all([...document.querySelectorAll(".card3d")].map((el) => new Promise((r) => { const im = new Image(); im.onload = im.onerror = r; im.src = `tour/${el.dataset.src}.jpg`; })));
+}).then(() => window.render(0));
+</script>
+</body>
+</html>
