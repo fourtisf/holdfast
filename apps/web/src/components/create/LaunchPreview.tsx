@@ -39,6 +39,12 @@ export function LaunchPreview({ form, preview }: { form: LaunchForm; preview: st
           </div>
         </div>
         <FloorAthBar className="mt-3" progress={1} vaultBuying={false} />
+        <div className="mt-2 flex items-center justify-between text-[11px]">
+          <span className="text-muted">Vault buys back at</span>
+          <span className="font-semibold text-floor tabular">
+            ≈ {formatMarketCap(START_MC * (1 - form.triggerBps / 10_000))} MC · −{form.triggerBps / 100}%
+          </span>
+        </div>
         {form.description.trim() ? <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-muted">{form.description}</p> : null}
         <div className="mt-3 flex items-center gap-2 border-t border-line pt-2.5 text-muted">
           {normalizeSocial("x", form.x) ? <XLogoIcon size={14} /> : null}
