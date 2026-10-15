@@ -52,7 +52,7 @@ moatpad.fun
 ```
 2/ Every trade pays a creator fee. On Moatpad it lands in the coin's own on-chain vault, not in a dev wallet.
 
-40% floor vault · 25% holders · 15% creator · 10% treasury · 10% buy & burn $MOAT
+40% floor vault · 25% holders · 15% creator · 10% treasury · 10% buy & burn $MOATPAD
 ```
 
 ```

@@ -6,7 +6,7 @@ const SEGMENTS = [
   { bps: SPLIT_HOLDER_BPS, label: "Holder payouts", color: "bg-payout", text: "text-payout" },
   { bps: SPLIT_CREATOR_BPS, label: "Creator (claimable)", color: "bg-creator", text: "text-creator" },
   { bps: SPLIT_PLATFORM_BPS, label: "Moatpad treasury", color: "bg-platform", text: "text-platform" },
-  { bps: SPLIT_BURN_BPS, label: "Buy & burn $MOAT", color: "bg-vault", text: "text-vault" },
+  { bps: SPLIT_BURN_BPS, label: "Buy & burn $MOATPAD", color: "bg-vault", text: "text-vault" },
 ];
 
 export function FeeSplitBar({ className, compact = false }: { className?: string; compact?: boolean }) {

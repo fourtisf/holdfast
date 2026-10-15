@@ -3,12 +3,12 @@ import { TelegramIcon, XLogoIcon } from "@/components/ui/icons";
 import { MOAT_CA, TELEGRAM_URL, X_HANDLE, X_URL } from "@/lib/config";
 import { shortAddress } from "@/lib/format";
 
-/** Thin bar above the nav: the $MOAT contract address (or "Coming soon"), the X account and the Telegram channel. */
+/** Thin bar above the nav: the $MOATPAD contract address (or "Coming soon"), the X account and the Telegram channel. */
 export function AnnouncementBar() {
   return (
     <div className="border-b border-brand/15 bg-brand/[0.06]">
       <div className="mx-auto flex h-9 max-w-[1600px] items-center justify-center gap-2.5 px-4 text-xs lg:px-6">
-        <span className="font-display font-semibold tracking-wide text-brand">$MOAT</span>
+        <span className="font-display font-semibold tracking-wide text-brand">$MOATPAD</span>
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="text-muted">CA:</span>
           {MOAT_CA ? (

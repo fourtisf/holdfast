@@ -65,7 +65,7 @@ export function VaultPanel({ coin }: { coin: CoinDetail }) {
           <div className="text-platform">{formatSol(v.platformSol)}</div>
           {v.platformSweptSol > 0 ? <div className="text-xs font-normal text-muted">{formatSol(v.platformSweptSol)} swept</div> : null}
         </Row>
-        <Row label="Burn bucket" hint={`${SPLIT_BURN_BPS / 100}% of fees → buy & burn $MOAT`}>
+        <Row label="Burn bucket" hint={`${SPLIT_BURN_BPS / 100}% of fees → buy & burn $MOATPAD`}>
           <span className="text-vault">{formatSol(v.burnSol)}</span>
         </Row>
         <Row label="ATH" hint="Time-weighted all-time high">

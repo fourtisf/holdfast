@@ -15,7 +15,7 @@ Most coins launched today have no floor. Moatpad gives every coin one, and pays 
 
 - Moatpad launches coins on pump.fun with a **floor vault** built in.
 - Every trade pays a creator fee. On Moatpad it goes to the **coin's own on-chain vault**, not to a dev wallet.
-- **40%** defends the floor · **25%** goes to holders · **15%** to the creator · **10%** to the Moatpad treasury · **10%** buys and burns $MOAT.
+- **40%** defends the floor · **25%** goes to holders · **15%** to the creator · **10%** to the Moatpad treasury · **10%** buys and burns $MOATPAD.
 - When the price falls to the floor, the vault **buys back on its own**.
 - Holders get paid **every 2 minutes**, in SOL and bought-back tokens.
 - Floor and holder funds **can never be withdrawn**.
@@ -55,7 +55,7 @@ Each creator fee is split on-chain:
 - **25% holders:** paid out every 2 minutes.
 - **15% creator:** claimable on the coin's page, only by the creator wallet.
 - **10% Moatpad treasury.**
-- **10% buy and burn $MOAT.**
+- **10% buy and burn $MOATPAD.**
 
 The floor and holder shares stay in the vault. There is no withdraw path for them, not for the creator and not for Moatpad.
 
@@ -107,7 +107,7 @@ No wallet in your browser? You can also launch by sending SOL to a one-time depo
 No. The vault defends the floor with what it holds. A buyback slows a fall; it is not a promise of a bottom.
 
 **Can the dev or Moatpad take the vault?**
-No. SOL leaves the vault only as buybacks, holder payouts, the creator's 15% claim, the 10% treasury share and the $MOAT buy-and-burn. Floor and holder funds have no withdraw path.
+No. SOL leaves the vault only as buybacks, holder payouts, the creator's 15% claim, the 10% treasury share and the $MOATPAD buy-and-burn. Floor and holder funds have no withdraw path.
 
 **What happens after graduation?**
 The coin moves to PumpSwap. Fees keep flowing into the vault, and buybacks and payouts continue there.
