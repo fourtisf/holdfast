@@ -45,8 +45,9 @@ while empty); `NEXT_PUBLIC_X_URL` overrides the X link (default https://x.com/mo
 
 ## The program and the on-chain services
 
-`keeper`, `payout`, `launcher` and `notifier` need the vault program deployed and initialized with the keeper and
-launcher addresses that `init.sh` printed (`keys/*.address`), plus `TELEGRAM_BOT_TOKEN` for the notifier.
+`keeper`, `payout` and `launcher` need the vault program deployed and initialized with the keeper and launcher
+addresses that `init.sh` printed (`keys/*.address`). The Telegram bot (`notifier`) is opt-in: set `TELEGRAM_BOT_TOKEN`
+and `COMPOSE_PROFILES=telegram` in `.env`, then `docker compose up -d`.
 `deploy/program.sh` does the on-chain part from the server. It keeps the deployer keypair (fee payer, upgrade
 authority, Config admin) and the program keypair in `~/moatpad-admin`, outside the repository and every container:
 

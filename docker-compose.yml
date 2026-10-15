@@ -147,11 +147,12 @@ services:
       retries: 5
       start_period: 120s
 
-  # Telegram bot (apps/notifier). Needs TELEGRAM_BOT_TOKEN in .env: until it is set, it exits and
-  # restarts like the keeper does before the program is deployed. WEB_URL makes its coin links
-  # point at the public site.
+  # Telegram bot (apps/notifier), opt-in: it starts only with the `telegram` profile, e.g.
+  # COMPOSE_PROFILES=telegram in .env next to TELEGRAM_BOT_TOKEN. WEB_URL makes its coin links point at the
+  # public site.
   notifier:
     <<: *backend
+    profiles: ["telegram"]
     working_dir: /app/apps/notifier
     command: ["tsx", "src/main.ts"]                 # @holdfast/notifier start
     environment:
