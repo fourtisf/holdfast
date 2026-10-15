@@ -17,16 +17,27 @@ export interface ChainSource {
   getTransaction(signature: string): Promise<ParsedTx | null>;
 }
 
-export function rpcChainSource(connection: Connection, opts: { commitment?: Finality; maxSupportedTransactionVersion?: number } = {}): ChainSource {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export function rpcChainSource(
+  connection: Connection,
+  opts: { commitment?: Finality; maxSupportedTransactionVersion?: number; nullRetryDelaysMs?: number[] } = {},
+): ChainSource {
   const commitment = opts.commitment ?? "confirmed";
   return {
     async getSignaturesForAddress(address, o) {
       const res = await connection.getSignaturesForAddress(new PublicKey(address), { before: o.before, until: o.until, limit: o.limit }, commitment);
       return res.map((r) => ({ signature: r.signature, slot: r.slot, err: r.err }));
     },
+    // Right after a signature is listed, a load-balanced node may not serve its body yet: retry briefly
+    // instead of waiting a whole poll interval.
     async getTransaction(signature) {
-      const res = await connection.getTransaction(signature, { commitment, maxSupportedTransactionVersion: opts.maxSupportedTransactionVersion ?? 0 });
-      return res ? fromVersionedTransactionResponse(res) : null;
+      for (const wait of opts.nullRetryDelaysMs ?? [0, 300, 800]) {
+        if (wait) await sleep(wait);
+        const res = await connection.getTransaction(signature, { commitment, maxSupportedTransactionVersion: opts.maxSupportedTransactionVersion ?? 0 });
+        if (res) return fromVersionedTransactionResponse(res);
+      }
+      return null;
     },
   };
 }
@@ -43,6 +54,13 @@ export interface PollerOptions {
   maxPages?: number;
   /** Transactions fetched in parallel (processing itself is sequential, in chain order). */
   fetchConcurrency?: number;
+  /** Addresses whose new signatures are listed in parallel. */
+  addressConcurrency?: number;
+  /**
+   * Bonding curves and pools are listed every this many ticks only: every trade also lists the coin's mint,
+   * which is polled each tick, so they are a backstop (and halve the RPC calls).
+   */
+  secondaryEvery?: number;
   /** Called after every completed tick (health / metrics). */
   onTick?: (r: TickResult) => void;
 }
@@ -52,6 +70,7 @@ export interface TickResult {
   signatures: number;
   processed: number;
   failed: number;
+  durationMs: number;
 }
 
 const cursorName = (address: string) => `sigs:${address}`;
@@ -66,13 +85,16 @@ export class Poller {
   private timer: NodeJS.Timeout | null = null;
   private running: Promise<void> | null = null;
   private stopped = true;
+  private ticks = 0;
 
   constructor(private readonly opts: PollerOptions) {}
 
-  async addresses(): Promise<string[]> {
+  /** The program and every coin's mint, plus (when `secondary`) each coin's bonding curve and pool. */
+  async addresses(secondary = true): Promise<string[]> {
     const set = new Set<string>([this.opts.holdfastProgramId]);
     for (const c of await listCoins(this.opts.db)) {
       set.add(c.mint);
+      if (!secondary) continue;
       set.add(c.bondingCurve);
       if (c.ammPool) set.add(c.ammPool);
     }
@@ -98,17 +120,28 @@ export class Poller {
 
   async tick(): Promise<TickResult> {
     const { db, source, log } = this.opts;
-    const addresses = await this.addresses();
+    const startedAt = Date.now();
+    const addresses = await this.addresses(this.ticks++ % Math.max(1, this.opts.secondaryEvery ?? 5) === 0);
+    // Listed in parallel (a serial loop grows with the coin count), merged in address order below so the
+    // processing order stays deterministic.
+    const listed: (SignatureInfo[] | null)[] = new Array(addresses.length).fill(null);
+    let nextAddress = 0;
+    const lister = async () => {
+      while (nextAddress < addresses.length) {
+        const i = nextAddress++;
+        try {
+          listed[i] = await this.fetchNew(addresses[i]!);
+        } catch (err) {
+          log.warn({ err, address: addresses[i] }, "getSignaturesForAddress failed");
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, this.opts.addressConcurrency ?? 4) }, lister));
     const perAddress = new Map<string, SignatureInfo[]>();
     const all = new Map<string, { info: SignatureInfo; rank: number }>();
-    for (const address of addresses) {
-      let sigs: SignatureInfo[];
-      try {
-        sigs = await this.fetchNew(address);
-      } catch (err) {
-        log.warn({ err, address }, "getSignaturesForAddress failed");
-        continue;
-      }
+    for (const [a, address] of addresses.entries()) {
+      const sigs = listed[a];
+      if (!sigs) continue;
       perAddress.set(address, sigs);
       sigs.forEach((info, i) => {
         // Lists are newest first: a larger index is older within the same slot.
@@ -126,7 +159,11 @@ export class Poller {
     const fetches = new Map<string, Promise<ParsedTx | null>>();
     const prefetch = (i: number) => {
       const s = work[i];
-      if (s && !s.err && !fetches.has(s.signature)) fetches.set(s.signature, source.getTransaction(s.signature));
+      if (!s || s.err || fetches.has(s.signature)) return;
+      const p = source.getTransaction(s.signature);
+      // Awaited (and its failure handled) in order below; until then a rejection must not go unhandled.
+      p.catch(() => {});
+      fetches.set(s.signature, p);
     };
     for (let i = 0; i < concurrency; i++) prefetch(i);
 
@@ -159,7 +196,7 @@ export class Poller {
       }
       if (good) await setCursor(db, cursorName(address), good.signature, good.slot);
     }
-    return { addresses: addresses.length, signatures: ordered.length, processed, failed: failed.size };
+    return { addresses: addresses.length, signatures: ordered.length, processed, failed: failed.size, durationMs: Date.now() - startedAt };
   }
 
   start(): void {

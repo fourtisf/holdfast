@@ -34,6 +34,7 @@ export async function createPgliteDb(options: PgliteDbOptions = {}): Promise<Db>
     tx<T>(fn: (q: Queryable) => Promise<T>): Promise<T> {
       return pglite.transaction((t) => fn(wrap(t)));
     },
+    // One in-process database: the connection cannot drop, so ListenOptions.onReconnect never fires.
     async listen(channel: string, onPayload: (payload: string) => void): Promise<Unlisten> {
       const unsubscribe = await pglite.listen(channel, onPayload);
       return async () => {

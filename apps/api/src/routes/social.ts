@@ -29,6 +29,7 @@ export function socialRoutes(app: FastifyInstance, ctx: ApiContext): void {
     return {
       items: page.map((r) => ({
         sig: r.sig,
+        ixIndex: r.ixIndex,
         wallet: q.wallet,
         side: r.side,
         sol: lamportsToSol(r.sol),

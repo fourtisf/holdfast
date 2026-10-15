@@ -43,6 +43,7 @@ describe("keys", () => {
     expect(subscriptionKey({ channel: "stats" })).toBe("stats");
     expect(messageKey({ channel: "vault", mint: "M", data: {} as never })).toBe("trades:M");
     expect(messageKey({ channel: "round", mint: "M", data: {} as never })).toBe("trades:M");
+    expect(messageKey({ channel: "resync", mint: "M" })).toBe("trades:M");
     expect(messageKey({ channel: "pong", serverTime: 1 })).toBeNull();
   });
 });
@@ -139,6 +140,68 @@ describe("WsClient", () => {
     expect(socket.sent.at(-1)).toEqual({ type: "ping" });
     socket.push({ channel: "pong", serverTime: 123 });
     expect(pong).toHaveBeenCalledWith(123);
+  });
+
+  it("tells listeners after every open, once the subscriptions are back", async () => {
+    const client = make();
+    const seen: unknown[][] = [];
+    client.onOpen(() => seen.push([...FakeSocket.instances.at(-1)!.sent]));
+    client.subscribe({ channel: "trades", mint: "M" }, () => {});
+    await flush();
+    FakeSocket.instances[0]!.open();
+    FakeSocket.instances[0]!.drop();
+    vi.advanceTimersByTime(100);
+    await flush();
+    FakeSocket.instances[1]!.open();
+    expect(seen).toEqual([[{ type: "subscribe", channel: "trades", mint: "M" }], [{ type: "subscribe", channel: "trades", mint: "M" }]]);
+  });
+
+  it("replaces a socket that went silent (no pong for two ping intervals)", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval", "Date"] });
+    const client = make();
+    client.subscribe({ channel: "stats" }, () => {});
+    await flush();
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(10_000);
+    socket.push({ channel: "pong", serverTime: Date.now() + 2_000 });
+    expect(client.serverOffsetMs).toBe(2_000);
+    vi.advanceTimersByTime(20_000);
+    expect(FakeSocket.instances).toHaveLength(1); // 20 s since the last frame: still fine
+    vi.advanceTimersByTime(10_000);
+    expect(socket.readyState).toBe(3);
+    expect(client.state).toBe("reconnecting");
+    vi.advanceTimersByTime(100);
+    await flush();
+    expect(FakeSocket.instances).toHaveLength(2);
+    socket.push({ channel: "stats", data: {} as never }); // the old socket is detached
+    expect(client.state).toBe("reconnecting");
+  });
+
+  it("abandons a socket that never opens", async () => {
+    const client = make();
+    client.subscribe({ channel: "stats" }, () => {});
+    await flush();
+    vi.advanceTimersByTime(10_000);
+    expect(FakeSocket.instances[0]!.readyState).toBe(3);
+    vi.advanceTimersByTime(100);
+    await flush();
+    expect(FakeSocket.instances).toHaveLength(2);
+  });
+
+  it("wake() skips the backoff wait", async () => {
+    const client = new WsClient(() => new FakeSocket(), { random: () => 1, baseDelayMs: 10_000, maxDelayMs: 60_000 });
+    client.subscribe({ channel: "stats" }, () => {});
+    await flush();
+    FakeSocket.instances[0]!.open();
+    FakeSocket.instances[0]!.drop();
+    expect(client.state).toBe("reconnecting");
+    client.wake();
+    await flush();
+    expect(FakeSocket.instances).toHaveLength(2);
+    FakeSocket.instances[1]!.open();
+    expect(client.state).toBe("open");
   });
 
   it("stops reconnecting after close()", async () => {

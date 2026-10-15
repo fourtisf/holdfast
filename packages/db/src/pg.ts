@@ -1,11 +1,13 @@
 import pg from "pg";
-import { quoteIdent, type Db, type Queryable, type QueryResult, type Unlisten } from "./db.js";
+import { quoteIdent, type Db, type ListenOptions, type Queryable, type QueryResult, type Unlisten } from "./db.js";
 
 export interface PgDbOptions {
   connectionString: string;
   max?: number;
   /** Called for background errors (idle clients, LISTEN reconnects). */
   onError?: (err: Error) => void;
+  /** How often a LISTEN connection proves it is still alive (a half-open socket never errors). */
+  listenProbeMs?: number;
 }
 
 // int8 and numeric stay strings (the default); make it explicit so nobody flips it globally.
@@ -49,41 +51,80 @@ export function createPgDb(options: PgDbOptions): Db {
         client.release();
       }
     },
-    async listen(channel: string, onPayload: (payload: string) => void): Promise<Unlisten> {
+    async listen(channel: string, onPayload: (payload: string) => void, listenOptions: ListenOptions = {}): Promise<Unlisten> {
+      const probeMs = options.listenProbeMs ?? 30_000;
       let closed = false;
+      let started = false;
       let client: pg.Client | null = null;
       let retry: NodeJS.Timeout | null = null;
+      let probe: NodeJS.Timeout | null = null;
+      // Consecutive failures since the last good connection: every outage starts again at the short delay.
+      let failures = 0;
 
-      const connect = async (attempt: number): Promise<void> => {
-        const c = new pg.Client({ connectionString: options.connectionString });
+      const connect = async (): Promise<void> => {
+        const c = new pg.Client({ connectionString: options.connectionString, keepAlive: true, keepAliveInitialDelayMillis: 10_000, query_timeout: 10_000 });
+        let dead = false;
+        // A drop can surface both as an 'error' event and as a rejected query: retry once per connection.
+        const drop = (err: Error) => {
+          if (dead) return;
+          dead = true;
+          onError(err);
+          listeners.delete(c);
+          if (client === c) client = null;
+          if (probe) clearInterval(probe);
+          probe = null;
+          c.end().catch(() => {});
+          if (started && !closed) schedule();
+        };
         c.on("notification", (msg) => {
           if (msg.channel === channel) onPayload(msg.payload ?? "");
         });
-        c.on("error", (err) => {
-          onError(err);
-          listeners.delete(c);
-          c.end().catch(() => {});
-          if (!closed) schedule(attempt + 1);
-        });
-        await c.connect();
-        await c.query(`LISTEN ${quoteIdent(channel)}`);
+        c.on("error", drop);
+        try {
+          await c.connect();
+          await c.query(`LISTEN ${quoteIdent(channel)}`);
+        } catch (err) {
+          drop(err as Error);
+          throw err;
+        }
+        if (dead) throw new Error("LISTEN connection dropped while starting");
+        if (closed) {
+          await c.end().catch(() => {});
+          return;
+        }
+        const reconnected = started;
+        started = true;
+        failures = 0;
         client = c;
         listeners.add(c);
+        let probing = false;
+        probe = setInterval(() => {
+          if (probing) return;
+          probing = true;
+          c.query("SELECT 1").then(
+            () => (probing = false),
+            (err: Error) => drop(err),
+          );
+        }, probeMs);
+        probe.unref();
+        if (reconnected) listenOptions.onReconnect?.();
       };
-      const schedule = (attempt: number) => {
-        const delay = Math.min(30_000, 500 * 2 ** Math.min(attempt, 6));
+      const schedule = () => {
+        if (retry) clearTimeout(retry);
+        const delay = Math.min(30_000, 500 * 2 ** Math.min(failures, 6));
+        failures++;
         retry = setTimeout(() => {
-          connect(attempt).catch((err: Error) => {
-            onError(err);
-            if (!closed) schedule(attempt + 1);
-          });
+          retry = null;
+          if (!closed) connect().catch(() => {});
         }, delay);
+        retry.unref();
       };
 
-      await connect(0);
+      await connect();
       return async () => {
         closed = true;
         if (retry) clearTimeout(retry);
+        if (probe) clearInterval(probe);
         if (client) {
           listeners.delete(client);
           await client.end().catch(() => {});

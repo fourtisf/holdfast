@@ -94,7 +94,7 @@ describe("WebSocket /ws", () => {
     expect(await c.next((m) => m.channel === "trades")).toEqual({
       channel: "trades",
       mint: f.mint,
-      data: { sig, wallet: f.alice, side: "buy", sol: 0.25, tokens: 1000, price: 2.5e-7, ts: NOW, source: "curve" },
+      data: { sig, ixIndex: 0, slot: 500, wallet: f.alice, side: "buy", sol: 0.25, tokens: 1000, price: 2.5e-7, ts: NOW, source: "curve" },
     });
 
     api.events.emit({ kind: "vault", mint: f.mint });
@@ -110,6 +110,20 @@ describe("WebSocket /ws", () => {
     await api.ctx.feed.idle();
     expect(c.messages.filter((m) => m.channel === "vault")).toEqual([]);
     c.close();
+  });
+
+  it("tells every coin subscriber to resync after the change feed reconnects", async () => {
+    const c = await Client.open();
+    const s = await Client.open();
+    c.send({ type: "subscribe", channel: "trades", mint: f.mint });
+    s.send({ type: "subscribe", channel: "stats" });
+    await settle();
+    api.events.reconnect();
+    expect(await c.next((m) => m.channel === "resync")).toEqual({ channel: "resync", mint: f.mint });
+    await settle();
+    expect(s.messages.filter((m) => m.channel === "resync")).toEqual([]);
+    c.close();
+    s.close();
   });
 
   it("subscriptions are ref-counted per client", async () => {
@@ -172,5 +186,28 @@ describe("SubscriptionHub", () => {
     expect(hub.has("stats")).toBe(false);
     expect(hub.size).toBe(0);
     expect(sent).toHaveLength(2);
+  });
+});
+
+describe("WebSocket /ws and the REST rate limit", () => {
+  it("socket upgrades do not count against the per-IP limit", async () => {
+    const limited = await makeApi(db, { rateLimitPerMinute: 2 });
+    await limited.app.listen({ port: 0, host: "127.0.0.1" });
+    const wsUrl = `ws://127.0.0.1:${(limited.app.server.address() as AddressInfo).port}/ws`;
+    try {
+      const sockets = await Promise.all(
+        Array.from({ length: 4 }, () => {
+          const ws = new WebSocket(wsUrl);
+          return new Promise<WebSocket>((resolve, reject) => {
+            ws.once("open", () => resolve(ws));
+            ws.once("error", reject);
+          });
+        }),
+      );
+      expect(sockets).toHaveLength(4);
+      for (const ws of sockets) ws.close();
+    } finally {
+      await limited.app.close();
+    }
   });
 });

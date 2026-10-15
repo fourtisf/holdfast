@@ -3,6 +3,12 @@ import type { ReductionOrder } from "@holdfast/core";
 export interface IndexerConfig {
   databaseUrl: string;
   rpcUrl: string;
+  /** RPC WebSocket for live ingestion; null derives it from rpcUrl (https → wss). */
+  wsUrl: string | null;
+  /** Index transactions pushed over the RPC WebSocket as they confirm (the poller backs it up). */
+  live: boolean;
+  /** Abort RPC requests after this long (one stuck request must not stall ingestion). */
+  rpcTimeoutMs: number;
   holdfastProgramId: string;
   heliusWebhookSecret: string | null;
   port: number;
@@ -34,6 +40,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IndexerConfig 
   return {
     databaseUrl,
     rpcUrl: env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com",
+    wsUrl: env.SOLANA_WS_URL || null,
+    live: bool(env.INDEXER_LIVE, true),
+    rpcTimeoutMs: Number(env.INDEXER_RPC_TIMEOUT_MS ?? 20_000),
     holdfastProgramId: env.HOLDFAST_PROGRAM_ID ?? "8pVgMgwxbhPuKLwsP7z9sa6ADs7L3KWYAbhBGnrtgSmN",
     heliusWebhookSecret: env.HELIUS_WEBHOOK_SECRET || null,
     port: Number(env.INDEXER_PORT ?? 4100),

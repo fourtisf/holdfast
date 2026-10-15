@@ -19,7 +19,8 @@ const ClientMessage = z.union([
 const MAX_SUBSCRIPTIONS = 200;
 
 export function wsRoutes(app: FastifyInstance, ctx: ApiContext): void {
-  app.get("/ws", { websocket: true }, (socket: WebSocket) => {
+  // One long-lived connection per tab: it must not spend the per-IP REST budget (users behind one NAT).
+  app.get("/ws", { websocket: true, config: { rateLimit: false } }, (socket: WebSocket) => {
     const client: HubClient = {
       send(msg: WsServerMessage) {
         if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));

@@ -32,12 +32,13 @@ export function subscriptionKey(sub: Subscription): string {
   }
 }
 
-/** Which subscription a server message belongs to (`vault` and `round` ride on the `trades` channel). */
+/** Which subscription a server message belongs to (`vault`, `round` and `resync` ride on the `trades` channel). */
 export function messageKey(msg: WsServerMessage): string | null {
   switch (msg.channel) {
     case "trades":
     case "vault":
     case "round":
+    case "resync":
       return `trades:${msg.mint}`;
     case "deposit-status":
       return `deposit-status:${msg.launchId}`;
@@ -56,6 +57,8 @@ export interface WsClientOptions {
   baseDelayMs?: number;
   maxDelayMs?: number;
   pingIntervalMs?: number;
+  /** A socket that has not opened by then is abandoned and retried. */
+  connectTimeoutMs?: number;
   random?: () => number;
 }
 
@@ -68,15 +71,22 @@ interface Entry {
  * One shared, lazily-connected socket for the whole app. Subscriptions are ref-counted per channel key:
  * the first subscriber sends `subscribe`, the last one to leave sends `unsubscribe`, and every active
  * subscription is replayed after a reconnect.
+ *
+ * The server answers every ping, so a socket that has been silent for two ping intervals is dead (sleep,
+ * a network change) even if the browser still calls it open: it is dropped and replaced.
  */
 export class WsClient {
   private socket: SocketLike | null = null;
   private entries = new Map<string, Entry>();
   private stateListeners = new Set<(state: ConnectionState) => void>();
   private pongListeners = new Set<(serverTime: number) => void>();
+  private openListeners = new Set<() => void>();
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastFrameAt = 0;
+  private _serverOffsetMs = 0;
   private closedByUser = false;
   private pending = false;
   private generation = 0;
@@ -87,11 +97,16 @@ export class WsClient {
     private readonly factory: SocketFactory,
     opts: WsClientOptions = {},
   ) {
-    this.opts = { baseDelayMs: 500, maxDelayMs: 15_000, pingIntervalMs: 25_000, random: Math.random, ...opts };
+    this.opts = { baseDelayMs: 500, maxDelayMs: 15_000, pingIntervalMs: 25_000, connectTimeoutMs: 10_000, random: Math.random, ...opts };
   }
 
   get state(): ConnectionState {
     return this._state;
+  }
+
+  /** Server clock minus local clock, from the last pong (0 until one arrives). */
+  get serverOffsetMs(): number {
+    return this._serverOffsetMs;
   }
 
   /** Number of distinct channel subscriptions currently held (for tests / diagnostics). */
@@ -135,6 +150,37 @@ export class WsClient {
     return () => this.pongListeners.delete(listener);
   }
 
+  /**
+   * Called each time a socket opens, after the subscriptions were (re)sent. Live messages sent while there
+   * was no socket are lost, so subscribers refetch here.
+   */
+  onOpen(listener: () => void): () => void {
+    this.openListeners.add(listener);
+    return () => this.openListeners.delete(listener);
+  }
+
+  /**
+   * The page became visible or the network came back: reconnect now instead of waiting out the backoff,
+   * and make sure an "open" socket still answers.
+   */
+  wake(): void {
+    if (this.closedByUser || this.entries.size === 0) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+      this.attempt = 0;
+      void this.connect();
+      return;
+    }
+    if (this.socket && this.socket.readyState === OPEN) {
+      const since = this.lastFrameAt;
+      this.send({ type: "ping" });
+      setTimeout(() => {
+        if (this.socket && this.lastFrameAt === since) this.restart();
+      }, 5_000);
+    }
+  }
+
   close(): void {
     this.closedByUser = true;
     this.clearTimers();
@@ -169,15 +215,29 @@ export class WsClient {
       return;
     }
     this.socket = socket;
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = null;
+      if (generation === this.generation && socket.readyState !== OPEN) this.restart();
+    }, this.opts.connectTimeoutMs);
     socket.onopen = () => {
       if (generation !== this.generation) return;
+      this.clearConnectTimer();
       this.attempt = 0;
+      this.lastFrameAt = Date.now();
       this.setState("open");
       for (const entry of this.entries.values()) this.send(subscribeMessage(entry.sub, "subscribe"));
       this.startPing();
+      for (const l of [...this.openListeners]) {
+        try {
+          l();
+        } catch (err) {
+          console.warn("[ws] open listener failed", err);
+        }
+      }
     };
     socket.onmessage = (ev) => {
       if (generation !== this.generation) return;
+      this.lastFrameAt = Date.now();
       this.dispatch(ev.data);
     };
     socket.onerror = () => {
@@ -186,6 +246,7 @@ export class WsClient {
     socket.onclose = () => {
       if (generation !== this.generation) return;
       this.socket = null;
+      this.clearConnectTimer();
       this.stopPing();
       if (this.closedByUser) {
         this.setState("closed");
@@ -193,6 +254,17 @@ export class WsClient {
       }
       this.scheduleReconnect();
     };
+  }
+
+  /** Abandon the current socket (its handlers are detached by the generation bump) and reconnect. */
+  private restart(): void {
+    const socket = this.socket;
+    this.generation++;
+    this.socket = null;
+    this.clearConnectTimer();
+    this.stopPing();
+    socket?.close();
+    this.scheduleReconnect();
   }
 
   private scheduleReconnect(): void {
@@ -217,7 +289,12 @@ export class WsClient {
       return;
     }
     if (msg.channel === "pong") {
+      this._serverOffsetMs = msg.serverTime - Date.now();
       for (const l of this.pongListeners) l(msg.serverTime);
+      return;
+    }
+    if (msg.channel === "error") {
+      console.warn("[ws] server error:", msg.message);
       return;
     }
     const key = messageKey(msg);
@@ -239,7 +316,13 @@ export class WsClient {
 
   private startPing(): void {
     this.stopPing();
-    this.pingTimer = setInterval(() => this.send({ type: "ping" }), this.opts.pingIntervalMs);
+    this.pingTimer = setInterval(() => {
+      if (Date.now() - this.lastFrameAt > 2 * this.opts.pingIntervalMs + 5_000) {
+        this.restart();
+        return;
+      }
+      this.send({ type: "ping" });
+    }, this.opts.pingIntervalMs);
   }
 
   private stopPing(): void {
@@ -247,8 +330,14 @@ export class WsClient {
     this.pingTimer = null;
   }
 
+  private clearConnectTimer(): void {
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
+  }
+
   private clearTimers(): void {
     this.stopPing();
+    this.clearConnectTimer();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
   }
@@ -265,7 +354,14 @@ let shared: WsClient | null = null;
 /** The app-wide socket. In mock mode the transport is an in-browser simulation. */
 export function getWsClient(): WsClient {
   if (!shared) {
-    shared = new WsClient(USE_MOCKS ? () => import("./mocks/socket").then((m) => new m.MockSocket()) : () => new WebSocket(WS_URL));
+    const client = new WsClient(USE_MOCKS ? () => import("./mocks/socket").then((m) => new m.MockSocket()) : () => new WebSocket(WS_URL));
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", () => client.wake());
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") client.wake();
+      });
+    }
+    shared = client;
   }
   return shared;
 }

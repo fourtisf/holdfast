@@ -78,7 +78,28 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
 
   const hub = new SubscriptionHub();
   const prices = deps.prices ?? NO_PRICE;
-  const feed = new LiveFeed({ db: deps.db, hub, launches: deps.launches, prices, now, log: app.log, statsIntervalMs: deps.config.statsIntervalMs });
+  const metrics = new Metrics();
+  // Live path: notifications reaching the API, resyncs after the change feed reconnected, open sockets.
+  const feedEvents = metrics.counter("api_feed_events_total", "Change notifications received, by kind");
+  const feedResyncs = metrics.counter("api_feed_resyncs_total", "Change feed reconnects (clients told to resync)");
+  const lastFeedEvent = metrics.gauge("api_feed_last_event_timestamp_seconds", "When the last change notification arrived");
+  const wsClients = metrics.gauge("api_ws_clients", "Open WebSocket connections");
+  const feed = new LiveFeed({
+    db: deps.db,
+    hub,
+    launches: deps.launches,
+    prices,
+    now,
+    log: app.log,
+    statsIntervalMs: deps.config.statsIntervalMs,
+    observe: {
+      event: (kind) => {
+        feedEvents.inc({ kind });
+        lastFeedEvent.setToNow();
+      },
+      resync: () => feedResyncs.inc(),
+    },
+  });
   const walletLauncher = deps.walletLauncher ?? new HttpWalletLauncher(deps.config.launcherUrl);
   const relay = deps.relay ?? new RpcTxRelay(new Connection(deps.config.rpcUrl, "confirmed"));
   const ctx: ApiContext = { db: deps.db, config: deps.config, tradeChain: deps.tradeChain, launches: deps.launches, walletLauncher, relay, hub, feed, prices, now };
@@ -109,7 +130,6 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   await app.register(websocket, { options: { maxPayload: 4096 } });
 
   // Prometheus: requests by route template and status class.
-  const metrics = new Metrics();
   const requests = metrics.counter("api_requests_total", "HTTP requests by route and status class");
   const latency = metrics.counter("api_request_seconds_total", "Summed request handling time by route");
   app.addHook("onResponse", async (req, reply) => {
@@ -117,7 +137,10 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
     requests.inc({ route, status: `${Math.floor(reply.statusCode / 100)}xx` });
     latency.inc({ route }, reply.elapsedTime / 1000);
   });
-  app.get("/metrics", async (_req, reply) => reply.type("text/plain; version=0.0.4; charset=utf-8").send(metrics.render()));
+  app.get("/metrics", async (_req, reply) => {
+    wsClients.set(hub.size);
+    return reply.type("text/plain; version=0.0.4; charset=utf-8").send(metrics.render());
+  });
 
   app.get("/healthz", async () => {
     await deps.db.query("SELECT 1");

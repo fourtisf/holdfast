@@ -18,6 +18,14 @@ export interface Queryable {
 
 export type Unlisten = () => Promise<void>;
 
+export interface ListenOptions {
+  /**
+   * Called after a dropped LISTEN connection is back. Notifications sent while it was down are lost,
+   * so listeners use this to tell their own consumers to catch up.
+   */
+  onReconnect?: () => void;
+}
+
 export interface Db extends Queryable {
   readonly kind: "pg" | "pglite";
   /**
@@ -26,7 +34,7 @@ export interface Db extends Queryable {
    */
   tx<T>(fn: (q: Queryable) => Promise<T>): Promise<T>;
   /** LISTEN on a channel; `onPayload` gets each NOTIFY payload. */
-  listen(channel: string, onPayload: (payload: string) => void): Promise<Unlisten>;
+  listen(channel: string, onPayload: (payload: string) => void, options?: ListenOptions): Promise<Unlisten>;
   close(): Promise<void>;
 }
 

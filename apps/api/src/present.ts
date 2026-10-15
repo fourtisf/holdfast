@@ -109,6 +109,8 @@ export function toCoinDetail(m: CoinMetrics, lastRound: RoundRow | null): CoinDe
 export function toTrade(t: TradeRow, decimals: number): Trade {
   return {
     sig: t.sig,
+    ixIndex: t.ixIndex,
+    slot: t.slot,
     wallet: t.wallet,
     side: t.side,
     sol: lamportsToSol(t.sol),

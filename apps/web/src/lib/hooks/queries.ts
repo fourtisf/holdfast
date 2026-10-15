@@ -45,18 +45,22 @@ export function useCoin(mint: string) {
   return useSWR(keys.coin(mint), () => api.coin(mint), { refreshInterval: 30_000 });
 }
 
-export function useCandles(mint: string, tf: CandleTimeframe) {
-  return useSWR(keys.candles(mint, tf), () => api.candles(mint, tf), { revalidateOnFocus: false, keepPreviousData: true });
+/** `refreshMs` polls (the fallback while the live socket is down; live trades patch the cache otherwise). */
+export function useCandles(mint: string, tf: CandleTimeframe, refreshMs = 0) {
+  return useSWR(keys.candles(mint, tf), () => api.candles(mint, tf), { revalidateOnFocus: false, keepPreviousData: true, refreshInterval: refreshMs });
 }
 
-export function useTradesPages(mint: string, pageSize = 30) {
+/** Poll interval for live views while the socket is not open. */
+export const LIVE_FALLBACK_POLL_MS = 5_000;
+
+export function useTradesPages(mint: string, pageSize = 30, refreshMs = 0) {
   return useSWRInfinite(
     (index, previous: Page<Trade> | null) => {
       if (previous && !previous.nextCursor) return null;
       return ["trades", mint, pageSize, index === 0 ? null : (previous?.nextCursor ?? null)] as const;
     },
     ([, m, limit, before]) => api.trades(m, { limit, before }),
-    { revalidateOnFocus: false },
+    { revalidateOnFocus: false, refreshInterval: refreshMs },
   );
 }
 
@@ -74,6 +78,12 @@ export function usePosition(wallet: string | null, mint: string) {
 
 export function useProfile(wallet: string | null) {
   return useSWR(wallet ? keys.profile(wallet) : null, () => api.profile(wallet!), { refreshInterval: 60_000 });
+}
+
+/** Whether a query has data in the cache (live patches and resyncs only touch loaded keys). */
+export function useIsCached() {
+  const { cache } = useSWRConfig();
+  return useCallback((key: readonly unknown[]) => cache.get(unstable_serialize(key))?.data !== undefined, [cache]);
 }
 
 /**

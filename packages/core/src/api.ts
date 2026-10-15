@@ -124,6 +124,10 @@ export type TradeSide = "buy" | "sell" | "vault";
 
 export interface Trade {
   sig: string;
+  /** Position within the transaction: one transaction can hold several trades (sig + ixIndex is unique). */
+  ixIndex: number;
+  /** Slot of the transaction, to order live trades that arrive out of order (absent in wallet history). */
+  slot?: number;
   wallet: string;
   side: TradeSide;
   sol: number;
@@ -586,6 +590,8 @@ export type WsServerMessage =
   | { channel: "deposit-status"; launchId: string; data: LaunchStatus }
   | { channel: "stats"; data: Stats }
   | { channel: "pong"; serverTime: number }
+  /** Live messages for `mint` may have been missed (the server's change feed reconnected): refetch. */
+  | { channel: "resync"; mint: string }
   | { channel: "error"; message: string };
 
 /** POST /creator/claim/build: an unsigned transaction for the creator to claim its share. */

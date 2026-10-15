@@ -28,24 +28,43 @@ export interface CoinChannelHandlers {
   onTrade?: (trade: Trade) => void;
   onVault?: (vault: VaultSnapshot) => void;
   onRound?: (round: RoundSummary) => void;
+  /**
+   * Live messages may have been missed: the socket (re)opened, or the server's change feed reconnected.
+   * Refetch whatever the other handlers keep up to date.
+   */
+  onResync?: () => void;
 }
 
-/** Subscribe to a coin's `trades` channel (which also carries `vault` and `round` messages). */
+/** Subscribe to a coin's `trades` channel (which also carries `vault`, `round` and `resync` messages). */
 export function useCoinChannel(mint: string | null, handlers: CoinChannelHandlers) {
   const ref = useRef(handlers);
   ref.current = handlers;
   useEffect(() => {
     if (!mint) return;
-    return getWsClient().subscribe({ channel: "trades", mint }, (msg) => {
+    const client = getWsClient();
+    const off = client.subscribe({ channel: "trades", mint }, (msg) => {
       if (msg.channel === "trades") ref.current.onTrade?.(msg.data);
       else if (msg.channel === "vault") ref.current.onVault?.(msg.data);
       else if (msg.channel === "round") ref.current.onRound?.(msg.data);
+      else if (msg.channel === "resync") ref.current.onResync?.();
     });
+    const offOpen = client.onOpen(() => ref.current.onResync?.());
+    return () => {
+      off();
+      offOpen();
+    };
   }, [mint]);
 }
 
-export function useTrades(mint: string | null, onTrade: (trade: Trade) => void) {
-  useCoinChannel(mint, { onTrade });
+/** Run `fn` every `ms` while `enabled` (a safety-net resync for anything a live view might have missed). */
+export function useEvery(ms: number, enabled: boolean, fn: () => void) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  useEffect(() => {
+    if (!enabled) return;
+    const id = setInterval(() => ref.current(), ms);
+    return () => clearInterval(id);
+  }, [ms, enabled]);
 }
 
 function withPrice(coin: CoinDetail, price: number): CoinDetail {
@@ -63,8 +82,29 @@ function withPrice(coin: CoinDetail, price: number): CoinDetail {
 export function useCoinLive(mint: string, wallet: string | null) {
   const { mutate } = useSWRConfig();
   const patch = usePatchCache();
+  const live = useWsState() === "open";
+  // Newest slot applied: a trade delivered late (older slot) must not roll the price back.
+  const newestSlot = useRef(0);
+  useEffect(() => {
+    newestSlot.current = 0;
+  }, [mint]);
+  // Fetched directly: SWR drops its own revalidation (useCoin's refresh) when a live patch lands mid-request.
+  const resync = () => {
+    api.coin(mint).then(
+      (fresh) => patch<CoinDetail>(keys.coin(mint), () => fresh),
+      () => {},
+    );
+  };
+  useEvery(60_000, live, resync);
   useCoinChannel(mint, {
-    onTrade: (trade) => patch<CoinDetail>(keys.coin(mint), (coin) => withPrice(coin, trade.price)),
+    onResync: resync,
+    onTrade: (trade) => {
+      if (trade.slot !== undefined) {
+        if (trade.slot < newestSlot.current) return;
+        newestSlot.current = trade.slot;
+      }
+      patch<CoinDetail>(keys.coin(mint), (coin) => withPrice(coin, trade.price));
+    },
     onVault: (vault) =>
       patch<CoinDetail>(keys.coin(mint), (coin) =>
         withPrice({ ...coin, vault, athMarketCapSol: marketCapSol(vault.athPrice), floorMarketCapSol: marketCapSol(vault.floorPrice) }, coin.price),

@@ -90,7 +90,7 @@ describe("market extras", () => {
 describe("portfolio, leaderboards, creators", () => {
   it("GET /me/trades lists a wallet's trades across coins, newest first, paged", async () => {
     const p = await get<Page<WalletTrade>>(`/me/trades?wallet=${f.alice}`);
-    expect(p.items).toEqual([{ sig: f.sigs[0], wallet: f.alice, side: "buy", sol: 0.1, tokens: 1000, price: 1e-7, ts: NOW - 2 * 86_400_000, source: "curve", mint: f.mint, ticker: "HOUND", name: "Holdfast Hound" }]);
+    expect(p.items).toEqual([{ sig: f.sigs[0], ixIndex: 0, wallet: f.alice, side: "buy", sol: 0.1, tokens: 1000, price: 1e-7, ts: NOW - 2 * 86_400_000, source: "curve", mint: f.mint, ticker: "HOUND", name: "Holdfast Hound" }]);
     expect(p.nextCursor).toBeNull();
     const first = await get<Page<WalletTrade>>(`/me/trades?wallet=${f.treasury}&limit=1`);
     expect(first.items).toHaveLength(1);

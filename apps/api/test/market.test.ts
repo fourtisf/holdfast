@@ -155,8 +155,12 @@ describe("coins", () => {
     expect(c.tf).toBe("1h");
     expect(c.candles).toEqual([
       { t: NOW - 2 * 86_400_000, o: 1e-7, h: 1e-7, l: 1e-7, c: 1e-7, v: 0.1 },
-      { t: NOW - 3_600_000, o: 2e-7, h: 3e-7, l: 1.5e-7, c: 3e-7, v: expect.closeTo(0.38, 12) },
+      // stored open 2e-7 (first trade); charted from the previous close, so the range reaches down to it
+      { t: NOW - 3_600_000, o: 1e-7, h: 3e-7, l: 1e-7, c: 3e-7, v: expect.closeTo(0.38, 12) },
     ]);
+    // With a limit, the candle just before the window still sets the first one's open.
+    const last = await get<CandlesResponse>(`/coins/${f.mint}/candles?tf=1h&limit=1`);
+    expect(last.candles).toEqual([{ t: NOW - 3_600_000, o: 1e-7, h: 3e-7, l: 1e-7, c: 3e-7, v: expect.closeTo(0.38, 12) }]);
     expect(c.floorLine.map((p) => p.price)).toEqual([expect.closeTo(1.5e-7, 12), expect.closeTo(3e-7, 12)]);
     expect(c.defends).toEqual([{ t: NOW - 30 * 60_000, price: 1.5e-7, solSpent: 0.15, sig: f.sigs[2] }]);
 
@@ -170,7 +174,7 @@ describe("coins", () => {
   it("GET /coins/:mint/trades pages with a cursor", async () => {
     const p1 = await get<Page<Trade>>(`/coins/${f.mint}/trades?limit=3`);
     expect(p1.items.map((t) => t.side)).toEqual(["sell", "vault", "buy"]);
-    expect(p1.items[0]).toEqual({ sig: f.sigs[3], wallet: f.carol, side: "sell", sol: 0.03, tokens: 100, price: 3e-7, ts: NOW - 60_000, source: "curve" });
+    expect(p1.items[0]).toEqual({ sig: f.sigs[3], ixIndex: 0, slot: 103, wallet: f.carol, side: "sell", sol: 0.03, tokens: 100, price: 3e-7, ts: NOW - 60_000, source: "curve" });
     expect(p1.items[1]).toMatchObject({ source: "vault", wallet: f.treasury });
     const p2 = await get<Page<Trade>>(`/coins/${f.mint}/trades?limit=3&before=${p1.nextCursor}`);
     expect(p2.items.map((t) => t.sig)).toEqual([f.sigs[0]]);

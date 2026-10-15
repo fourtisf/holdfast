@@ -64,7 +64,8 @@ COPY . .
 RUN pnpm install --frozen-lockfile --offline --store-dir /pnpm/store --filter '@holdfast/web...'
 RUN pnpm --filter '@holdfast/web^...' run build
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
-ARG NEXT_PUBLIC_WS_URL=ws://localhost:4000/ws
+# empty: derived from NEXT_PUBLIC_API_URL (http→ws, + /ws)
+ARG NEXT_PUBLIC_WS_URL=
 ARG NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com
 ARG NEXT_PUBLIC_SOLANA_CLUSTER=devnet
 ARG NEXT_PUBLIC_USE_MOCKS=0

@@ -62,17 +62,34 @@ export function defendMarkers(candles: readonly Candle[], defends: CandlesRespon
 
 /**
  * Fold a live trade into the candle list. Returns the updated array (new reference) and the touched
- * candle, or `null` when the trade is older than the last bucket and therefore ignored.
+ * candle, or `null` for an invalid price. A trade that arrives late (older than the last bucket, or
+ * `late`: older than a trade already applied) is merged into its own bucket without touching that
+ * bucket's open or close.
  */
 export function applyTrade(
   candles: readonly Candle[],
   trade: Pick<Trade, "ts" | "price" | "sol">,
   tf: CandleTimeframe,
+  late = false,
 ): { candles: Candle[]; candle: Candle } | null {
   if (!(trade.price > 0)) return null;
   const t = candleBucket(trade.ts, tf);
   const last = candles[candles.length - 1];
-  if (last && t < last.t) return null;
+  if (last && (t < last.t || (late && t === last.t))) {
+    let i = candles.length - 1;
+    while (i > 0 && candles[i]!.t > t) i--;
+    const at = candles[i]!;
+    if (at.t === t) {
+      const candle: Candle = { ...at, h: Math.max(at.h, trade.price), l: Math.min(at.l, trade.price), v: at.v + trade.sol };
+      return { candles: [...candles.slice(0, i), candle, ...candles.slice(i + 1)], candle };
+    }
+    // No bucket yet: insert one after the latest earlier candle (or first, if none is earlier).
+    const before = at.t < t ? at : null;
+    const open = before ? before.c : trade.price;
+    const candle: Candle = { t, o: open, h: Math.max(open, trade.price), l: Math.min(open, trade.price), c: trade.price, v: trade.sol };
+    const pos = before ? i + 1 : 0;
+    return { candles: [...candles.slice(0, pos), candle, ...candles.slice(pos)], candle };
+  }
   if (last && t === last.t) {
     const candle: Candle = {
       ...last,
@@ -93,4 +110,29 @@ export function applyTrade(
     v: trade.sol,
   };
   return { candles: [...candles, candle], candle };
+}
+
+/** A bucket without trades, drawn flat at the previous close so the time axis keeps moving. */
+export function isFiller(c: Candle): boolean {
+  return c.v === 0;
+}
+
+/**
+ * Continuous time axis: insert a flat candle (the previous close, no volume) for every bucket without
+ * trades, between candles and from the last one up to the bucket of `now`. Only the newest `maxBars`
+ * are returned, so a long idle stretch costs no more than a full chart.
+ */
+export function fillGaps(candles: readonly Candle[], tf: CandleTimeframe, now: number, maxBars = 1500): Candle[] {
+  if (candles.length === 0) return [];
+  const size = bucketMs(tf);
+  const out: Candle[] = [];
+  // Newest first: buckets after candle i (up to `next`) are flat at its close.
+  let next = Math.max(candles[candles.length - 1]!.t, candleBucket(now, tf));
+  for (let i = candles.length - 1; i >= 0 && out.length < maxBars; i--) {
+    const c = candles[i]!;
+    for (let t = next; t > c.t && out.length < maxBars; t -= size) out.push({ t, o: c.c, h: c.c, l: c.c, c: c.c, v: 0 });
+    if (out.length < maxBars) out.push(c);
+    next = c.t - size;
+  }
+  return out.reverse();
 }

@@ -16,10 +16,10 @@ import { ScheduleProvider } from "./ScheduleProvider";
 
 const swrConfig: SWRConfiguration = {
   dedupingInterval: 1500,
-  // Client errors (404 unknown mint, 400 bad wallet) won't fix themselves; retry only network/5xx errors.
+  // Client errors (404 unknown mint, 400 bad wallet) won't fix themselves; retry only network/5xx/429 errors,
+  // and keep retrying them (every 15 s at most): an API restart during a deploy must not leave a page dead.
   onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
-    if (error instanceof ApiError && error.status >= 400 && error.status < 500) return;
-    if (retryCount >= 4) return;
+    if (error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 429) return;
     setTimeout(() => void revalidate({ retryCount }), Math.min(15_000, 1000 * 2 ** retryCount));
   },
 };

@@ -11,6 +11,17 @@ interface FeedLogger {
   warn(obj: object, msg?: string): void;
 }
 
+/** One stuck query must not hold up every later push (they are delivered in order). */
+const HANDLE_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`ws feed handler timed out after ${ms} ms`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Turns change notifications into WebSocket messages for subscribed clients (in arrival order)
  * and broadcasts stats periodically while anyone listens.
@@ -29,11 +40,13 @@ export class LiveFeed {
       now: () => number;
       log: FeedLogger;
       statsIntervalMs: number;
+      /** Metrics hooks: each change notification received, each resync after the feed reconnected. */
+      observe?: { event(kind: HoldfastNotification["kind"]): void; resync(): void };
     },
   ) {}
 
   async start(source: EventSource): Promise<void> {
-    this.unsubscribe = await source.subscribe((n) => this.enqueue(n));
+    this.unsubscribe = await source.subscribe((n) => this.enqueue(n), { onReconnect: () => this.resyncAll() });
     if (this.deps.statsIntervalMs > 0) {
       this.timer = setInterval(() => void this.broadcastStats(), this.deps.statsIntervalMs);
       this.timer.unref();
@@ -52,7 +65,19 @@ export class LiveFeed {
   }
 
   enqueue(n: HoldfastNotification): void {
-    this.queue = this.queue.then(() => this.handle(n)).catch((err) => this.deps.log.warn({ err, notification: n }, "ws feed failed"));
+    this.deps.observe?.event(n.kind);
+    this.queue = this.queue
+      .then(() => withTimeout(this.handle(n), HANDLE_TIMEOUT_MS))
+      .catch((err) => this.deps.log.warn({ err, notification: n }, "ws feed failed"));
+  }
+
+  /** The change feed was down, so pushes may be missing: every coin subscriber refetches. */
+  resyncAll(): void {
+    const { hub } = this.deps;
+    const keys = hub.keys("trades:");
+    for (const key of keys) hub.broadcast(key, { channel: "resync", mint: key.slice("trades:".length) });
+    this.deps.observe?.resync();
+    this.deps.log.warn({ coins: keys.length }, "change feed reconnected; clients told to resync");
   }
 
   async handle(n: HoldfastNotification): Promise<void> {

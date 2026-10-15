@@ -57,7 +57,7 @@ describe("Poller", () => {
     const chain = new FakeChain();
     const launch = launchTx(coin, { launcher: wallet(), depositor: wallet(), slot: 10, ts: T0, devBuy: 1n });
     chain.add(launch, [HOLDFAST, coin.mint, coin.bondingCurve]);
-    const poller = new Poller({ db, source: chain, process: h.run, log: silentLog, holdfastProgramId: HOLDFAST, pageSize: 2 });
+    const poller = new Poller({ db, source: chain, process: h.run, log: silentLog, holdfastProgramId: HOLDFAST, pageSize: 2, secondaryEvery: 1 });
 
     let r = await poller.tick();
     expect(r).toMatchObject({ processed: 1, failed: 0 });
@@ -88,6 +88,37 @@ describe("Poller", () => {
     chain.fetched = [];
     r = await poller.tick();
     expect(r).toMatchObject({ signatures: 0, processed: 0 });
+  });
+
+  it("lists curves and pools only every few ticks (mints every tick), and lists addresses in parallel", async () => {
+    const chain = new FakeChain();
+    const launch = launchTx(coin, { launcher: wallet(), depositor: wallet(), slot: 10, ts: T0, devBuy: 1n });
+    chain.add(launch, [HOLDFAST, coin.mint, coin.bondingCurve]);
+    const listedAddresses: string[][] = [];
+    let current: string[] = [];
+    let inParallel = 0;
+    let maxParallel = 0;
+    const source: ChainSource = {
+      getTransaction: (sig) => chain.getTransaction(sig),
+      getSignaturesForAddress: async (address, opts) => {
+        current.push(address);
+        inParallel++;
+        maxParallel = Math.max(maxParallel, inParallel);
+        await new Promise((r) => setTimeout(r, 5));
+        inParallel--;
+        return chain.getSignaturesForAddress(address, opts);
+      },
+    };
+    const poller = new Poller({ db, source, process: h.run, log: silentLog, holdfastProgramId: HOLDFAST, secondaryEvery: 3, addressConcurrency: 4 });
+    for (let i = 0; i < 4; i++) {
+      current = [];
+      await poller.tick();
+      listedAddresses.push([...current].sort());
+    }
+    const all = [HOLDFAST, coin.mint, coin.bondingCurve].sort();
+    const primary = [HOLDFAST, coin.mint].sort();
+    expect(listedAddresses).toEqual([[HOLDFAST], primary, primary, all]);
+    expect(maxParallel).toBeGreaterThan(1);
   });
 
   it("marks failed transactions processed without fetching them", async () => {

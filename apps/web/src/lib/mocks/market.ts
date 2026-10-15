@@ -709,6 +709,7 @@ function syntheticTrades(coin: MockCoin, minuteIndex: number): Trade[] {
     const side = rand() < (up ? 0.68 : 0.34) ? "buy" : "sell";
     trades.push({
       sig: mockSignature(`${coin.mint}:${minuteIndex}:${k}`),
+      ixIndex: 0,
       wallet: WALLET_POOL[Math.floor(rand() * WALLET_POOL.length)]!,
       side,
       sol,
@@ -722,6 +723,7 @@ function syntheticTrades(coin: MockCoin, minuteIndex: number): Trade[] {
     if (d.ts >= m.t && d.ts < m.t + MINUTE) {
       trades.push({
         sig: d.sig,
+        ixIndex: 0,
         wallet: mockAddress(`vault:${coin.mint}`),
         side: "vault",
         sol: d.solSpent,
@@ -1010,6 +1012,7 @@ export function simulateTrade(mint: string): LiveTick | null {
   const trades: Trade[] = [];
   const trade: Trade = {
     sig: randomSignature(),
+    ixIndex: 0,
     wallet: WALLET_POOL[Math.floor(rand() * WALLET_POOL.length)]!,
     side,
     sol,
@@ -1028,6 +1031,7 @@ export function simulateTrade(mint: string): LiveTick | null {
     const bounced = next * (1 + 0.02 + rand() * 0.03);
     const vaultTrade: Trade = {
       sig: defend.sig,
+      ixIndex: 0,
       wallet: mockAddress(`vault:${coin.mint}`),
       side: "vault",
       sol: defend.solSpent,
@@ -1121,6 +1125,7 @@ function registerLaunchedCoin(meta: LaunchedMeta): MockCoin {
   if (devTokens > 0) {
     coin.liveTrades.push({
       sig: mockSignature(`${meta.mint}:devbuy`),
+      ixIndex: 0,
       wallet: meta.launcher ?? mockAddress(`depositor:${meta.mint}`),
       side: "buy",
       sol: req.devBuySol ?? 0,
@@ -1171,7 +1176,7 @@ export function walletTrades(wallet: string): WalletTrade[] {
     if (!record) continue;
     record.lots.forEach((l, i) => {
       const price = priceAt(coin, l.acquiredAt);
-      out.push({ sig: mockSignature(`${wallet}:${coin.mint}:buy:${i}`), wallet, side: "buy", sol: l.amount * price, tokens: l.amount, price, ts: l.acquiredAt, source: coin.graduated ? "pumpswap" : "curve", mint: coin.mint, ticker: coin.ticker, name: coin.name });
+      out.push({ sig: mockSignature(`${wallet}:${coin.mint}:buy:${i}`), ixIndex: 0, wallet, side: "buy", sol: l.amount * price, tokens: l.amount, price, ts: l.acquiredAt, source: coin.graduated ? "pumpswap" : "curve", mint: coin.mint, ticker: coin.ticker, name: coin.name });
     });
   }
   return out.sort((a, b) => b.ts - a.ts);

@@ -73,6 +73,11 @@ export class SubscriptionHub {
     return [...(this.byKey.get(key)?.keys() ?? [])];
   }
 
+  /** Keys with at least one subscriber, optionally only those starting with `prefix`. */
+  keys(prefix = ""): string[] {
+    return [...this.byKey.keys()].filter((k) => k.startsWith(prefix));
+  }
+
   has(key: string): boolean {
     return (this.byKey.get(key)?.size ?? 0) > 0;
   }

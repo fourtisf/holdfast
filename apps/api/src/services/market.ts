@@ -111,14 +111,22 @@ export async function candles(
   opts: { tf: CandleTimeframe; from?: number; to?: number; limit: number },
 ): Promise<CandlesResponse> {
   const coin = await requireCoin(q, mint);
-  const rows = await listCandles(q, mint, opts.tf, opts);
+  // One extra (older) bucket so the first returned candle can open at the close before it.
+  const fetched = await listCandles(q, mint, opts.tf, { ...opts, limit: opts.limit + 1 });
+  const rows = fetched.length > opts.limit ? fetched.slice(1) : fetched;
   const from = opts.from ?? rows[0]?.ts;
   const floor = await listFloorHistory(q, mint, { from, to: opts.to });
   const defends = await listDefends(q, mint, { limit: 500, from, to: opts.to });
   return {
     mint,
     tf: opts.tf,
-    candles: rows.map((c) => ({ t: c.ts, o: c.open, h: c.high, l: c.low, c: c.close, v: lamportsToSol(c.volume) })),
+    // Stored buckets open at their first trade; chart them from the previous close (as live updates do), so
+    // a bucket with a single trade shows the move instead of a flat dash.
+    candles: rows.map((c, i) => {
+      const prev = i > 0 ? rows[i - 1] : fetched.length > opts.limit ? fetched[0] : undefined;
+      const o = prev ? prev.close : c.open;
+      return { t: c.ts, o, h: Math.max(c.high, o), l: Math.min(c.low, o), c: c.close, v: lamportsToSol(c.volume) };
+    }),
     floorLine: floor.map((p) => ({ t: p.ts, price: fixedToSolPerToken(p.floor, coin.decimals) })),
     defends: defends.reverse().map((d) => ({ t: d.ts, price: d.price, solSpent: lamportsToSol(d.solSpent), sig: d.sig })),
   };

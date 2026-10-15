@@ -6,7 +6,8 @@ function parseCluster(value: string | undefined): Cluster {
 
 export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "1";
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
-export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4000/ws";
+/** The API's WebSocket; unset, it is derived from the API URL (https://site/api → wss://site/api/ws). */
+export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || `${API_URL.replace(/^http/, "ws")}/ws`;
 export const SOLANA_CLUSTER: Cluster = parseCluster(process.env.NEXT_PUBLIC_SOLANA_CLUSTER);
 export const CLUSTER_LABEL = SOLANA_CLUSTER === "mainnet-beta" ? "mainnet" : SOLANA_CLUSTER;
 

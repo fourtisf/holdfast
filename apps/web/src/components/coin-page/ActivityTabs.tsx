@@ -13,8 +13,9 @@ import { ExternalIcon } from "@/components/ui/icons";
 import { SOLANA_CLUSTER } from "@/lib/config";
 import { explorerTxUrl } from "@/lib/explorer";
 import { formatAgo, formatDuration, formatMultiplier, formatPrice, formatShare, formatSol, formatTokens, shortAddress } from "@/lib/format";
-import { useTrades } from "@/lib/hooks/live";
-import { useDefends, useHolders, useRounds, useTradesPages } from "@/lib/hooks/queries";
+import { api } from "@/lib/api";
+import { useCoinChannel, useEvery, useWsState } from "@/lib/hooks/live";
+import { LIVE_FALLBACK_POLL_MS, useDefends, useHolders, useRounds, useTradesPages } from "@/lib/hooks/queries";
 import { useNow } from "@/lib/hooks/useNow";
 import { CommentsPanel } from "./CommentsPanel";
 
@@ -52,32 +53,66 @@ function SideBadge({ side }: { side: Trade["side"] }) {
   return <Badge tone={side === "buy" ? "buy" : "sell"}>{side === "buy" ? "Buy" : "Sell"}</Badge>;
 }
 
+const TRADES_PAGE = 30;
+
+/** One transaction can hold several trades: the signature alone is not unique. */
+const tradeKey = (t: Pick<Trade, "sig" | "ixIndex">) => `${t.sig}:${t.ixIndex}`;
+
+/** Fold a freshly fetched first page into the loaded pages (live trades pushed meanwhile stay). */
+function mergeNewest(pages: Page<Trade>[] | undefined, newest: Page<Trade>): Page<Trade>[] | undefined {
+  if (!pages || pages.length === 0) return pages;
+  const known = new Set(pages.flatMap((p) => p.items.map(tradeKey)));
+  // No overlap with what is loaded: more than a page was missed, so start over from the newest page.
+  if (newest.nextCursor && !newest.items.some((t) => known.has(tradeKey(t)))) return [newest];
+  const added = newest.items.filter((t) => !known.has(tradeKey(t)));
+  if (added.length === 0) return pages;
+  const [first, ...rest] = pages;
+  const items = [...added, ...first!.items].sort((a, b) => b.ts - a.ts);
+  return [{ ...first!, items }, ...rest];
+}
+
 function TradesTable({ coin, wallet }: { coin: CoinDetail; wallet: string | null }) {
-  const { data, size, setSize, isLoading, isValidating, mutate } = useTradesPages(coin.mint);
+  const live = useWsState() === "open";
+  const { data, size, setSize, isLoading, isValidating, mutate } = useTradesPages(coin.mint, TRADES_PAGE, live ? 0 : LIVE_FALLBACK_POLL_MS);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const now = useNow(5000);
 
-  useTrades(coin.mint, (trade) => {
-    if (!data) return; // never patch before the first page lands (SWR would drop that response)
-    void mutate(
-      (pages: Page<Trade>[] | undefined) => {
-        if (!pages || pages.length === 0) return pages;
-        const [first, ...rest] = pages;
-        if (!first || first.items.some((t) => t.sig === trade.sig)) return pages;
-        return [{ ...first, items: [trade, ...first.items] }, ...rest];
-      },
-      { revalidate: false },
+  // Fetched outside SWR (its revalidation is dropped when a live trade lands mid-request), then merged.
+  const resync = () => {
+    if (!data) return;
+    api.trades(coin.mint, { limit: TRADES_PAGE }).then(
+      (newest) => void mutate((pages: Page<Trade>[] | undefined) => mergeNewest(pages, newest), { revalidate: false }),
+      () => {},
     );
-    setFresh((s) => new Set(s).add(trade.sig));
-    setTimeout(
-      () =>
-        setFresh((s) => {
-          const next = new Set(s);
-          next.delete(trade.sig);
-          return next;
-        }),
-      1000,
-    );
+  };
+  useEvery(60_000, live, resync);
+
+  useCoinChannel(coin.mint, {
+    onResync: resync,
+    onTrade: (trade) => {
+      if (!data) return; // never patch before the first page lands (SWR would drop that response)
+      void mutate(
+        (pages: Page<Trade>[] | undefined) => {
+          if (!pages || pages.length === 0) return pages;
+          const [first, ...rest] = pages;
+          const key = tradeKey(trade);
+          if (!first || pages.some((p) => p.items.some((t) => tradeKey(t) === key))) return pages;
+          // Newest first; a trade delivered late slots in by time instead of jumping to the top.
+          return [{ ...first, items: [trade, ...first.items].sort((a, b) => b.ts - a.ts) }, ...rest];
+        },
+        { revalidate: false },
+      );
+      setFresh((s) => new Set(s).add(tradeKey(trade)));
+      setTimeout(
+        () =>
+          setFresh((s) => {
+            const next = new Set(s);
+            next.delete(tradeKey(trade));
+            return next;
+          }),
+        1000,
+      );
+    },
   });
 
   const trades = data?.flatMap((p) => p.items) ?? [];
@@ -102,8 +137,8 @@ function TradesTable({ coin, wallet }: { coin: CoinDetail; wallet: string | null
           <tbody>
             {trades.map((t) => (
               <tr
-                key={t.sig}
-                className={cn("border-b border-line/60 last:border-0", fresh.has(t.sig) && "animate-flash", t.side === "vault" && "bg-vault/[0.04]")}
+                key={tradeKey(t)}
+                className={cn("border-b border-line/60 last:border-0", fresh.has(tradeKey(t)) && "animate-flash", t.side === "vault" && "bg-vault/[0.04]")}
               >
                 <td className={`${td} text-xs text-faint`}>{formatAgo(t.ts, now)}</td>
                 <td className={td}>
