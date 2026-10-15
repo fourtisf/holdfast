@@ -17,7 +17,7 @@
  * Refunds always send the whole balance (minus the fee), so two refunds can never both succeed.
  */
 import { Keypair, PublicKey, type AddressLookupTableAccount } from "@solana/web3.js";
-import { DEFAULT_MODERATION_LISTS, LAUNCH_FEE_LAMPORTS, moderateLaunchText, PUMP_TOKEN_DECIMALS, type LaunchStatusKind, type ModerationLists } from "@holdfast/core";
+import { DEFAULT_MODERATION_LISTS, LAUNCH_FEE_LAMPORTS, moderateLaunchText, PUMP_TOKEN_DECIMALS, type LaunchRequest, type LaunchStatusKind, type ModerationLists, type WalletLaunchPrepared } from "@holdfast/core";
 import { coinKeys, deriveDepositKeypair, TOKEN_2022_PROGRAM_ID, type CoinKeys } from "@holdfast/chain";
 import {
   addExcluded,
@@ -25,10 +25,13 @@ import {
   getCoin,
   getLaunch,
   insertCoin,
+  insertWalletLaunch,
   listPendingLaunches,
+  listPendingWalletLaunches,
   notify,
   setCoinNeedsReview,
   setLaunchSig,
+  settleWalletLaunch,
   updateCoinMetadata,
   updateLaunchStatus,
   type Db,
@@ -150,6 +153,9 @@ type Step = "create" | "atomic" | "init" | "dev_buy" | "register" | "refund";
 /** How long a fetched lookup table is reused before it is read again. */
 const LOOKUP_TABLE_TTL_MS = 10 * 60_000;
 
+/** How long a wallet-signed launch is waited for; well past the ~80 s its blockhash stays valid. */
+export const WALLET_LAUNCH_TTL_MS = 3 * 60_000;
+
 /** The wallet recorded as the coin's creator (claims its share): the form's, else the deposit's sender. */
 const creatorOf = (form: LaunchForm, sender: PublicKey): PublicKey => (form.creatorWallet ? new PublicKey(form.creatorWallet) : sender);
 
@@ -204,6 +210,7 @@ export class LaunchWorker {
       }
     };
     await Promise.all(Array.from({ length: Math.min(this.s.concurrency, due.length) }, lane));
+    await this.settleWalletLaunches();
     if (this.now() - this.lastSweep >= this.s.sweepIntervalMs) {
       this.lastSweep = this.now();
       await this.sweep();
@@ -511,6 +518,110 @@ export class LaunchWorker {
     }
   }
 
+  // ---- wallet-signed launches ---------------------------------------------------------------------
+
+  /**
+   * A launch the creator signs in their own wallet, like on pump.fun: the one-transaction launch of
+   * the atomic flow with the wallet as fee payer and pump.fun `user`. The wallet pays the creation
+   * rent, reimburses the launcher for the vault's rent inside the same transaction and buys the dev
+   * tokens straight into its own token account (no lots: it is the coin's launch transaction). The
+   * mint and the launcher co-sign here; nothing happens on-chain until the wallet signs and sends it,
+   * and the row in `wallet_launches` expires if it never does.
+   */
+  async prepareWalletLaunch(req: LaunchRequest, walletAddress: string): Promise<WalletLaunchPrepared> {
+    let wallet: PublicKey;
+    try {
+      wallet = new PublicKey(walletAddress);
+    } catch {
+      throw new ValidationError("wallet must be a Solana address");
+    }
+    const form = normalizeForm(req, this.s.metadata.publicBaseUrl);
+    const verdict = moderateLaunchText({ name: form.name, ticker: form.symbol, description: form.description, socials: form.socials }, this.s.moderation);
+    if (verdict.action === "block") throw new ValidationError(`not allowed (${verdict.reasons.join("; ")})`);
+    const devBuyLamports = BigInt(Math.round((req.devBuySol ?? 0) * 1e9));
+    if (devBuyLamports < 0n) throw new ValidationError("dev buy must not be negative");
+
+    const table = await this.lookupTable();
+    const meta = await this.storage.publish(form);
+    const mint = Keypair.generate();
+    const coin = coinKeys(mint.publicKey, TOKEN_2022_PROGRAM_ID);
+    const rent = await this.rent();
+    const reimbursement = initReimbursement(rent, { treasuryLamports: await this.chain.getBalance(coin.treasury) }).lamports;
+
+    let devBuy: Parameters<typeof buildAtomicLaunchTx>[0]["devBuy"] = null;
+    let devBuyMax = 0n;
+    if (devBuyLamports > 0n) {
+      const state = freshCurveBuyState(await readPumpGlobals(this.chain), coin.treasury);
+      const budget = devBuyLamports + (devBuyLamports * BigInt(this.s.devBuySlippageBps)) / 10_000n;
+      const quote = quoteDevBuy(state, devBuyLamports, budget, this.s.devBuySlippageBps);
+      const candidates = state.global.buybackFeeRecipients.filter((k) => !k.equals(PublicKey.default));
+      if (candidates.length === 0) throw new Error("pump Global lists no buyback fee recipient");
+      const pick = this.deps.pickBuybackRecipient ?? ((c: readonly PublicKey[]) => c[Math.floor(Math.random() * c.length)]!);
+      devBuy = { tokens: quote.tokens, maxSolCost: quote.maxSolCost, bondingCurve: state.bondingCurve, buybackFeeRecipient: pick(candidates) };
+      devBuyMax = quote.maxSolCost;
+    }
+
+    const recent = await this.chain.latestBlockhash();
+    const tx = await buildAtomicLaunchTx(
+      {
+        deposit: wallet,
+        launcher: this.s.launcher.publicKey,
+        mint: mint.publicKey,
+        name: form.name,
+        symbol: form.symbol,
+        uri: meta.uri,
+        triggerBps: form.triggerBps,
+        creator: creatorOf(form, wallet),
+        reimburseLamports: reimbursement,
+        devBuy,
+        leftover: null,
+        recent,
+        priority: this.s.priority,
+      },
+      table,
+    );
+    const size = tx.serialize().length;
+    if (size > PACKET_DATA_SIZE) throw new ValidationError("this name, ticker and dev buy do not fit in one transaction: shorten them or launch without a wallet");
+    tx.sign([mint, this.s.launcher]);
+
+    const createRent = rent(pumpMintSize(utf8Len(form.name), utf8Len(form.symbol), utf8Len(meta.uri))) + rent(PUMP_BONDING_CURVE_SIZE) + rent(TOKEN_2022_ATA_SIZE);
+    const buyerAccounts = devBuy ? rent(TOKEN_2022_ATA_SIZE) + rent(PUMP_USER_VOLUME_ACCUMULATOR_SIZE) : 0n;
+    const maxCost = atomicTxFee(this.s.priority, devBuy !== null) + createRent + reimbursement + devBuyMax + buyerAccounts;
+    const expiresAt = this.now() + WALLET_LAUNCH_TTL_MS;
+    // Before anything can be bought: the launcher never earns payouts (the wallet is a regular holder).
+    await addExcluded(this.db, [{ address: this.s.launcher.publicKey.toBase58(), reason: "launcher" }]);
+    await insertWalletLaunch(this.db, { mint: mint.publicKey.toBase58(), wallet: wallet.toBase58(), form: req, uri: meta.uri, expiresAt });
+    this.log.info(
+      { mint: mint.publicKey.toBase58(), wallet: wallet.toBase58(), bytes: size, trigger: form.triggerBps, devBuyTokens: devBuy?.tokens.toString(), maxCost: maxCost.toString() },
+      "wallet launch prepared",
+    );
+    return {
+      mint: mint.publicKey.toBase58(),
+      transaction: Buffer.from(tx.serialize()).toString("base64"),
+      lastValidBlockHeight: recent.lastValidBlockHeight,
+      maxCostLamports: maxCost.toString(),
+      expiresAt,
+    };
+  }
+
+  /** Registers wallet launches whose transaction landed (the vault exists) and expires the rest. */
+  async settleWalletLaunches(): Promise<void> {
+    for (const w of await listPendingWalletLaunches(this.db)) {
+      try {
+        const coin = coinKeys(new PublicKey(w.mint), TOKEN_2022_PROGRAM_ID);
+        if (await this.chain.accountExists(coin.vault)) {
+          const form = normalizeForm(w.form, this.s.metadata.publicBaseUrl);
+          await this.registerCoin(form, coin, null, new PublicKey(w.wallet), w.uri, null, false);
+          if (await settleWalletLaunch(this.db, w.mint, "live")) this.log.info({ mint: w.mint, wallet: w.wallet }, "wallet launch live");
+        } else if (this.now() > w.expiresAt) {
+          await settleWalletLaunch(this.db, w.mint, "expired");
+        }
+      } catch (err) {
+        this.log.error({ mint: w.mint, err: describe(err) }, "wallet launch settle error");
+      }
+    }
+  }
+
   private async lookupTable(): Promise<AddressLookupTableAccount> {
     if (!this.s.lookupTable) throw new Error("no lookup table configured");
     if (this.table && this.now() - this.table.at < LOOKUP_TABLE_TTL_MS) return this.table.account;
@@ -721,7 +832,7 @@ export class LaunchWorker {
   private async registerCoin(
     form: LaunchForm,
     coin: CoinKeys,
-    deposit: PublicKey,
+    deposit: PublicKey | null,
     sender: PublicKey,
     uri: string,
     launchSig: string | null,
@@ -732,7 +843,7 @@ export class LaunchWorker {
       { address: coin.vault.toBase58(), reason: "vault" },
       { address: coin.treasury.toBase58(), reason: "treasury" },
       { address: coin.bondingCurve.toBase58(), reason: "bonding_curve" },
-      { address: deposit.toBase58(), reason: "deposit" },
+      ...(deposit ? [{ address: deposit.toBase58(), reason: "deposit" as const }] : []),
       { address: this.s.launcher.publicKey.toBase58(), reason: "launcher" },
     ];
     await this.db.tx(async (q) => {

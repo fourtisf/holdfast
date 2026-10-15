@@ -4,7 +4,7 @@
  * the operator to look at why.
  */
 import { countLaunchesByStatus, listLaunches, type Db } from "@holdfast/db";
-import { alerterFromEnv, freshness, Metrics, startOpsServer, type Alerter, type OpsServer } from "@holdfast/ops";
+import { alerterFromEnv, freshness, Metrics, startOpsServer, type Alerter, type OpsPostHandler, type OpsServer } from "@holdfast/ops";
 
 interface Logger {
   warn(obj: object, msg?: string): void;
@@ -33,9 +33,9 @@ export class LauncherMonitor {
     this.alerter = alerterFromEnv("launcher", env, log);
   }
 
-  start(port: number): Promise<OpsServer | null> {
+  start(port: number, post?: Record<string, OpsPostHandler>): Promise<OpsServer | null> {
     if (port <= 0) return Promise.resolve(null);
-    return startOpsServer({ port, metrics: this.metrics, health: () => freshness(this.lastTickAt, this.opts.maxTickAgeMs, this.now()) });
+    return startOpsServer({ port, metrics: this.metrics, health: () => freshness(this.lastTickAt, this.opts.maxTickAgeMs, this.now()), post });
   }
 
   tickFailed(): void {

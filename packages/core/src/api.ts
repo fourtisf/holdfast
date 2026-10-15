@@ -343,6 +343,30 @@ export type LaunchStatusKind =
   | "expired"
   | "failed";
 
+/**
+ * Launch signed by the creator's own wallet (POST /launch/wallet): the server returns the whole
+ * launch as one v0 transaction, co-signed by the mint and the launcher, with the wallet as fee payer.
+ * The wallet signs and sends it; GET /launch/wallet/:mint reports when the coin is live.
+ */
+export interface WalletLaunchRequest extends LaunchRequest {
+  wallet: string;
+}
+
+export interface WalletLaunchPrepared {
+  mint: string;
+  /** Base64 v0 transaction; only the fee payer's (the wallet's) signature is missing. */
+  transaction: string;
+  lastValidBlockHeight: number;
+  /** The most the wallet spends: fees, rent, and the dev buy with its slippage. */
+  maxCostLamports: string;
+  expiresAt: number;
+}
+
+export interface WalletLaunchStatus {
+  mint: string;
+  status: "pending" | "live" | "expired";
+}
+
 export interface LaunchStatus {
   launchId: string;
   status: LaunchStatusKind;

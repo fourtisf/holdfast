@@ -136,6 +136,9 @@ function launchState(id: string): LaunchStatus {
   };
 }
 
+// ---- wallet launch: the mock wallet "signs", the coin is live ~2.5 s after the transaction is built ----
+const walletLaunches = new Map<string, { req: LaunchRequest; wallet: string; createdAt: number }>();
+
 export function mockLaunchStatus(id: string): LaunchStatus {
   return launchState(id);
 }
@@ -236,6 +239,19 @@ export const mockApi: HoldfastApi = {
     return latency(res, 300, 600);
   },
   launchStatus: async (id) => latency(launchState(id), 60, 160),
+  walletLaunch: async (req) => {
+    if (!req.name.trim() || !req.ticker.trim()) throw new ApiError("Name and ticker are required", 400);
+    const mint = mockAddress(`wallet-launch:${randomId()}`);
+    walletLaunches.set(mint, { req, wallet: req.wallet, createdAt: Date.now() });
+    const { requiredSol } = mockLaunchQuote(req.devBuySol ?? 0);
+    return latency({ mint, transaction: unsignedTransaction(req.wallet), lastValidBlockHeight: 1, maxCostLamports: lamports(requiredSol), expiresAt: Date.now() + 180_000 }, 400, 800);
+  },
+  walletLaunchStatus: async (mint) => {
+    const l = walletLaunches.get(mint) ?? notFound("Launch");
+    const live = Date.now() - l.createdAt > 2_500;
+    if (live) market.launchCoin({ mint, req: l.req, createdAt: l.createdAt + 2_500, launcher: l.wallet });
+    return latency({ mint, status: live ? ("live" as const) : ("pending" as const) }, 60, 160);
+  },
   walletTrades: async (wallet, opts = {}) => {
     const all = market.walletTrades(wallet);
     const start = opts.before ? Number(opts.before) : 0;

@@ -31,6 +31,8 @@ export interface ApiConfig {
   launchTtlMs: number;
   /** LAUNCHES_PAUSED: refuse new launches (no deposit addresses) until the launcher is live. */
   launchesPaused: boolean;
+  /** LAUNCHER_INTERNAL_URL: the launcher's ops port, which builds wallet-signed launch transactions. */
+  launcherUrl: string;
   /** Parsed from the launcher's own variables, so quotes match what it charges. */
   launchPlan: LaunchPlan;
   depositMasterSecret: string | null;
@@ -76,6 +78,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     wsHeartbeatMs: Number(env.API_WS_HEARTBEAT_MS ?? 30_000),
     launchTtlMs: Number(env.LAUNCH_TTL_MS ?? 30 * 60_000),
     launchesPaused: env.LAUNCHES_PAUSED === "true" || env.LAUNCHES_PAUSED === "1",
+    launcherUrl: env.LAUNCHER_INTERNAL_URL ?? "http://localhost:9103",
     launchPlan: launchPlanFromEnv(env, { publicMetadataBaseUrl }),
     depositMasterSecret: env.DEPOSIT_MASTER_SECRET || null,
     trade: {

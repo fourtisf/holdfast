@@ -31,6 +31,7 @@ export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     wsHeartbeatMs: 30_000,
     launchTtlMs: 30 * 60_000,
     launchesPaused: false,
+    launcherUrl: "http://127.0.0.1:1",
     launchPlan: launchPlanFromEnv({}, { publicMetadataBaseUrl: "http://localhost:4000/metadata" }),
     depositMasterSecret: null,
     trade: { computeUnitPriceMicroLamports: 50_000, computeUnitLimitCurve: 250_000, computeUnitLimitAmm: 300_000 },
@@ -71,7 +72,7 @@ export interface TestApi extends HoldfastApi {
 }
 
 let depositCounter = 0;
-export async function makeApi(db: Db, overrides: Partial<ApiConfig> = {}, now = () => NOW, extra: Pick<AppDeps, "prices"> = {}): Promise<TestApi> {
+export async function makeApi(db: Db, overrides: Partial<ApiConfig> = {}, now = () => NOW, extra: Pick<AppDeps, "prices" | "walletLauncher"> = {}): Promise<TestApi> {
   const config = testConfig(overrides);
   const events = new MemoryEventSource();
   const chain = new FakeTradeChain();

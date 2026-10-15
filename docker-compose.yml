@@ -72,6 +72,8 @@ services:
       <<: *backend-env
       API_HOST: 0.0.0.0
       API_PORT: "4000"
+      # wallet-signed launches are built and co-signed by the launcher (its ops port, internal only)
+      LAUNCHER_INTERNAL_URL: http://launcher:9103
     ports:
       - "4000:4000"
     volumes:

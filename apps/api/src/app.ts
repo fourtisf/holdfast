@@ -11,6 +11,7 @@ import type { Db } from "@holdfast/db";
 import type { ApiConfig } from "./config.js";
 import type { ApiContext } from "./context.js";
 import type { LaunchService } from "./launch/service.js";
+import { HttpWalletLauncher, type WalletLauncher } from "./launch/wallet.js";
 import type { TradeChain } from "./trade/chain.js";
 import { NO_PRICE, type SolPriceSource } from "./services/price.js";
 import { commentRoutes } from "./routes/comments.js";
@@ -33,6 +34,8 @@ export interface AppDeps {
   config: ApiConfig;
   tradeChain: TradeChain;
   launches: LaunchService;
+  /** Wallet-signed launches (default: the launcher's internal endpoint at config.launcherUrl). */
+  walletLauncher?: WalletLauncher;
   events: EventSource;
   /** SOL/USD for Stats.solUsd (default: none). Started and stopped with the app when it has start/stop. */
   prices?: SolPriceSource & { start?(): void; stop?(): void };
@@ -71,7 +74,8 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   const hub = new SubscriptionHub();
   const prices = deps.prices ?? NO_PRICE;
   const feed = new LiveFeed({ db: deps.db, hub, launches: deps.launches, prices, now, log: app.log, statsIntervalMs: deps.config.statsIntervalMs });
-  const ctx: ApiContext = { db: deps.db, config: deps.config, tradeChain: deps.tradeChain, launches: deps.launches, hub, feed, prices, now };
+  const walletLauncher = deps.walletLauncher ?? new HttpWalletLauncher(deps.config.launcherUrl);
+  const ctx: ApiContext = { db: deps.db, config: deps.config, tradeChain: deps.tradeChain, launches: deps.launches, walletLauncher, hub, feed, prices, now };
 
   app.setErrorHandler((err: FastifyError | ZodError | { statusCode?: number; error?: string; message?: string }, req, reply) => {
     if (err instanceof ZodError) return reply.code(400).send({ error: formatZodError(err) });

@@ -29,6 +29,8 @@ Base URL: `NEXT_PUBLIC_API_URL` (default `http://localhost:4000`). All response 
 | GET | `/launch/quote?devBuySol=&name=&ticker=` | `LaunchQuote` | real launch cost (rent + fees) from the launcher's cost model and plan (atomic or split flow, metadata storage); 0.015 SOL for a typical atomic launch, never less |
 | POST | `/launch` | `LaunchResponse` | body `LaunchRequest`; creates a unique deposit address; `requiredLamports` = the quote |
 | GET | `/launch/:id` | `LaunchStatus` | |
+| POST | `/launch/wallet` | `WalletLaunchPrepared` | body `WalletLaunchRequest` (`LaunchRequest` + `wallet`): the whole launch as one v0 transaction with the wallet as fee payer, co-signed by the mint and the launcher; the wallet signs and sends it, like a pump.fun create. Built by the launcher (`LAUNCHER_INTERNAL_URL`); 422 when the launch cannot be built, 503 when the launcher is down |
+| GET | `/launch/wallet/:mint` | `WalletLaunchStatus` | `pending` until the transaction lands and the coin is registered (`live`); `expired` when it never landed |
 | POST | `/coins/:mint/report` | `ReportResponse` | body `ReportRequest` (`reason`: scam · impersonation · nsfw · hate · illegal · other); one per visitor and coin; 10/hour per IP |
 
 A coin hidden by moderators is left out of `/coins` and `/stats`. `GET /coins/:mint` still answers with `hidden: true` and

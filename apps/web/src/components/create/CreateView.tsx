@@ -3,7 +3,8 @@
 import { DEFAULT_TRIGGER_BPS, type LaunchResponse } from "@holdfast/core";
 import { useLaunchQuote } from "@/lib/hooks/queries";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ErrorNote } from "@/components/ui/States";
@@ -12,6 +13,7 @@ import { GlobeIcon, InfoIcon, TelegramIcon, XLogoIcon } from "@/components/ui/ic
 import { api, errorMessage } from "@/lib/api";
 import { TELEGRAM_URL, X_HANDLE, X_URL } from "@/lib/config";
 import { formatSolExact, formatSolAmount } from "@/lib/format";
+import { confirmSignature, decodeTransaction } from "@/lib/solana";
 import {
   DESCRIPTION_MAX,
   launchFeeSol,
@@ -29,6 +31,7 @@ import { DepositModal } from "./DepositModal";
 import { ImageDrop } from "./ImageDrop";
 import { LaunchPreview } from "./LaunchPreview";
 import { TriggerPicker } from "./TriggerPicker";
+import { WalletLaunchModal, type WalletLaunchState } from "./WalletLaunchModal";
 
 const EMPTY: LaunchForm = {
   name: "",
@@ -43,6 +46,14 @@ const EMPTY: LaunchForm = {
   creatorWallet: "",
 };
 const DEV_PRESETS = [0.5, 1, 2];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Wallet adapters report a declined request as an error; say so plainly. */
+function walletErrorMessage(err: unknown): string {
+  const text = `${(err as { name?: string })?.name ?? ""} ${err instanceof Error ? err.message : String(err)}`;
+  if (/reject|denied|cancel|declin/i.test(text)) return "You cancelled the transaction in your wallet. Nothing was sent.";
+  return errorMessage(err);
+}
 
 const inputClass =
   "h-11 w-full rounded-control border bg-surface-2 px-3 text-sm text-fg placeholder:text-faint transition-colors focus:border-faint focus:outline-none";
@@ -103,6 +114,7 @@ export function CreateView() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [launch, setLaunch] = useState<{ res: LaunchResponse; ticker: string; devBuySol: number } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [walletLaunch, setWalletLaunch] = useState<{ state: WalletLaunchState; ticker: string; failedAt: number } | null>(null);
 
   const errors = validateLaunch(form);
   const shown = touched ? errors : {};
@@ -114,7 +126,9 @@ export function CreateView() {
   const set = <K extends keyof LaunchForm>(key: K, value: LaunchForm[K]) => setForm((f) => ({ ...f, [key]: value }));
 
   // The connected wallet is the creator unless the user types another one; it follows connects and disconnects.
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const { setVisible } = useWalletModal();
   const connected = publicKey?.toBase58() ?? null;
   const prefilled = useRef<string | null>(null);
   useEffect(() => {
@@ -127,10 +141,50 @@ export function CreateView() {
   }, [connected]);
   const border = (key: keyof LaunchForm) => (shown[key] ? "border-sell/60" : "border-line-strong");
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const ready = () => {
     setTouched(true);
-    if (paused || Object.keys(errors).length > 0 || uploading) return;
+    return !paused && Object.keys(errors).length === 0 && !uploading;
+  };
+
+  // With a wallet: one transaction to confirm in it, like a pump.fun create. Without: connect first.
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ready()) return;
+    if (publicKey) void launchWithWallet();
+    else setVisible(true);
+  };
+
+  const launchWithWallet = async () => {
+    if (!publicKey) return;
+    const req = toLaunchRequest(form);
+    let at = 0;
+    const show = (state: WalletLaunchState) => setWalletLaunch({ state, ticker: req.ticker, failedAt: at });
+    setSubmitError(null);
+    show({ step: "preparing" });
+    try {
+      const prepared = await api.walletLaunch({ ...req, wallet: publicKey.toBase58() });
+      const tx = decodeTransaction(prepared.transaction);
+      at = 1;
+      show({ step: "confirm" });
+      const signature = await sendTransaction(tx, connection);
+      at = 2;
+      show({ step: "launching", signature });
+      await confirmSignature(connection, signature, tx, prepared.lastValidBlockHeight);
+      // The launcher registers the coin within seconds of the transaction landing.
+      for (let i = 0; i < 40; i++) {
+        if ((await api.walletLaunchStatus(prepared.mint).catch(() => null))?.status === "live") break;
+        await sleep(1_500);
+      }
+      at = 4;
+      show({ step: "live", mint: prepared.mint, signature });
+    } catch (err) {
+      show({ step: "error", message: walletErrorMessage(err) });
+    }
+  };
+
+  /** No wallet (or paying from an exchange): send SOL to a one-time deposit address instead. */
+  const launchWithDeposit = async () => {
+    if (!ready()) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -155,7 +209,8 @@ export function CreateView() {
       <div className="mb-5">
         <h1 className="font-display text-[26px] leading-tight font-semibold tracking-[0.02em] text-fg sm:text-[32px]">Launch a coin</h1>
         <p className="mt-1 text-sm text-muted">
-          No wallet connection. Send {quote ? "" : "≈"}{formatSolExact(launchFeeSol(quote))} SOL to a one-time address and your coin goes live on pump.fun with its own floor vault.
+          Confirm one transaction in your wallet and your coin goes live on pump.fun with its own floor vault, for {quote ? "" : "≈"}
+          {formatSolExact(launchFeeSol(quote))} SOL plus your dev buy.
         </p>
       </div>
 
@@ -309,7 +364,7 @@ export function CreateView() {
               hint={
                 <span className="flex items-start gap-1.5">
                   <InfoIcon size={13} className="mt-px shrink-0" />
-                  Dev-buy tokens go to the address you deposit from and do not earn holder payouts.
+                  Dev-buy tokens go to the wallet that pays for the launch and do not earn holder payouts.
                 </span>
               }
             >
@@ -351,7 +406,7 @@ export function CreateView() {
         <div className="space-y-4 lg:sticky lg:top-[calc(var(--nav-height)+20px)]">
           <LaunchPreview form={form} preview={preview} />
           <Card className="p-4">
-            <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">You send</div>
+            <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">You pay</div>
             <dl className="mt-2 space-y-1.5 text-sm">
               <div className="flex justify-between">
                 <dt className="text-muted">Launch cost (account rent + fees)</dt>
@@ -372,22 +427,40 @@ export function CreateView() {
                 <dd className="text-brand tabular">{formatSolExact(total)} SOL</dd>
               </div>
             </dl>
-            <p className="mt-2 text-xs text-faint">Anything above the total is refunded to the sender. You earn 15% of your coin&apos;s creator fees, claimable on its page.</p>
+            <p className="mt-2 text-xs text-faint">
+              {connected
+                ? `Your wallet shows the exact amount before you approve${devBuySol > 0 ? "; unused dev-buy slippage stays in your wallet" : ""}.`
+                : "Paid from your wallet in one transaction."}{" "}
+              You earn 15% of your coin&apos;s creator fees, claimable on its page.
+            </p>
             {submitError ? <ErrorNote className="mt-3">{submitError}</ErrorNote> : null}
             {touched && Object.keys(errors).length > 0 ? <p className="mt-3 text-xs text-sell">Fix the highlighted fields to continue.</p> : null}
             <Button type="submit" size="lg" className="mt-3 w-full" disabled={paused || submitting || uploading}>
-              {paused
-                ? "Launches open soon"
-                : submitting
-                  ? "Creating deposit address…"
-                  : uploading
-                    ? "Waiting for image upload…"
-                    : `Launch · send ${formatSolExact(total)} SOL`}
+              {paused ? "Launches open soon" : uploading ? "Waiting for image upload…" : connected ? "Launch · confirm in wallet" : "Connect wallet to launch"}
             </Button>
+            {!paused ? (
+              <button
+                type="button"
+                onClick={() => void launchWithDeposit()}
+                disabled={submitting || uploading}
+                className="mt-2.5 w-full text-center text-xs text-muted underline-offset-2 hover:text-fg hover:underline disabled:opacity-60"
+              >
+                {submitting ? "Creating deposit address…" : `No wallet here? Send ${formatSolExact(total)} SOL to a deposit address instead`}
+              </button>
+            ) : null}
           </Card>
         </div>
       </form>
 
+      {walletLaunch ? (
+        <WalletLaunchModal
+          state={walletLaunch.state}
+          ticker={walletLaunch.ticker}
+          failedAt={walletLaunch.failedAt}
+          onClose={() => setWalletLaunch(null)}
+          onRetry={() => void launchWithWallet()}
+        />
+      ) : null}
       {launch && modalOpen ? (
         <DepositModal launch={launch.res} ticker={launch.ticker} devBuySol={launch.devBuySol} onClose={() => setModalOpen(false)} onRestart={restart} />
       ) : null}

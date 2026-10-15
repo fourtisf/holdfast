@@ -14,6 +14,9 @@ import type {
   LaunchResponse,
   LaunchQuote,
   LaunchStatus,
+  WalletLaunchPrepared,
+  WalletLaunchRequest,
+  WalletLaunchStatus,
   Page,
   Position,
   PostCommentRequest,
@@ -66,6 +69,9 @@ export interface HoldfastApi {
   uploadImage(file: File): Promise<{ imageUrl: string }>;
   launch(req: LaunchRequest): Promise<LaunchResponse>;
   launchStatus(launchId: string): Promise<LaunchStatus>;
+  /** The whole launch as one transaction for the connected wallet to sign and send (no deposit address). */
+  walletLaunch(req: WalletLaunchRequest): Promise<WalletLaunchPrepared>;
+  walletLaunchStatus(mint: string): Promise<WalletLaunchStatus>;
   /** Deposit needed for a launch, from the launcher's cost model. */
   launchQuote(q?: { devBuySol?: number; name?: string; ticker?: string }): Promise<LaunchQuote>;
   report(mint: string, req: ReportRequest): Promise<ReportResponse>;
@@ -161,6 +167,8 @@ export const httpApi: HoldfastApi = {
   },
   launch: (req) => request("/launch", { method: "POST", json: req }),
   launchStatus: (launchId) => request(`/launch/${enc(launchId)}`),
+  walletLaunch: (req) => request("/launch/wallet", { method: "POST", json: req }),
+  walletLaunchStatus: (mint) => request(`/launch/wallet/${enc(mint)}`),
   launchQuote: (q = {}) => request(withQuery("/launch/quote", { devBuySol: q.devBuySol, name: q.name, ticker: q.ticker })),
   report: (mint, req) => request(`/coins/${enc(mint)}/report`, { method: "POST", json: req }),
   walletTrades: (wallet, opts = {}) => request(withQuery("/me/trades", { wallet, limit: opts.limit, before: opts.before })),
@@ -207,6 +215,8 @@ export const api: HoldfastApi = {
   uploadImage: lazy("uploadImage"),
   launch: lazy("launch"),
   launchStatus: lazy("launchStatus"),
+  walletLaunch: lazy("walletLaunch"),
+  walletLaunchStatus: lazy("walletLaunchStatus"),
   launchQuote: lazy("launchQuote"),
   report: lazy("report"),
   walletTrades: lazy("walletTrades"),

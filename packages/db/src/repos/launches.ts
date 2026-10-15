@@ -182,3 +182,55 @@ export async function countLaunchesByStatus(q: Queryable): Promise<Record<string
   const res = await q.query<{ status: string; n: string }>("SELECT status, count(*) AS n FROM launches GROUP BY status");
   return Object.fromEntries(res.rows.map((r) => [r.status, Number(r.n)]));
 }
+
+// ---- wallet launches (signed by the creator's wallet, 008_wallet_launches.sql) ------------------------
+
+export type WalletLaunchStatus = "pending" | "live" | "expired";
+
+export interface WalletLaunchRow {
+  mint: string;
+  wallet: string;
+  form: LaunchRequest;
+  uri: string;
+  status: WalletLaunchStatus;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
+}
+
+function mapWalletLaunch(r: Record<string, unknown>): WalletLaunchRow {
+  return {
+    mint: r.mint as string,
+    wallet: r.wallet as string,
+    form: (typeof r.form === "string" ? JSON.parse(r.form) : r.form) as LaunchRequest,
+    uri: r.uri as string,
+    status: r.status as WalletLaunchStatus,
+    createdAt: ms(r.created_at),
+    updatedAt: ms(r.updated_at),
+    expiresAt: ms(r.expires_at),
+  };
+}
+
+export async function insertWalletLaunch(q: Queryable, l: { mint: string; wallet: string; form: LaunchRequest; uri: string; expiresAt: number }): Promise<WalletLaunchRow> {
+  const res = await q.query(
+    `INSERT INTO wallet_launches (mint, wallet, form, uri, expires_at) VALUES ($1, $2, $3::jsonb, $4, $5) RETURNING *`,
+    [l.mint, l.wallet, json(l.form), l.uri, ts(l.expiresAt)],
+  );
+  return mapWalletLaunch(res.rows[0]!);
+}
+
+export async function getWalletLaunch(q: Queryable, mint: string): Promise<WalletLaunchRow | null> {
+  const res = await q.query("SELECT * FROM wallet_launches WHERE mint = $1", [mint]);
+  return res.rows[0] ? mapWalletLaunch(res.rows[0]) : null;
+}
+
+export async function listPendingWalletLaunches(q: Queryable, limit = 100): Promise<WalletLaunchRow[]> {
+  const res = await q.query("SELECT * FROM wallet_launches WHERE status = 'pending' ORDER BY created_at LIMIT $1", [limit]);
+  return res.rows.map(mapWalletLaunch);
+}
+
+/** Pending → live / expired; null if the row was not pending any more. */
+export async function settleWalletLaunch(q: Queryable, mint: string, status: Exclude<WalletLaunchStatus, "pending">): Promise<WalletLaunchRow | null> {
+  const res = await q.query("UPDATE wallet_launches SET status = $2, updated_at = now() WHERE mint = $1 AND status = 'pending' RETURNING *", [mint, status]);
+  return res.rows[0] ? mapWalletLaunch(res.rows[0]) : null;
+}

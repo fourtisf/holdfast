@@ -5,9 +5,29 @@ Links: https://moatpad.fun · https://x.com/moatpad · https://t.me/MOATPAD
 Rules for every post: describe the mechanics, never promise profit or price ("100x", "guaranteed", "can't go down").
 The vault defends the floor with what it holds; it does not guarantee a price.
 
-## X: main post (pin it, attach the video)
+## Profile bios
 
-While launches are paused:
+X (160 characters max). Name `Moatpad 🏰`, website `moatpad.fun`, location `Solana`:
+
+```
+Every coin gets a moat 🏰 pump.fun launches with a floor vault: buybacks at the floor, holders paid every 2 min. Launch for 0.015 SOL 👇
+```
+
+Telegram channel description (255 characters max):
+
+```
+Official Moatpad channel 🏰 The pump.fun launchpad where every coin defends its own floor: 40% of fees fill an on-chain vault that buys back at the floor, and holders get paid every 2 minutes. Launch at moatpad.fun
+```
+
+Short tagline (pinned headers, banners): `Every coin gets a moat.`
+
+Indonesian (X):
+
+```
+Setiap koin punya benteng 🏰 Launch di pump.fun dengan floor vault: buyback otomatis di floor, holder dibayar tiap 2 menit. Launch 0.015 SOL 👇
+```
+
+## X: main post (pin it, attach the video)
 
 ```
 Every coin gets a moat. 🏰
@@ -18,15 +38,8 @@ Moatpad launches your coin on pump.fun with a floor vault built in:
 • Holders get paid every 2 minutes
 • Floor and holder funds can never be withdrawn
 
-Launch for 0.015 SOL. Opening soon.
+Launch for 0.015 SOL, one click in your wallet.
 
-moatpad.fun
-```
-
-Once launches are open, replace the last two lines with:
-
-```
-Launch yours for 0.015 SOL 👇
 moatpad.fun
 ```
 
@@ -61,9 +74,9 @@ Weight grows from 0.1× to 1.0× over 7 days of holding. Hold longer, earn more.
 ```
 
 ```
-6/ Launching takes one transaction: coin, dev buy and vault together, so no sniper gets in before you.
+6/ Launching is one transaction you confirm in your wallet: coin, dev buy and vault together, so no sniper gets in before you.
 
-0.015 SOL. No wallet connection needed.
+About 0.015 SOL plus your dev buy.
 
 moatpad.fun
 t.me/MOATPAD
@@ -80,7 +93,7 @@ Launch on pump.fun with a floor vault built in.
 📈 The floor follows the ATH: pick 15, 25 or 35% below it at launch, written into the vault forever. It only rises.
 💰 Holder payouts every 2 minutes: SOL + bought-back tokens, split by tokens × weight (0.1× → 1.0× over 7 days).
 🔒 Floor and holder funds can never be withdrawn.
-⚡ One-transaction launch for 0.015 SOL: coin, dev buy and vault together.
+⚡ Launch for 0.015 SOL in one transaction confirmed in your wallet: coin, dev buy and vault together.
 
 🌐 moatpad.fun
 🐦 x.com/moatpad

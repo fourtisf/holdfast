@@ -1,6 +1,7 @@
 import type { Db } from "@holdfast/db";
 import type { ApiConfig } from "./config.js";
 import type { LaunchService } from "./launch/service.js";
+import type { WalletLauncher } from "./launch/wallet.js";
 import type { SolPriceSource } from "./services/price.js";
 import type { TradeChain } from "./trade/chain.js";
 import type { LiveFeed } from "./ws/feed.js";
@@ -12,6 +13,7 @@ export interface ApiContext {
   config: ApiConfig;
   tradeChain: TradeChain;
   launches: LaunchService;
+  walletLauncher: WalletLauncher;
   hub: SubscriptionHub;
   feed: LiveFeed;
   prices: SolPriceSource;
