@@ -68,8 +68,9 @@ over SFTP instead (delete both copies afterwards). The server keeps its copy, si
 
 The program address is compiled into the program, so the binary is built for it on a machine with the toolchain:
 `bash deploy/build-program.sh <PROGRAM_ADDRESS>` writes `deploy/program/` (binary, sha256, address), which is
-committed. Only the deployer needs SOL: send it 4.75 (about 4.66 is the rent of the 653 KB program, which stays in the
-program account for as long as the program exists; the rest pays the lookup table and the keeper's start). The launcher
+committed. Only the deployer needs SOL: about 3.5 (3.40 is the rent of the 653 KB program at October 2026 mainnet
+rent, which stays in the program account for as long as the program exists; the rest pays the lookup table and the
+keeper's start). The launcher
 runs with no SOL (each launch reimburses it in the same transaction) and the keeper lives off the platform share:
 
 ```bash

@@ -22,9 +22,9 @@
 #   bash deploy/program.sh launches open|pause
 #   bash deploy/program.sh status        addresses and balances
 #
-# Only the deployer needs SOL: about 4.75, the program's rent (it stays in the program account) plus a little for
-# the lookup table and the keeper's start. The launcher runs empty, since every launch reimburses it in the same
-# transaction, and the keeper then lives off the platform share (`revenue`). The deployer is also the program's
+# Only the deployer needs SOL: the program's rent (3.40 SOL on mainnet in October 2026; it stays in the program
+# account) plus a little for the lookup table and the keeper's start. The launcher runs empty, since every launch
+# reimburses it in the same transaction, and the keeper then lives off the platform share (`revenue`). The deployer is also the program's
 # upgrade authority and the Config admin until both move to a multisig (docs/runbook.md, section 3). Its keypair
 # and the program keypair live in $ADMIN_DIR (default ~/moatpad-admin), outside the repository and every
 # container. Back that folder up offline, and never paste or screenshot the files in it.
@@ -35,7 +35,9 @@ ADMIN_DIR="${ADMIN_DIR:-$HOME/moatpad-admin}"
 DEPLOYER="$ADMIN_DIR/deployer.json"
 PROGRAM="$ADMIN_DIR/program.json"
 SO=deploy/program/holdfast_vault.so
-PRIORITY="${PRIORITY:-20000}" # micro-lamports per compute unit on the deploy's write transactions
+# Micro-lamports per compute unit on the deploy's transactions. Off by default: with it the CLI sets each
+# transaction's compute-unit limit to exactly what a simulation used, which some clusters reject.
+PRIORITY="${PRIORITY:-0}"
 KEEPER_SEED_LAMPORTS=20000000 # the keeper's start; the platform share refills it
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
 
@@ -84,7 +86,7 @@ Deployer (pays the deploy, upgrade authority, admin): $(solana address -k "$DEPL
 Program address (gets built into the program):       $(solana address -k "$PROGRAM")
 
 Back up $ADMIN_DIR off this server. Next: send the program address so the program is built for it,
-make sure the deployer holds 4.75 SOL (no other wallet needs SOL), then git pull and run: bash deploy/program.sh deploy
+make sure the deployer holds about 3.5 SOL (no other wallet needs SOL), then git pull and run: bash deploy/program.sh deploy
 NEXT
     ;;
 
@@ -149,10 +151,11 @@ NEXT
     program_id="$(solana address -k "$PROGRAM")"
     built_for="$(cat deploy/program/program-id)"
     [ "$built_for" = "$program_id" ] || { echo "$SO was built for $built_for, but $PROGRAM is $program_id" >&2; exit 1; }
-    # Rent for the program data account (the buffer it is written to first is refunded), plus fees, the
-    # lookup table and the keeper's start.
+    # Rent for the program data account, as the cluster charges it (the buffer it is written to first is
+    # refunded), plus fees, the lookup table and the keeper's start.
     size="$(stat -c %s "$SO")"
-    needed=$(((size + 45 + 128) * 6960 + 50000000))
+    rent="$(solana rent $((size + 45)) --lamports --url "$RPC" | awk '{ print $3 }')"
+    needed=$((rent + 50000000))
     balance="$(sol balance --lamports | awk '{ print $1 }')"
     if [ "$balance" -lt "$needed" ]; then
       echo "the deployer $(solana address -k "$DEPLOYER") has $(sol_amount "$balance") SOL and needs about $(sol_amount "$needed") SOL" >&2
@@ -162,7 +165,9 @@ NEXT
     send=(--use-rpc)
     case "$RPC" in *api.mainnet-beta.solana.com* | *api.devnet.solana.com*) send=() ;; esac
     echo "deploying $program_id ($((size / 1024)) KB) to $(env_get SOLANA_CLUSTER) from $(solana address -k "$DEPLOYER")"
-    if ! sol program deploy "$SO" --program-id "$PROGRAM" --with-compute-unit-price "$PRIORITY" --max-sign-attempts 50 ${send[@]+"${send[@]}"}; then
+    [ "$PRIORITY" != 0 ] && send+=(--with-compute-unit-price "$PRIORITY")
+    echo "the program's rent: $(sol_amount "$rent") SOL (stays in the program account, yours to reclaim by closing it)"
+    if ! sol program deploy "$SO" --program-id "$PROGRAM" --max-sign-attempts 50 ${send[@]+"${send[@]}"}; then
       echo >&2
       echo "the deploy did not finish. Checking why (nothing is sent):" >&2
       diagnose >&2 || true
