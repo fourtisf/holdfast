@@ -85,7 +85,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     platformSweepThresholdLamports: bigintEnv(env, "KEEPER_PLATFORM_SWEEP_LAMPORTS", 10_000_000n),
     platformSweepEverySecs: int(env, "KEEPER_PLATFORM_SWEEP_EVERY_SECS", 3_600),
     priorityMicroLamports: int(env, "KEEPER_PRIORITY_MICROLAMPORTS", 50_000),
-    routinePriorityMicroLamports: int(env, "KEEPER_ROUTINE_PRIORITY_MICROLAMPORTS", 1_000),
+    routinePriorityMicroLamports: int(env, "KEEPER_ROUTINE_PRIORITY_MICROLAMPORTS", 10_000),
     profitWallet: env.KEEPER_PROFIT_WALLET ? new PublicKey(env.KEEPER_PROFIT_WALLET) : null,
     reserveLamports: bigintEnv(env, "KEEPER_RESERVE_LAMPORTS", 300_000_000n),
     payout: {

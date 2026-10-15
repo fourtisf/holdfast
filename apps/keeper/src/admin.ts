@@ -13,6 +13,9 @@
  *   pause | unpause
  *   transfer-admin <pubkey> | accept-admin
  *
+ * `--priority <micro-lamports per CU>` (default 100000) sets the priority fee; a transaction whose blockhash expires
+ * before it lands is sent again (up to 4 times).
+ *
  * Multisig admins (Squads): add `--print --as <ADMIN_PUBKEY>` to print the instruction (program id,
  * accounts, base64 data) instead of sending it, for a multisig transaction proposal. No signer needed.
  */
@@ -51,7 +54,8 @@ async function main() {
   const [command, ...args] = positional;
   const rpc = flag("rpc") ?? process.env.SOLANA_RPC_URL;
   if (!command || !rpc) throw new Error("usage: admin <command> [args] --rpc <url> --signer <keypair.json>");
-  const chain = new Web3Chain(new Connection(rpc, "confirmed"), 0);
+  const connection = new Connection(rpc, "confirmed");
+  const chain = new Web3Chain(connection, Number(flag("priority") ?? 100_000));
 
   if (command === "show") {
     console.log(JSON.stringify(await loadProgramConfig(chain), (_, v) => (v instanceof PublicKey ? v.toBase58() : v), 2));
@@ -118,8 +122,27 @@ async function main() {
     );
     return;
   }
-  const sig = await chain.send([ix], [signer!], { computeUnits: 100_000 });
-  console.log(`${command}: ${sig}`);
+  // Without enough priority a transaction can expire unconfirmed; an expired blockhash can no longer land, so
+  // sending it again is safe (unless it did land and only the confirmation was missed, which is checked first).
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const sig = await chain.send([ix], [signer!], { computeUnits: 100_000 });
+      console.log(`${command}: ${sig}`);
+      return;
+    } catch (err) {
+      const message = (err as Error).message;
+      if (!/expired|block height exceeded|blockhash not found/i.test(message) || attempt >= 4) throw err;
+      const sig = /Signature (\w+)/.exec(message)?.[1];
+      if (sig) {
+        const { value } = await connection.getSignatureStatus(sig, { searchTransactionHistory: true });
+        if (value && !value.err && value.confirmationStatus) {
+          console.log(`${command}: ${sig}`);
+          return;
+        }
+      }
+      console.log(`attempt ${attempt} expired before landing, sending again`);
+    }
+  }
 }
 
 main().catch((err) => {
