@@ -180,6 +180,7 @@ services:
         NEXT_PUBLIC_USE_MOCKS: ${NEXT_PUBLIC_USE_MOCKS:-0}
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
         NEXT_PUBLIC_X_URL: ${NEXT_PUBLIC_X_URL:-}
+        NEXT_PUBLIC_TELEGRAM_URL: ${NEXT_PUBLIC_TELEGRAM_URL:-}
         NEXT_PUBLIC_MOAT_CA: ${NEXT_PUBLIC_MOAT_CA:-}
     image: holdfast-web:local
     environment:

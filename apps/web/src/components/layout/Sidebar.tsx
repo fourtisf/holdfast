@@ -6,8 +6,8 @@ import { formatSolAmount } from "@/lib/format";
 import { WeightRamp } from "@/components/coin/WeightRamp";
 import { useHowItWorks } from "@/components/how-it-works/HowItWorksProvider";
 import { ButtonLink } from "@/components/ui/Button";
-import { ChevronRightIcon, RocketIcon, XLogoIcon } from "@/components/ui/icons";
-import { CLUSTER_LABEL, X_HANDLE, X_URL } from "@/lib/config";
+import { ChevronRightIcon, RocketIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
+import { CLUSTER_LABEL, TELEGRAM_URL, X_HANDLE, X_URL } from "@/lib/config";
 import { PayoutCountdownCard } from "./PayoutCountdown";
 
 export function Sidebar() {
@@ -46,10 +46,15 @@ export function Sidebar() {
 
       <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-[11px] text-faint">
         <span>Solana {CLUSTER_LABEL} · pump.fun</span>
-        <a href={X_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted transition-colors hover:text-brand" aria-label={`Moatpad on X (${X_HANDLE})`}>
-          <XLogoIcon size={11} />
-          {X_HANDLE}
-        </a>
+        <span className="flex items-center gap-2.5">
+          <a href={X_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted transition-colors hover:text-brand" aria-label={`Moatpad on X (${X_HANDLE})`}>
+            <XLogoIcon size={11} />
+            {X_HANDLE}
+          </a>
+          <a href={TELEGRAM_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-muted transition-colors hover:text-brand" aria-label="Moatpad on Telegram" title="Moatpad on Telegram">
+            <TelegramIcon size={12} />
+          </a>
+        </span>
       </div>
     </aside>
   );

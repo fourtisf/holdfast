@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useHowItWorks } from "@/components/how-it-works/HowItWorksProvider";
 import { cn } from "@/components/ui/cn";
-import { BookIcon, XLogoIcon } from "@/components/ui/icons";
-import { USE_MOCKS, X_HANDLE, X_URL } from "@/lib/config";
+import { BookIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
+import { TELEGRAM_URL, USE_MOCKS, X_HANDLE, X_URL } from "@/lib/config";
 import { CurrencyToggle } from "@/lib/currency";
 import { Logo } from "./Logo";
 import { PayoutCountdownPill } from "./PayoutCountdown";
@@ -63,6 +63,16 @@ export function TopNav() {
             className="hidden size-[38px] items-center justify-center rounded-control border border-line-strong text-fg transition-colors hover:bg-surface-2 hover:text-brand sm:inline-flex"
           >
             <XLogoIcon size={15} />
+          </a>
+          <a
+            href={TELEGRAM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Moatpad on Telegram"
+            title="Moatpad on Telegram"
+            className="hidden size-[38px] items-center justify-center rounded-control border border-line-strong text-fg transition-colors hover:bg-surface-2 hover:text-brand sm:inline-flex"
+          >
+            <TelegramIcon size={16} />
           </a>
           <button
             type="button"

@@ -41,7 +41,8 @@ rate limited. `NEXT_PUBLIC_*` changes need a web rebuild.
 
 Launches start paused (`LAUNCHES_PAUSED=true`): the API hands out no deposit addresses and the create page shows
 "Launches open soon". `NEXT_PUBLIC_MOAT_CA` fills the $MOAT contract address in the announcement bar ("Coming soon"
-while empty); `NEXT_PUBLIC_X_URL` overrides the X link (default https://x.com/moatpad).
+while empty); `NEXT_PUBLIC_X_URL` overrides the X link (default https://x.com/moatpad) and `NEXT_PUBLIC_TELEGRAM_URL` the
+Telegram channel (default https://t.me/MOATPAD).
 
 ## The program and the on-chain services
 

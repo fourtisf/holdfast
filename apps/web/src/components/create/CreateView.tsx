@@ -10,7 +10,7 @@ import { ErrorNote } from "@/components/ui/States";
 import { cn } from "@/components/ui/cn";
 import { GlobeIcon, InfoIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
 import { api, errorMessage } from "@/lib/api";
-import { X_HANDLE, X_URL } from "@/lib/config";
+import { TELEGRAM_URL, X_HANDLE, X_URL } from "@/lib/config";
 import { formatSolExact, formatSolAmount } from "@/lib/format";
 import {
   DESCRIPTION_MAX,
@@ -24,6 +24,7 @@ import {
   validateLaunch,
   type LaunchForm,
 } from "@/lib/launch";
+import { CreatorWalletField } from "./CreatorWalletField";
 import { DepositModal } from "./DepositModal";
 import { ImageDrop } from "./ImageDrop";
 import { LaunchPreview } from "./LaunchPreview";
@@ -163,10 +164,16 @@ export function CreateView() {
           <span className="text-fg">
             <b>Launches open soon.</b> <span className="text-muted">Prepare your coin here; the launch button unlocks on launch day.</span>
           </span>
-          <a href={X_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-brand hover:text-brand-light">
-            <XLogoIcon size={13} />
-            Follow {X_HANDLE} for the date
-          </a>
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <a href={X_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-brand hover:text-brand-light">
+              <XLogoIcon size={13} />
+              Follow {X_HANDLE} for the date
+            </a>
+            <a href={TELEGRAM_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-brand hover:text-brand-light">
+              <TelegramIcon size={14} />
+              Join the Telegram
+            </a>
+          </span>
         </div>
       ) : null}
 
@@ -281,27 +288,13 @@ export function CreateView() {
                 </Field>
               ))}
             </div>
-            <Field
-              label="Creator wallet"
-              optional
-              htmlFor="creatorWallet"
+            <CreatorWalletField
+              value={form.creatorWallet}
+              onChange={(v) => set("creatorWallet", v)}
+              connected={connected}
               error={shown.creatorWallet}
-              hint={
-                connected && form.creatorWallet === connected
-                  ? "Your connected wallet. It claims your 15% of the coin's fees; change it to send them to another wallet."
-                  : "Claims your 15% of the coin's fees. Leave empty to use the wallet you send the deposit from; fill it in if you pay from an exchange."
-              }
-            >
-              <input
-                id="creatorWallet"
-                value={form.creatorWallet}
-                onChange={(e) => set("creatorWallet", e.target.value)}
-                placeholder="Your Solana wallet address"
-                className={cn(inputClass, "font-mono", border("creatorWallet"))}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </Field>
+              inputClass={inputClass}
+            />
           </Section>
 
           <Section step={2} title="Choose the floor" subtitle="How far below the ATH the vault starts buying back">

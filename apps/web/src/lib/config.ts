@@ -13,6 +13,8 @@ export const CLUSTER_LABEL = SOLANA_CLUSTER === "mainnet-beta" ? "mainnet" : SOL
 /** Official X account, linked from the nav, the announcement bar and the sidebar. */
 export const X_URL = process.env.NEXT_PUBLIC_X_URL || "https://x.com/moatpad";
 export const X_HANDLE = `@${X_URL.replace(/\/+$/, "").split("/").pop() || "moatpad"}`;
+/** Official Telegram channel, linked next to the X account. */
+export const TELEGRAM_URL = process.env.NEXT_PUBLIC_TELEGRAM_URL || "https://t.me/MOATPAD";
 /** $MOAT contract address; empty shows "Coming soon". */
 export const MOAT_CA = (process.env.NEXT_PUBLIC_MOAT_CA ?? "").trim();
 
