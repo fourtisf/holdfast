@@ -63,7 +63,8 @@ you can check what arrived, and wipes the screen and scrollback right after; `im
 file (e.g. uploaded over SFTP) and deletes the file.
 
 `bash deploy/program.sh export keeper` (or `launcher`, `deployer`) shows a wallet's private key in the format Phantom
-imports, then clears the screen. The server keeps its copy, since the services sign with it.
+imports, then clears the screen; with `--file` it writes it to `~/moatpad-admin/<name>-private-key.txt` to download
+over SFTP instead (delete both copies afterwards). The server keeps its copy, since the services sign with it.
 
 The program address is compiled into the program, so the binary is built for it on a machine with the toolchain:
 `bash deploy/build-program.sh <PROGRAM_ADDRESS>` writes `deploy/program/` (binary, sha256, address), which is

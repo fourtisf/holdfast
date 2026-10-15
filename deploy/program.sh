@@ -14,7 +14,8 @@
 #   bash deploy/program.sh admin <cmd>   any command of apps/keeper/src/admin.ts, signed by the deployer
 #   bash deploy/program.sh revenue <wallet>   the keeper becomes the platform treasury: the 10% share pays for its
 #                                        transactions and the rest is forwarded to <wallet>
-#   bash deploy/program.sh export keeper|launcher|deployer   show a wallet's private key to import it in Phantom
+#   bash deploy/program.sh export keeper|launcher|deployer [--file]   show a wallet's private key to import it in
+#                                        Phantom (--file: write it to a text file to download over SFTP instead)
 #   bash deploy/program.sh new-key keeper|launcher   replace a robot wallet (e.g. after its key was exposed); points
 #                                        the on-chain Config at the new one when it is already initialized
 #   bash deploy/program.sh launches open|pause
@@ -214,9 +215,20 @@ NEXT
     case "${2:-}" in
       keeper | launcher) file="keys/$2.json" ;;
       deployer) file="$DEPLOYER" ;;
-      *) echo "usage: bash deploy/program.sh export keeper|launcher|deployer" >&2; exit 1 ;;
+      *) echo "usage: bash deploy/program.sh export keeper|launcher|deployer [--file]" >&2; exit 1 ;;
     esac
     [ -f "$file" ] || { echo "$file is missing" >&2; exit 1; }
+    if [ "${3:-}" = "--file" ]; then
+      # For terminals that cannot copy: a text file to download over SFTP, then delete.
+      umask 077
+      mkdir -p "$ADMIN_DIR"
+      out="$ADMIN_DIR/$2-private-key.txt"
+      docker run --rm -i -v "$PWD/deploy:/d:ro" node:22-bookworm-slim node /d/export-key.mjs < "$file" > "$out"
+      echo "the $2 private key ($(solana address -k "$file")) is in $out"
+      echo "Download it (Termius: SFTP tab > $ADMIN_DIR), open it, copy the line into Phantom (Add account > Import"
+      echo "Private Key), delete the downloaded copy, then delete this one: rm $out"
+      exit 0
+    fi
     echo "Private key of the $2 wallet $(solana address -k "$file"), to import in Phantom (Add account > Import"
     echo "Private Key). The server keeps its copy: the services sign with it. Make sure nobody can see this screen and"
     printf 'take no screenshot. Press Enter to show it: '
@@ -274,7 +286,7 @@ NEXT
     ;;
 
   *)
-    sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac
