@@ -1,0 +1,527 @@
+{
+  "view": {
+    "width": 1600,
+    "height": 1000
+  },
+  "shots": {
+    "home": {
+      "file": "home.jpg",
+      "full": true,
+      "pageH": 2424,
+      "scrollY": 0,
+      "boxes": {
+        "header": {
+          "x": 0,
+          "y": 37,
+          "w": 1600,
+          "h": 61
+        },
+        "hero": {
+          "x": 296,
+          "y": 118,
+          "w": 576,
+          "h": 40
+        },
+        "stats": {
+          "x": 296,
+          "y": 218,
+          "w": 311,
+          "h": 118
+        },
+        "statVault": {
+          "x": 619,
+          "y": 218,
+          "w": 311,
+          "h": 118
+        },
+        "statPaid": {
+          "x": 942,
+          "y": 218,
+          "w": 311,
+          "h": 118
+        },
+        "statBuy": {
+          "x": 1265,
+          "y": 218,
+          "w": 311,
+          "h": 118
+        },
+        "filters": {
+          "x": 578.015625,
+          "y": 2107.75,
+          "w": 91.640625,
+          "h": 20.5
+        },
+        "card": {
+          "x": 296,
+          "y": 404,
+          "w": 418.65625,
+          "h": 229
+        },
+        "cardFloor": {
+          "x": 594.828125,
+          "y": 420.75,
+          "w": 74.828125,
+          "h": 20.5
+        },
+        "cardBar": {
+          "x": 296,
+          "y": 404,
+          "w": 418.65625,
+          "h": 229
+        },
+        "cardVault": {
+          "x": 311,
+          "y": 586,
+          "w": 124.21875,
+          "h": 16
+        },
+        "cardPaid": {
+          "x": 575.4375,
+          "y": 586,
+          "w": 124.21875,
+          "h": 16
+        },
+        "launch": {
+          "x": 24,
+          "y": 829,
+          "w": 248,
+          "h": 48
+        }
+      }
+    },
+    "coin": {
+      "file": "coin.jpg",
+      "full": true,
+      "pageH": 1900,
+      "scrollY": 0,
+      "boxes": {
+        "header": {
+          "x": 0,
+          "y": 37,
+          "w": 1600,
+          "h": 61
+        },
+        "title": {
+          "x": 296,
+          "y": 118,
+          "w": 904,
+          "h": 167.25
+        },
+        "market": {
+          "x": 296,
+          "y": 301.25,
+          "w": 904,
+          "h": 182.5
+        },
+        "chart": {
+          "x": 296,
+          "y": 499.75,
+          "w": 904,
+          "h": 456
+        },
+        "trade": {
+          "x": 1216,
+          "y": 118,
+          "w": 360,
+          "h": 417.125
+        },
+        "buyInput": {
+          "x": 1246,
+          "y": 233,
+          "w": 263.9375,
+          "h": 28
+        },
+        "preset": {
+          "x": 1399,
+          "y": 283,
+          "w": 77,
+          "h": 32
+        },
+        "receive": {
+          "x": 1216,
+          "y": 118,
+          "w": 360,
+          "h": 417.125
+        },
+        "share": {
+          "x": 1216,
+          "y": 551.125,
+          "w": 360,
+          "h": 200
+        },
+        "vault": {
+          "x": 1216,
+          "y": 767.125,
+          "w": 360,
+          "h": 651
+        },
+        "defend": {
+          "x": 1216,
+          "y": 767.125,
+          "w": 360,
+          "h": 651
+        },
+        "holderPot": {
+          "x": 1217,
+          "y": 940.625,
+          "w": 358,
+          "h": 422.5
+        },
+        "creatorRow": {
+          "x": 1217,
+          "y": 940.625,
+          "w": 358,
+          "h": 422.5
+        },
+        "treasuryRow": {
+          "x": 1217,
+          "y": 940.625,
+          "w": 358,
+          "h": 422.5
+        },
+        "burnRow": {
+          "x": 1217,
+          "y": 940.625,
+          "w": 358,
+          "h": 422.5
+        },
+        "payout": {
+          "x": 24,
+          "y": 118,
+          "w": 248,
+          "h": 198.5
+        },
+        "fees": {
+          "x": 24,
+          "y": 332.5,
+          "w": 248,
+          "h": 236.5
+        },
+        "hold": {
+          "x": 24,
+          "y": 585,
+          "w": 248,
+          "h": 166
+        }
+      }
+    },
+    "coin-trade": {
+      "file": "coin-trade.jpg",
+      "full": true,
+      "pageH": 1900,
+      "scrollY": 0
+    },
+    "create-0": {
+      "file": "create-0.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0,
+      "boxes": {
+        "name": {
+          "x": 417,
+          "y": 289,
+          "w": 482,
+          "h": 44
+        },
+        "ticker": {
+          "x": 915,
+          "y": 289,
+          "w": 180,
+          "h": 44
+        },
+        "preview": {
+          "x": 396,
+          "y": 202,
+          "w": 1080,
+          "h": 1259.125
+        },
+        "previewCard": {
+          "x": 1136,
+          "y": 226.5,
+          "w": 340,
+          "h": 203
+        },
+        "send": {
+          "x": 1136,
+          "y": 445.5,
+          "w": 340,
+          "h": 255.5
+        },
+        "launchBtn": {
+          "x": 1153,
+          "y": 636,
+          "w": 306,
+          "h": 48
+        },
+        "creator": {
+          "x": 417,
+          "y": 762,
+          "w": 678,
+          "h": 44
+        }
+      }
+    },
+    "create-1": {
+      "file": "create-1.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-2": {
+      "file": "create-2.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-3": {
+      "file": "create-3.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-4": {
+      "file": "create-4.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-5": {
+      "file": "create-5.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-6": {
+      "file": "create-6.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-7": {
+      "file": "create-7.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-8": {
+      "file": "create-8.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-9": {
+      "file": "create-9.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-10": {
+      "file": "create-10.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-11": {
+      "file": "create-11.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-12": {
+      "file": "create-12.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    },
+    "create-13": {
+      "file": "create-13.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0,
+      "boxes": {
+        "name": {
+          "x": 417,
+          "y": 289,
+          "w": 482,
+          "h": 44
+        },
+        "ticker": {
+          "x": 915,
+          "y": 289,
+          "w": 180,
+          "h": 44
+        },
+        "previewCard": {
+          "x": 1136,
+          "y": 226.5,
+          "w": 340,
+          "h": 203
+        },
+        "send": {
+          "x": 1136,
+          "y": 445.5,
+          "w": 340,
+          "h": 255.5
+        }
+      }
+    },
+    "create-floor": {
+      "file": "create-floor.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 509,
+      "boxes": {
+        "floor": {
+          "x": 396,
+          "y": 879,
+          "w": 720,
+          "h": 378.125
+        },
+        "opt35": {
+          "x": 874.328125,
+          "y": 956,
+          "w": 220.671875,
+          "h": 115.625
+        },
+        "opt25": {
+          "x": 645.65625,
+          "y": 956,
+          "w": 220.671875,
+          "h": 115.625
+        },
+        "explain": {
+          "x": 396,
+          "y": 879,
+          "w": 720,
+          "h": 378.125
+        },
+        "dev": {
+          "x": 396,
+          "y": 1273.125,
+          "w": 720,
+          "h": 188
+        },
+        "previewCard": {
+          "x": 1136,
+          "y": 613.5,
+          "w": 340,
+          "h": 203
+        },
+        "send": {
+          "x": 1136,
+          "y": 832.5,
+          "w": 340,
+          "h": 255.5
+        },
+        "launchBtn": {
+          "x": 1153,
+          "y": 1023,
+          "w": 306,
+          "h": 48
+        }
+      }
+    },
+    "create-floor35": {
+      "file": "create-floor35.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 509,
+      "boxes": {
+        "floor": {
+          "x": 396,
+          "y": 879,
+          "w": 720,
+          "h": 378.125
+        },
+        "opt35": {
+          "x": 874.328125,
+          "y": 956,
+          "w": 220.671875,
+          "h": 115.625
+        },
+        "previewCard": {
+          "x": 1136,
+          "y": 613.5,
+          "w": 340,
+          "h": 203
+        }
+      }
+    },
+    "create-dev": {
+      "file": "create-dev.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 509,
+      "boxes": {
+        "dev": {
+          "x": 396,
+          "y": 1273.125,
+          "w": 720,
+          "h": 188
+        },
+        "devPreset": {
+          "x": 915,
+          "y": 1376.125,
+          "w": 56,
+          "h": 44
+        },
+        "send": {
+          "x": 1136,
+          "y": 832.5,
+          "w": 340,
+          "h": 301.5
+        },
+        "launchBtn": {
+          "x": 1153,
+          "y": 1069,
+          "w": 306,
+          "h": 48
+        },
+        "devInput": {
+          "x": 417,
+          "y": 1376.125,
+          "w": 428,
+          "h": 44
+        }
+      }
+    },
+    "leaderboard": {
+      "file": "leaderboard.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0,
+      "boxes": {
+        "title": {
+          "x": 321.90625,
+          "y": 49,
+          "w": 108.84375,
+          "h": 36
+        }
+      }
+    },
+    "howitworks": {
+      "file": "howitworks.jpg",
+      "full": false,
+      "pageH": 1000,
+      "scrollY": 0
+    }
+  },
+  "coinHref": "/coin/ecWPuxNsQV9CzQUztqmcgmWTzXLDCox7EjzviC2GtCv",
+  "typing": [
+    "create-0",
+    "create-1",
+    "create-2",
+    "create-3",
+    "create-4",
+    "create-5",
+    "create-6",
+    "create-7",
+    "create-8",
+    "create-9",
+    "create-10",
+    "create-11",
+    "create-12",
+    "create-13"
+  ]
+}

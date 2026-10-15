@@ -1,0 +1,575 @@
+<!doctype html>
+<!--
+  Moatpad website tour (60 s), rendered frame by frame by render.mjs (`node .render.mjs tour …`): a camera flies over
+  real screenshots of the web app (tour/, captured by capture-tour.mjs), with callouts, a cursor, captions and a
+  live payout countdown. Everything is a pure function of `t` in window.render(t). Scene cuts sit on the 2.4 s bars
+  of music-tour.wav (100 BPM), impacts at 4.8, 43.2 and 52.8 s.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: Cin; src: url(../fonts/Cinzel-SemiBold.woff); }
+@font-face { font-family: G; font-weight: 300; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Light.woff2); }
+@font-face { font-family: G; font-weight: 400; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Regular.woff2); }
+@font-face { font-family: G; font-weight: 500; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Medium.woff2); }
+@font-face { font-family: G; font-weight: 600; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-SemiBold.woff2); }
+@font-face { font-family: GM; font-weight: 400; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-mono/GeistMono-Regular.woff2); }
+@font-face { font-family: GM; font-weight: 600; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-mono/GeistMono-SemiBold.woff2); }
+
+:root {
+  --bg: #050506; --ivory: #efebe1; --muted: #8e939f; --dim: #5b606c;
+  --gold: #e8bc5b; --floor: #6aa6ff; --holder: #f2c76a; --creator: #e9a68a; --platform: #ddd6c6; --burn: #a493ff; --green: #2bd98a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+body { font-family: G, sans-serif; color: var(--ivory); -webkit-font-smoothing: antialiased; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+.layer { position: absolute; inset: 0; }
+#glow { background: radial-gradient(1000px 640px at 50% 46%, rgba(232, 188, 91, var(--ga, .14)), transparent 70%), radial-gradient(1400px 500px at 50% 112%, rgba(232, 188, 91, .06), transparent 70%), linear-gradient(180deg, #0c0d10, #060608 60%, #040405); }
+canvas#dust { position: absolute; inset: 0; }
+#vig { background: radial-gradient(1500px 900px at 50% 45%, transparent 58%, rgba(0,0,0,.6)); }
+#flash { background: radial-gradient(circle at 50% 46%, rgba(255,246,220,.9), rgba(255, 220, 140, .45) 30%, transparent 70%); opacity: 0; }
+#fade { background: #000; opacity: 0; }
+
+/* world: the browser, moved by the camera */
+#world { transform-origin: 0 0; }
+.browser { position: absolute; left: 240px; top: 63px; width: 1440px; height: 954px; overflow: hidden; border-radius: 20px; border: 1px solid #2a2c33; background: #0a0b0e;
+  box-shadow: 0 70px 180px rgba(0,0,0,.75), 0 0 0 1px rgba(232,188,91,.10), 0 0 120px rgba(232,188,91,.06); transform-origin: 50% 40%; }
+.browser .bar { position: absolute; left: 0; right: 0; top: 0; height: 54px; display: flex; align-items: center; gap: 11px; padding: 0 22px; background: #111216; border-bottom: 1px solid #202228; }
+.browser .bar i { width: 13px; height: 13px; border-radius: 50%; background: #2a2c33; }
+.browser .url { position: absolute; left: 50%; transform: translateX(-50%); width: 560px; height: 34px; border-radius: 10px; background: #18191e; display: flex; align-items: center; justify-content: center; gap: 10px; font: 400 18px G; color: #a9aeb8; }
+.browser .url b { font-weight: 400; color: #e9e5da; }
+.browser .view { position: absolute; top: 54px; left: 0; right: 0; bottom: 0; overflow: hidden; background: #0a0b0e; }
+.pg { position: absolute; inset: 0; display: none; }
+.pg img { position: absolute; left: 0; width: 1440px; display: none; }
+.pg .clip { position: absolute; left: 0; overflow: hidden; }
+.pg .clip img { display: block; }
+.cd { position: absolute; width: 120px; height: 40px; background: #111216; transform-origin: 0 0; }
+.cd span { position: absolute; left: 12px; top: 2.3px; font: 600 34px/1 GM; letter-spacing: -.025em; color: #f3efe4; white-space: nowrap; }
+.ring { position: absolute; width: 64px; height: 64px; overflow: visible; transform-origin: 0 0; }
+
+/* screen-space overlays */
+#spot { position: absolute; border-radius: 18px; box-shadow: 0 0 0 4000px rgba(3,3,5,.58); opacity: 0; pointer-events: none; }
+#spot::after { content: ""; position: absolute; inset: -3px; border-radius: 21px; border: 2px solid rgba(240,200,110,.85); box-shadow: 0 0 28px rgba(240,200,110,.45), inset 0 0 18px rgba(240,200,110,.15); }
+#lines { position: absolute; inset: 0; }
+.chip { position: absolute; white-space: nowrap; display: flex; align-items: center; gap: 12px; padding: 13px 20px 13px 18px; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(26,27,32,.94), rgba(14,15,18,.94)); border: 1px solid rgba(232,188,91,.42);
+  box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 24px rgba(232,188,91,.10); font: 500 24px G; color: var(--ivory); opacity: 0; }
+.chip small { font: 400 20px G; color: var(--muted); }
+.chip .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+#cursor { position: absolute; left: 0; top: 0; width: 38px; height: 38px; opacity: 0; filter: drop-shadow(0 6px 10px rgba(0,0,0,.55)); transform-origin: 4px 3px; }
+.ripple { position: absolute; width: 10px; height: 10px; border-radius: 50%; border: 3px solid rgba(240,200,110,.95); box-shadow: 0 0 22px rgba(240,200,110,.7); opacity: 0; }
+
+/* captions */
+#capband { position: absolute; left: 0; right: 0; bottom: 0; height: 340px; background: linear-gradient(180deg, transparent, rgba(4,4,6,.72) 45%, rgba(4,4,6,.94)); opacity: 0; }
+.cap { position: absolute; left: 130px; bottom: 74px; opacity: 0; }
+.cap .k { font: 500 20px G; letter-spacing: .32em; text-transform: uppercase; color: var(--gold); }
+.cap .k i { font: 400 20px GM; font-style: normal; color: #8b7a55; letter-spacing: .1em; margin-right: 16px; }
+.cap .t { font: 400 58px Cin; letter-spacing: .02em; margin-top: 12px; line-height: 1.08; }
+.cap .s { font: 300 28px G; color: #c4c1b8; margin-top: 10px; }
+#chapters { position: absolute; right: 130px; bottom: 90px; display: flex; gap: 8px; opacity: 0; }
+#chapters i { display: block; width: 34px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); overflow: hidden; }
+#chapters i b { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #b4842e, #f2c76a); }
+
+/* title scenes */
+.scene { position: absolute; inset: 0; display: none; }
+.center { position: absolute; left: 0; right: 0; text-align: center; }
+.cin { font-family: Cin, serif; letter-spacing: .08em; }
+.goldtext { background: linear-gradient(180deg, #fff3cc 0%, #efc76c 52%, #b4842e 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kicker { font: 500 22px G; letter-spacing: .32em; text-transform: uppercase; color: var(--gold); }
+.coin { position: absolute; }
+.coin img { width: 100%; display: block; filter: drop-shadow(0 30px 60px rgba(0,0,0,.6)); }
+.coin .sweep { position: absolute; inset: 0; -webkit-mask: url(../3d/renders/hero-coin.png) center / contain no-repeat; background: linear-gradient(105deg, transparent 40%, rgba(255,250,230,.55) 50%, transparent 60%); background-size: 300% 100%; mix-blend-mode: screen; }
+.pill { display: inline-flex; align-items: center; gap: 14px; padding: 20px 40px; border-radius: 999px; border: 1px solid rgba(232,188,91,.6); background: rgba(232,188,91,.07); font: 600 34px G; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="glow"></div>
+  <canvas id="dust" width="1920" height="1080"></canvas>
+
+  <div class="layer" id="world">
+    <div class="browser" id="br">
+      <div class="bar"><i></i><i></i><i></i>
+        <div class="url"><svg width="15" height="15" viewBox="0 0 24 24"><path fill="#8e939f" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 8V7a3 3 0 0 1 6 0v3z"/></svg><span id="url"></span></div>
+      </div>
+      <div class="view" id="view"></div>
+    </div>
+  </div>
+
+  <div id="spot"></div>
+  <svg id="lines" width="1920" height="1080"></svg>
+  <div class="layer" id="chips"></div>
+  <div class="ripple" id="rip"></div>
+  <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2.5v17.2l4.6-4.3 2.9 6.6 3-1.3-2.9-6.5h6.4z" fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round"/></svg>
+
+  <div id="capband"></div>
+  <div class="layer" id="caps"></div>
+  <div id="chapters"></div>
+
+  <!-- intro -->
+  <div class="scene" id="intro">
+    <div class="coin" id="icoin" style="left:760px;top:150px;width:400px"><img src="../3d/renders/hero-coin.png"><div class="sweep" id="isweep"></div></div>
+    <div class="center cin goldtext" id="iwm" style="top:610px;font-size:120px">MOATPAD</div>
+    <div class="center" data-at="2.3" style="top:790px;font:300 38px G;color:var(--ivory)">The launchpad where every coin defends its floor.</div>
+    <div class="center kicker" data-at="3.0" style="top:880px">Product tour</div>
+  </div>
+
+  <!-- breakdown -->
+  <div class="scene" id="brk">
+    <div class="center kicker" data-at=".15" style="top:380px">Your turn</div>
+    <div class="center cin" data-at=".35" data-d=".9" style="top:440px;font-size:86px;letter-spacing:.02em">Launch a coin</div>
+    <div class="center cin goldtext" data-at=".75" data-d=".9" style="top:545px;font-size:86px;letter-spacing:.02em">with a moat.</div>
+    <div class="center" data-at="1.25" style="top:690px;font:300 32px G;color:#c9c6bd">0.015 SOL · one transaction · no wallet connection needed</div>
+  </div>
+
+  <!-- call to action -->
+  <div class="scene" id="cta">
+    <div class="coin" id="ccoin" style="left:800px;top:120px;width:320px"><img src="../3d/renders/hero-coin.png"><div class="sweep" id="csweep"></div></div>
+    <div class="center cin goldtext" data-at=".35" style="top:480px;font-size:124px">MOATPAD</div>
+    <div class="center" data-at=".8" style="top:660px;font:300 42px G;color:var(--ivory)">Every coin gets a moat.</div>
+    <div class="center" data-at="1.3" style="top:775px"><span class="pill"><span class="goldtext">moatpad.fun</span></span></div>
+    <div class="center" data-at="1.7" style="top:900px;font:400 28px G;color:var(--muted)">
+      <svg width="24" height="24" viewBox="0 0 24 24" style="vertical-align:-4px;margin-right:10px"><path fill="#8e939f" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>@moatpad
+    </div>
+  </div>
+
+  <div class="layer" id="vig"></div>
+  <div class="layer" id="flash"></div>
+  <div class="layer" id="fade"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, d) => clamp((t - a) / d);
+const lerp = (a, b, p) => a + (b - a) * p;
+const E = {
+  out3: (x) => 1 - Math.pow(1 - x, 3),
+  inOut3: (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2),
+  outExpo: (x) => (x === 1 ? 1 : 1 - Math.pow(2, -10 * x)),
+  outBack: (x) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+};
+window.DURATION = 60;
+
+// ---- geometry -----------------------------------------------------------------------------------------------
+// The browser shows the 1600 px wide page at 0.9 scale; page coordinates are the app's CSS px from the page top.
+const FR = { x: 240, y: 63, bar: 54, k: 0.9 };
+const stageOf = (px, py, scroll) => [FR.x + px * FR.k, FR.y + FR.bar + (py - scroll) * FR.k];
+const anchorOf = (z) => ({ x: 960, y: lerp(540, 470, clamp((z - 1) / 0.35)) });
+const WIDE = { x: 960, y: 540, z: 1 };
+function camBox(box, fill, scroll = 0, zmax = 2.4) {
+  const [x, y] = stageOf(box[0] + box[2] / 2, box[1] + box[3] / 2, scroll);
+  const z = Math.max(1, Math.min(zmax, (1920 * fill) / (box[2] * FR.k), (1080 * fill) / (box[3] * FR.k)));
+  return { x, y, z };
+}
+const ease = (list, t, f = E.inOut3) => {
+  if (typeof list === "number") return list;
+  if (!list.length) return 0;
+  if (t <= list[0][0]) return list[0][1];
+  for (let i = 0; i < list.length - 1; i++) {
+    const [t0, v0] = list[i], [t1, v1] = list[i + 1];
+    if (t < t1) return lerp(v0, v1, f((t - t0) / (t1 - t0)));
+  }
+  return list.at(-1)[1];
+};
+
+// ---- the captured pages (tour/data.json: every shot is 1600 px wide, slices start at their scroll) ------------
+const SHOT = { home: { full: 1 }, coin: { full: 1 }, "coin-trade": { full: 1 }, "create-floor": { s: 509 }, "create-floor35": { s: 509 }, "create-dev": { s: 509 }, leaderboard: {}, howitworks: {} };
+const TYPING = Array.from({ length: 14 }, (_, i) => `create-${i}`);
+for (const n of TYPING) SHOT[n] = {};
+const COIN_URL = "<b>moatpad.fun</b>/coin/ecWPux…GtCv";
+const KEYS = [...Array.from("Kelp Lord", (_, i) => 39.1 + i * 0.2), ...Array.from("KELP", (_, i) => 41.45 + i * 0.2)];
+
+const PAGES = [
+  { id: "home", shots: ["home"], from: 4.8, to: 16.7, fade: 0, url: "<b>moatpad.fun</b>", scroll: [[9.5, 0], [10.9, 230]] },
+  { id: "coin", shots: ["coin"], from: 16.1, to: 28.5, fade: 0.45, url: COIN_URL, scroll: [[21.0, 0], [22.2, 520], [25.9, 520], [26.9, 0]] },
+  { id: "trade", shots: ["coin-trade"], from: 28.05, to: 38.4, fade: 0.25, url: COIN_URL, scroll: 0 },
+  { id: "type", shots: TYPING, from: 37.9, to: 43.7, fade: 0.35, url: "<b>moatpad.fun</b>/create", scroll: [[42.9, 0], [43.6, 509]], frame: (t) => KEYS.filter((k) => k <= t).length },
+  { id: "floorA", shots: ["create-floor"], from: 43.0, to: 44.6, fade: 0.5, url: "<b>moatpad.fun</b>/create", scroll: [[42.9, 0], [43.6, 509]] },
+  { id: "floorB", shots: ["create-floor35"], from: 44.25, to: 46.4, fade: 0.25, url: "<b>moatpad.fun</b>/create", scroll: 509 },
+  { id: "dev", shots: ["create-dev"], from: 46.05, to: 48.7, fade: 0.25, url: "<b>moatpad.fun</b>/create", scroll: 509 },
+  { id: "lb", shots: ["leaderboard"], from: 48.2, to: 50.9, fade: 0.45, url: "<b>moatpad.fun</b>/leaderboard", scroll: 0 },
+  { id: "hiw", shots: ["howitworks"], from: 50.4, to: 54.0, fade: 0.45, url: "<b>moatpad.fun</b>", scroll: 0 },
+];
+const PG = Object.fromEntries(PAGES.map((p) => [p.id, p]));
+const K = FR.k;
+
+// the sidebar's payout card is sticky under the sticky header: header at max(0, 37 − scroll), sidebar from page y 98
+const stickyTop = (scroll) => Math.max(98 - scroll, 61);
+for (const pg of PAGES) {
+  const el = document.createElement("div");
+  el.className = "pg";
+  pg.imgs = pg.shots.map((s) => { const im = new Image(); im.src = `tour/${s}.jpg`; el.appendChild(im); return im; });
+  pg.full = !!SHOT[pg.shots[0]].full;
+  if (pg.full) {
+    // sticky parts of a full-page capture: the sidebar column and the header follow the scroll
+    pg.side = document.createElement("div"); pg.side.className = "clip";
+    pg.side.style.cssText = `width:${290 * K}px;height:${940 * K}px`;
+    const si = new Image(); si.src = `tour/${pg.shots[0]}.jpg`; si.style.top = `${-98 * K}px`; pg.side.appendChild(si);
+    pg.hdr = document.createElement("div"); pg.hdr.className = "clip";
+    pg.hdr.style.cssText = `width:1440px;height:${61 * K}px`;
+    const hi = new Image(); hi.src = `tour/${pg.id === "home" ? "home" : "coin"}-header.jpg`; hi.style.top = "0"; pg.hdr.appendChild(hi);
+    el.append(pg.side, pg.hdr);
+  }
+  if (pg.id !== "hiw") {
+    // live payout countdown and ring painted over the captured ones
+    pg.cd = document.createElement("div"); pg.cd.className = "cd"; pg.cd.innerHTML = "<span></span>";
+    pg.ring = document.createElementNS("http://www.w3.org/2000/svg", "svg"); pg.ring.setAttribute("class", "ring"); pg.ring.setAttribute("viewBox", "0 0 64 64");
+    pg.ring.innerHTML = `<circle cx="32" cy="32" r="35" fill="#111216"/><circle cx="32" cy="32" r="29.5" stroke="#1d1e23" stroke-width="5" fill="none"/>
+      <circle class="arc" cx="32" cy="32" r="29.5" stroke="#f2c76a" stroke-width="5" fill="none" stroke-linecap="round" transform="rotate(-90 32 32)" stroke-dasharray="185.35"/>
+      <text x="32" y="35.6" text-anchor="middle" font-family="G" font-weight="600" font-size="10" fill="#f2c76a">2m</text>`;
+    el.append(pg.ring, pg.cd);
+  }
+  $("view").appendChild(el);
+  pg.el = el;
+}
+const scrollOf = (id, t) => ease(PG[id].scroll, t);
+
+// payout every 120 s, the round lands at 33.0 s while the camera is on the payout card
+const PAYOUT_AT = 33.0;
+const remaining = (t) => (t < PAYOUT_AT ? PAYOUT_AT - t : 120 - ((t - PAYOUT_AT) % 120));
+
+// ---- camera ---------------------------------------------------------------------------------------------------
+const CAM = [
+  [4.8, WIDE], [6.6, WIDE],
+  [7.6, camBox([296, 218, 1280, 118], 0.82, 0)],
+  [9.0, camBox([296, 218, 1280, 118], 0.86, 0)],
+  [10.2, camBox([296, 404, 1280, 600], 0.95, 230)],
+  [11.3, camBox([296, 404, 419, 229], 0.62, 230)],
+  [14.8, camBox([296, 404, 419, 229], 0.64, 230)],
+  [15.5, camBox([296, 404, 419, 229], 0.5, 230)],
+  [16.1, camBox([296, 404, 419, 229], 0.5, 230)],
+  [16.9, WIDE], [17.3, WIDE],
+  [18.3, camBox([296, 500, 904, 456], 0.84, 0)],
+  [20.9, camBox([296, 500, 904, 456], 0.88, 0)],
+  [22.3, camBox([1216, 767, 360, 420], 0.78, 520)],
+  [24.2, camBox([1216, 767, 360, 420], 0.8, 520)],
+  [25.0, camBox([1216, 1140, 360, 260], 0.72, 520)],
+  [25.9, camBox([1216, 1140, 360, 260], 0.74, 520)],
+  [27.0, camBox([1216, 118, 360, 417], 0.8, 0)],
+  [30.7, camBox([1216, 118, 360, 417], 0.82, 0)],
+  [31.7, camBox([24, 118, 248, 450], 0.8, 0)],
+  [33.7, camBox([24, 118, 248, 450], 0.82, 0)],
+  [34.5, camBox([24, 585, 248, 166], 0.6, 0)],
+  [35.6, camBox([24, 585, 248, 166], 0.62, 0)],
+  [36.6, WIDE], [37.8, WIDE],
+  [38.6, camBox([396, 202, 1080, 260], 0.9, 0)],
+  [42.7, camBox([396, 202, 1080, 260], 0.92, 0)],
+  [43.7, camBox([396, 879, 720, 378], 0.74, 509)],
+  [45.4, camBox([396, 879, 720, 378], 0.76, 509)],
+  [46.0, camBox([396, 1273, 720, 188], 0.7, 509)],
+  [46.6, camBox([396, 1273, 720, 188], 0.72, 509)],
+  [47.2, camBox([1136, 832, 340, 302], 0.66, 509)],
+  [48.25, camBox([1136, 832, 340, 302], 0.68, 509)],
+  [48.9, WIDE],
+  [50.3, camBox([296, 90, 1280, 900], 1.0, 0)],
+  [50.9, camBox([544, 40, 512, 920], 0.9, 0)],
+  [52.6, camBox([544, 120, 512, 760], 0.9, 0)],
+];
+function camAt(t) {
+  let c = CAM[0][1];
+  if (t >= CAM.at(-1)[0]) c = CAM.at(-1)[1];
+  else for (let i = 0; i < CAM.length - 1; i++) {
+    const [t0, a] = CAM[i], [t1, b] = CAM[i + 1];
+    if (t < t0) break;
+    if (t < t1) { const p = E.inOut3((t - t0) / (t1 - t0)); c = { x: lerp(a.x, b.x, p), y: lerp(a.y, b.y, p), z: Math.exp(lerp(Math.log(a.z), Math.log(b.z), p)) }; break; }
+  }
+  // a slow handheld float
+  return { x: c.x + 3 * Math.sin(t * 0.55), y: c.y + 2.5 * Math.sin(t * 0.71 + 1), z: c.z * (1 + 0.005 * Math.sin(t * 0.9)) };
+}
+let C = WIDE, A = anchorOf(1);
+const scr = (id, px, py, t) => { const [sx, sy] = stageOf(px, py, scrollOf(id, t)); return [A.x + (sx - C.x) * C.z, A.y + (sy - C.y) * C.z]; };
+
+// ---- callouts, spotlights, cursor -----------------------------------------------------------------------------
+// [page, from, until, x, y (page px), dx, dy (chip offset on screen), text, dot colour]
+const CALLS = [
+  ["home", 7.7, 9.3, 936, 218, 0, -70, "Live totals across every coin", "#f2c76a"],
+  ["home", 11.6, 15.3, 632, 431, 150, -60, "Floor −35% <small>· set at launch, forever</small>", "#6aa6ff"],
+  ["home", 12.1, 15.3, 548, 523, 330, 40, "Price between the floor and the ATH", "#6aa6ff"],
+  ["home", 12.6, 15.3, 342, 608, -150, 70, "Vault <small>· SOL ready to buy back</small>", "#6aa6ff"],
+  ["home", 13.1, 15.3, 603, 608, 260, 90, "Paid out to holders", "#f2c76a"],
+  ["coin", 18.5, 20.9, 1112, 652, -400, -70, "ATH <small>· time-weighted, so wicks don't count</small>", "#f2c76a"],
+  ["coin", 19.0, 20.9, 1112, 722, -400, 60, "Floor = ATH − 35% <small>· only rises</small>", "#6aa6ff"],
+  ["coin", 19.5, 20.9, 960, 786, -280, 110, "Price at the floor → the vault buys back", "#6aa6ff"],
+  ["coin", 22.6, 24.3, 1530, 806, 120, -40, "Its own on-chain vault", "#6aa6ff"],
+  ["coin", 23.0, 24.3, 1300, 895, -260, 0, "40% of every fee defends the floor", "#6aa6ff"],
+  ["coin", 23.4, 24.3, 1236, 964, -140, 60, "25% to the holder pot", "#f2c76a"],
+  ["coin", 23.7, 24.3, 1236, 1070, -140, 80, "15% creator · 10% treasury · 10% burn", "#e9a68a"],
+  ["coin", 25.1, 25.9, 1236, 1230, -160, 0, "Floor price, live", "#6aa6ff"],
+  ["trade", 28.7, 30.8, 1232, 380, -170, -40, "Quote before you sign", "#2bd98a"],
+  ["trade", 29.2, 30.8, 1546, 413, 140, 50, "Fee and route up front", "#f2c76a"],
+  ["trade", 29.7, 30.8, 1500, 510, 200, -10, "Starts at 0.1× weight", "#f2c76a"],
+  ["trade", 31.9, 35.6, 220, 182, 230, -50, "Every 2 minutes, holders get paid", "#f2c76a"],
+  ["trade", 32.5, 33.8, 150, 380, 300, 70, "40 vault · 25 holders · 15 creator · 10 treasury · 10 burn", "#6aa6ff"],
+  ["trade", 34.6, 35.6, 200, 660, 300, 40, "Weight grows 0.1× → 1.0× in 7 days", "#f2c76a"],
+  ["type", 40.8, 42.7, 1136, 330, -10, -165, "Live preview", "#f2c76a"],
+  ["floorB", 44.6, 46.0, 984, 956, 0, -90, "15, 25 or 35% below the ATH", "#6aa6ff"],
+  ["floorB", 45.0, 46.0, 906, 1215, 140, 40, "Permanent: written into the vault", "#6aa6ff"],
+  ["dev", 46.3, 47.1, 943, 1376, 0, -90, "Dev buy in the same transaction", "#2bd98a"],
+  ["dev", 47.1, 48.3, 1459, 1093, 110, 0, "One transaction · no snipers", "#f2c76a"],
+];
+// [page, from, until, box (page px), pad]
+const SPOTS = [
+  ["home", 7.5, 9.3, [296, 218, 1280, 118], 8],
+  ["home", 11.4, 15.3, [296, 404, 419, 229], 6],
+  ["coin", 18.4, 20.9, [296, 500, 904, 456], 6],
+  ["coin", 22.4, 24.4, [1216, 767, 360, 420], 6],
+  ["coin", 24.4, 25.9, [1216, 1140, 360, 260], 6],
+  ["trade", 28.5, 30.8, [1216, 118, 360, 417], 6],
+  ["trade", 31.8, 33.8, [24, 118, 248, 450], 6],
+  ["trade", 33.8, 35.6, [24, 585, 248, 166], 6],
+  ["type", 38.6, 42.7, [396, 202, 1080, 260], 8],
+  ["floorB", 44.4, 46.0, [396, 879, 720, 378], 6],
+];
+// cursor tracks: { from, to, keys: [t, page|null, x, y] (null page = screen px), clicks }
+const CURSOR = [
+  { from: 14.6, to: 16.4, keys: [[14.6, null, 1700, 980], [15.6, "home", 470, 470]], clicks: [15.8] },
+  { from: 27.1, to: 28.9, keys: [[27.1, null, 1500, 1000], [27.9, "coin", 1437, 299]], clicks: [28.0] },
+  { from: 38.4, to: 42.8, keys: [[38.4, null, 1700, 900], [38.85, "type", 520, 311], [39.0, "type", 520, 311], [40.9, "type", 560, 360], [41.15, "type", 985, 311]], clicks: [38.95, 41.25] },
+  { from: 43.7, to: 48.3, keys: [[43.7, null, 1500, 950], [44.1, "floorA", 984, 1014], [44.4, "floorA", 984, 1014], [45.85, "floorB", 943, 1398], [46.6, "dev", 943, 1398], [47.35, "dev", 1306, 1093]], clicks: [44.2, 46.0, 47.5] },
+];
+const CAPS = [
+  [5.4, 16.2, "Home", "Every coin, live.", "Floor, vault and payouts on every card."],
+  [16.6, 21.2, "Coin page", "The floor follows the ATH.", "Fall to the floor and the vault buys back."],
+  [21.6, 26.2, "Floor vault", "40% of every fee defends the floor.", "Floor and holder funds can never be withdrawn."],
+  [26.6, 31.1, "Trade", "Buy and sell on the coin page.", "Quote, slippage and fees before you sign."],
+  [31.5, 35.8, "Holder payouts", "Holders get paid every 2 minutes.", "Hold longer, earn more: 0.1× to 1.0× over 7 days."],
+  [38.7, 43.0, "Launch", "Name it. Pick a ticker.", "The preview updates as you type."],
+  [43.4, 45.7, "Choose the floor", "15, 25 or 35% below the ATH.", "Written into the vault at launch, forever."],
+  [46.0, 48.3, "One transaction", "Coin, dev buy and vault together.", "0.015 SOL to launch, no wallet connection needed."],
+  [48.65, 50.5, "Leaderboard", "Top earners and diamond hands.", "Who earns the most from holding."],
+  [50.8, 52.6, "How it works", "Every rule, in plain words.", "One click from any page."],
+];
+
+// build the overlay elements once
+const chips = CALLS.map((c) => {
+  const el = document.createElement("div");
+  el.className = "chip";
+  el.innerHTML = `<span class="dot" style="background:${c[8]};box-shadow:0 0 12px ${c[8]}"></span><span>${c[7]}</span>`;
+  $("chips").appendChild(el);
+  const ns = "http://www.w3.org/2000/svg";
+  const line = document.createElementNS(ns, "line"), dot = document.createElementNS(ns, "circle"), ring = document.createElementNS(ns, "circle");
+  line.setAttribute("stroke", "rgba(240,200,110,.85)"); line.setAttribute("stroke-width", "2");
+  dot.setAttribute("r", "6"); dot.setAttribute("fill", "#f6d27a");
+  ring.setAttribute("fill", "none"); ring.setAttribute("stroke", "#f6d27a"); ring.setAttribute("stroke-width", "2");
+  $("lines").append(line, ring, dot);
+  return { el, line, dot, ring };
+});
+const capEls = CAPS.map((c, i) => {
+  const el = document.createElement("div");
+  el.className = "cap";
+  el.innerHTML = `<div class="k"><i>${String(i + 1).padStart(2, "0")}</i>${c[2]}</div><div class="t">${c[3]}</div><div class="s">${c[4]}</div>`;
+  $("caps").appendChild(el);
+  return el;
+});
+$("chapters").innerHTML = CAPS.map(() => "<i><b></b></i>").join("");
+
+// ---- background ------------------------------------------------------------------------------------------------
+let seed = 7;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const DUST = Array.from({ length: 150 }, () => ({ x: rnd() * 1920, y: rnd() * 1080, s: rnd() < 0.15 ? 6 + rnd() * 10 : 1.2 + rnd() * 3, v: 6 + rnd() * 26, ph: rnd() * 6.28, a: 0.25 + rnd() * 0.7, ang: rnd() * 6.28 }));
+const ctx = $("dust").getContext("2d");
+function dust(t, burst = 0) {
+  ctx.clearRect(0, 0, 1920, 1080);
+  for (const d of DUST) {
+    let x = d.x + Math.sin(t * 0.6 + d.ph) * 30;
+    let y = ((d.y - t * d.v) % 1080 + 1080) % 1080;
+    if (burst > 0) { x += Math.cos(d.ang) * burst * (260 + d.v * 18); y += Math.sin(d.ang) * burst * (260 + d.v * 18); }
+    const a = d.a * (0.6 + 0.4 * Math.sin(t * 2.2 + d.ph * 3)) * (d.s > 5 ? 0.18 : 1);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, d.s);
+    g.addColorStop(0, `rgba(255,243,207,${a})`); g.addColorStop(0.45, `rgba(240,196,106,${a * 0.8})`); g.addColorStop(1, "rgba(240,196,106,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, d.s, 0, 6.283); ctx.fill();
+  }
+}
+function reveal(scene, lt) {
+  for (const el of scene.querySelectorAll("[data-at]")) {
+    const p = E.out3(prog(lt, +el.dataset.at, +(el.dataset.d || 0.75)));
+    el.style.opacity = p;
+    el.style.transform = `translateY(${(1 - p) * 30}px)`;
+    el.style.filter = p < 1 ? `blur(${(1 - p) * 10}px)` : "none";
+  }
+}
+function coinPose(el, lt, from = 0.6, dur = 1.6) {
+  const p = E.outExpo(prog(lt, 0, dur));
+  el.style.opacity = clamp(p * 1.6);
+  el.style.transform = `perspective(1400px) translateY(${8 * Math.sin(lt * 1.3) + (1 - p) * 40}px) rotateY(${lerp(-28, 0, p) + 4 * Math.sin(lt * 0.9)}deg) scale(${lerp(from, 1, p) * (1 + 0.012 * Math.sin(lt * 1.6))})`;
+  el.querySelector("img").style.filter = `drop-shadow(0 30px 60px rgba(0,0,0,.6)) blur(${(1 - p) * 14}px)`;
+}
+function scene(id, t, a, b, fadeOut = 0.4) {
+  const el = $(id), on = t >= a && t < b;
+  el.style.display = on ? "block" : "none";
+  if (!on) return -1;
+  const lt = t - a, fout = 1 - E.inOut3(prog(t, b - fadeOut, fadeOut));
+  el.style.opacity = Math.min(E.out3(prog(lt, 0, 0.4)), fout);
+  el.style.transform = `scale(${lerp(1.04, 1, E.out3(prog(lt, 0, 0.8))) * lerp(1.08, 1, fout)})`;
+  el.style.filter = fout < 1 ? `blur(${(1 - fout) * 10}px)` : "none";
+  reveal(el, lt);
+  return lt;
+}
+
+// ---- render ----------------------------------------------------------------------------------------------------
+window.render = (t) => {
+  // impacts on the music: 4.8 (tour starts), 43.2 (choose the floor), 52.8 (call to action)
+  const flash = Math.max(...[4.8, 43.2, 52.8].map((h, i) => (t >= h ? (1 - prog(t, h, 0.5)) * [0.75, 0.35, 0.8][i] : 0)));
+  $("flash").style.opacity = flash;
+  $("glow").style.setProperty("--ga", 0.13 + 0.03 * Math.sin(t * 0.8));
+  dust(t, t >= 52.8 ? E.outExpo(prog(t, 52.8, 1.6)) * (1 - prog(t, 54.4, 2.5)) : 0);
+
+  // title scenes
+  const li = scene("intro", t, 0, 4.85, 0.45);
+  if (li >= 0) {
+    coinPose($("icoin"), li);
+    $("isweep").style.backgroundPosition = `${lerp(160, -60, E.inOut3(prog(li, 1.0, 1.4)))}% 0`;
+    const w = E.out3(prog(li, 1.3, 1.4));
+    $("iwm").style.opacity = w; $("iwm").style.letterSpacing = `${lerp(0.55, 0.17, w)}em`; $("iwm").style.filter = `blur(${(1 - w) * 12}px)`;
+  }
+  scene("brk", t, 36.1, 38.3, 0.4);
+  const lc = scene("cta", t, 52.9, 60, 0.01);
+  if (lc >= 0) {
+    coinPose($("ccoin"), lc, 0.7, 1.2);
+    $("csweep").style.backgroundPosition = `${lerp(160, -60, E.inOut3(prog(lc, 0.8, 1.4)))}% 0`;
+  }
+  $("fade").style.opacity = E.inOut3(prog(t, 58.7, 1.3));
+
+  // world: the browser enters at 4.8, dims for the breakdown, leaves at 52.6
+  const world = $("world");
+  const enter = E.outExpo(prog(t, 4.8, 1.5));
+  const dimIn = E.inOut3(prog(t, 35.7, 0.6)), dimOut = E.inOut3(prog(t, 37.8, 0.7));
+  const dim = dimIn * (1 - dimOut);
+  const leave = E.inOut3(prog(t, 52.5, 0.6));
+  const vis = t >= 4.8 && t < 53.2;
+  world.style.display = vis ? "block" : "none";
+  C = camAt(t);
+  // the breakdown pulls the camera back a little; the exit flies through
+  C = { ...C, z: C.z * lerp(1, 0.9, dim) * lerp(1, 1.25, leave) };
+  A = anchorOf(C.z);
+  world.style.transform = `translate(${A.x - C.x * C.z}px, ${A.y - C.y * C.z}px) scale(${C.z})`;
+  world.style.opacity = clamp(enter * 1.4) * lerp(1, 0.16, dim) * (1 - leave);
+  world.style.filter = dim > 0.01 || leave > 0.01 ? `blur(${Math.max(dim * 9, leave * 14)}px)` : "none";
+  $("br").style.transform = `perspective(2200px) translateY(${(1 - enter) * 180}px) rotateX(${(1 - enter) * 24}deg) scale(${lerp(0.84, 1, enter)})`;
+
+  // pages
+  let top = null;
+  const rem = remaining(t), shown = Math.min(119, Math.floor(rem));
+  const label = `${String(Math.floor(shown / 60)).padStart(2, "0")}:${String(shown % 60).padStart(2, "0")}`;
+  const justPaid = t >= PAYOUT_AT && t < PAYOUT_AT + 1.6;
+  for (const pg of PAGES) {
+    const on = vis && t >= pg.from && t < pg.to;
+    pg.el.style.display = on ? "block" : "none";
+    if (!on) continue;
+    top = pg;
+    pg.el.style.opacity = pg.fade ? E.inOut3(prog(t, pg.from, pg.fade)) : 1;
+    const s = scrollOf(pg.id, t), idx = pg.frame ? Math.min(pg.imgs.length - 1, pg.frame(t)) : 0;
+    pg.imgs.forEach((im, i) => {
+      im.style.display = i === idx ? "block" : "none";
+      im.style.top = `${((SHOT[pg.shots[i]].s || 0) - s) * K}px`;
+    });
+    let sideTop;
+    if (pg.full) {
+      pg.hdr.style.top = `${Math.max(0, 37 - s) * K}px`;
+      pg.side.style.top = `${stickyTop(s) * K}px`;
+      sideTop = stickyTop(s);
+    } else {
+      const shotS = SHOT[pg.shots[idx]].s || 0;
+      sideTop = stickyTop(shotS) + (shotS - s);
+    }
+    if (pg.cd) {
+      // page px: digits from x 120, cap top 168.5; ring 64 px at (40, 168) when the sidebar starts at 98
+      pg.cd.style.left = `${108 * K}px`; pg.cd.style.top = `${(sideTop + 62) * K}px`; pg.cd.style.transform = `scale(${K})`;
+      const sp = pg.cd.firstChild;
+      sp.textContent = label;
+      sp.style.color = justPaid ? "#f2c76a" : "#f3efe4";
+      sp.style.textShadow = justPaid ? `0 0 ${18 * (1 - prog(t, PAYOUT_AT, 1.6))}px rgba(242,199,106,.8)` : "none";
+      pg.ring.style.left = `${40 * K}px`; pg.ring.style.top = `${(sideTop + 70) * K}px`; pg.ring.style.transform = `scale(${K})`;
+      pg.ring.querySelector(".arc").setAttribute("stroke-dashoffset", 185.35 * (1 - rem / 120));
+    }
+  }
+  if (top) $("url").innerHTML = top.url;
+
+  // spotlight: morphs between back-to-back targets
+  const spot = $("spot");
+  const si = SPOTS.findIndex((s) => t >= s[1] && t < s[2]);
+  if (si >= 0 && vis) {
+    const rect = (s) => { const [x0, y0] = scr(s[0], s[3][0] - s[4], s[3][1] - s[4], t), [x1, y1] = scr(s[0], s[3][0] + s[3][2] + s[4], s[3][1] + s[3][3] + s[4], t); return [x0, y0, x1, y1]; };
+    const cur = SPOTS[si], prev = SPOTS[si - 1], next = SPOTS[si + 1];
+    let r = rect(cur);
+    const chained = prev && prev[2] >= cur[1] - 0.01;
+    if (chained) { const p = E.inOut3(prog(t, cur[1], 0.6)), q = rect(prev); r = r.map((v, i) => lerp(q[i], v, p)); }
+    const fin = chained ? 1 : E.out3(prog(t, cur[1], 0.45));
+    const fout = next && next[1] <= cur[2] + 0.01 ? 1 : 1 - E.inOut3(prog(t, cur[2] - 0.4, 0.4));
+    spot.style.opacity = fin * fout;
+    spot.style.left = `${r[0]}px`; spot.style.top = `${r[1]}px`; spot.style.width = `${r[2] - r[0]}px`; spot.style.height = `${r[3] - r[1]}px`;
+    spot.style.borderRadius = `${10 * C.z}px`;
+  } else spot.style.opacity = 0;
+
+  // callouts
+  CALLS.forEach((c, i) => {
+    const { el, line, dot, ring } = chips[i];
+    const on = vis && t >= c[1] && t < c[2];
+    el.style.display = line.style.display = dot.style.display = ring.style.display = on ? "" : "none";
+    if (!on) return;
+    const [x, y] = scr(c[0], c[3], c[4], t);
+    const lp = E.out3(prog(t, c[1], 0.45)), out = 1 - E.inOut3(prog(t, c[2] - 0.35, 0.35));
+    const ex = x + c[5] * lp, ey = y + c[6] * lp;
+    line.setAttribute("x1", x); line.setAttribute("y1", y); line.setAttribute("x2", ex); line.setAttribute("y2", ey);
+    line.setAttribute("opacity", out);
+    dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("opacity", out * clamp(lp * 3));
+    const pulse = ((t - c[1]) * 0.9) % 1;
+    ring.setAttribute("cx", x); ring.setAttribute("cy", y); ring.setAttribute("r", 7 + pulse * 22); ring.setAttribute("opacity", out * (1 - pulse) * 0.9);
+    const cp = E.out3(prog(t, c[1] + 0.18, 0.45));
+    el.style.opacity = cp * out;
+    el.style.left = `${x + c[5]}px`; el.style.top = `${y + c[6]}px`;
+    const ax = c[5] > 0 ? "0%" : c[5] < 0 ? "-100%" : "-50%";
+    const ay = c[5] === 0 ? (c[6] < 0 ? "-100%" : "0%") : "-50%";
+    el.style.transform = `translate(${ax}, ${ay}) translate(${c[5] === 0 ? 0 : Math.sign(c[5]) * (1 - cp) * 24}px, ${c[5] === 0 ? Math.sign(c[6]) * (1 - cp) * 18 : 0}px) scale(${lerp(0.94, 1, cp)})`;
+  });
+
+  // cursor and click ripples
+  const cur = $("cursor"), rip = $("rip");
+  const track = CURSOR.find((k) => t >= k.from && t < k.to);
+  cur.style.opacity = 0; rip.style.opacity = 0;
+  if (track && vis) {
+    const pt = (k) => (k[1] ? scr(k[1], k[2], k[3], t) : [k[2], k[3]]);
+    let p = pt(track.keys[0]);
+    for (let i = 0; i < track.keys.length - 1; i++) {
+      const a = track.keys[i], b = track.keys[i + 1];
+      if (t >= a[0] && t < b[0]) { const q = E.inOut3((t - a[0]) / (b[0] - a[0])), pa = pt(a), pb = pt(b); p = [lerp(pa[0], pb[0], q), lerp(pa[1], pb[1], q)]; }
+      else if (t >= b[0]) p = pt(b);
+    }
+    const press = Math.max(0, ...track.clicks.map((c) => 1 - Math.abs(t - c) / 0.12));
+    cur.style.opacity = E.out3(prog(t, track.from, 0.3)) * (1 - E.inOut3(prog(t, track.to - 0.3, 0.3)));
+    cur.style.transform = `translate(${p[0] - 4}px, ${p[1] - 3}px) scale(${1 - 0.18 * clamp(press)})`;
+    const c = track.clicks.filter((c) => t >= c && t < c + 0.7).at(-1);
+    if (c !== undefined) {
+      const q = (t - c) / 0.7;
+      const sz = 12 + E.out3(q) * 90;
+      rip.style.opacity = 1 - q;
+      rip.style.width = rip.style.height = `${sz}px`;
+      rip.style.left = `${p[0] - sz / 2}px`; rip.style.top = `${p[1] - sz / 2}px`;
+    }
+  }
+
+  // captions and the chapter bar
+  let band = 0;
+  CAPS.forEach((c, i) => {
+    const p = E.out3(prog(t, c[0], 0.6)) * (1 - E.inOut3(prog(t, c[1] - 0.4, 0.4)));
+    const on = t >= c[0] && t < c[1];
+    const el = capEls[i];
+    el.style.display = on ? "" : "none";
+    if (!on) return;
+    band = Math.max(band, E.out3(prog(t, c[0] - 0.3, 0.6)));
+    el.style.opacity = p;
+    el.style.transform = `translateY(${(1 - p) * 26}px)`;
+    el.style.filter = p < 1 ? `blur(${(1 - p) * 8}px)` : "none";
+  });
+  const inTour = t >= 5.0 && t < 52.6;
+  $("capband").style.opacity = inTour ? Math.min(1, band + 0.6) * (1 - leave) * lerp(1, 0, dim) : 0;
+  $("chapters").style.opacity = inTour ? E.out3(prog(t, 5.4, 0.6)) * (1 - leave) * lerp(1, 0.25, dim) : 0;
+  $("chapters").querySelectorAll("b").forEach((b, i) => { b.style.width = `${clamp((t - CAPS[i][0]) / (CAPS[i][1] - CAPS[i][0])) * 100}%`; });
+};
+window.ready = document.fonts.ready.then(() => Promise.all([...document.images].map((i) => (i.complete ? 1 : new Promise((r) => (i.onload = i.onerror = r)))))).then(() => window.render(0));
+</script>
+</body>
+</html>
