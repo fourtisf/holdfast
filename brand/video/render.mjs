@@ -26,10 +26,12 @@ if (out === "--stills" || flag === "--stills") {
   process.exit(0);
 }
 
+// live.html has film grain, which costs bits without adding detail: a higher CRF keeps it near 20 MB.
+const CRF = video === "live" ? "25" : "17";
 const music = resolve(`../../brand/video/music-${video}.wav`);
 const audio = existsSync(music) ? ["-i", music, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-shortest"] : [];
 const ff = spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "png", "-i", "-", ...audio,
-  "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-pix_fmt", "yuv420p", "-movflags", "+faststart", resolve(out)], { stdio: ["pipe", "inherit", "inherit"] });
+  "-c:v", "libx264", "-preset", "slow", "-crf", CRF, "-pix_fmt", "yuv420p", "-movflags", "+faststart", resolve(out)], { stdio: ["pipe", "inherit", "inherit"] });
 const frames = Math.round(duration * FPS);
 const started = Date.now();
 for (let i = 0; i < frames; i++) {
