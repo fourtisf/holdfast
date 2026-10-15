@@ -6,6 +6,7 @@ import { loadConfig } from "./config.js";
 import { hkdfDepositAllocator } from "./launch/deposit.js";
 import { randomDepositAllocator } from "./launch/dev.js";
 import { DbLaunchService } from "./launch/service.js";
+import { loadClusterRent } from "./launch/cost.js";
 import { launchCostSettings } from "./launch/settings.js";
 import { SolUsdFeed } from "./services/price.js";
 import { RpcTradeChain } from "./trade/chain.js";
@@ -22,10 +23,15 @@ if (process.env.API_MIGRATE !== "0") await migrate(db, { log: (msg) => log.info(
 const allocator = config.depositMasterSecret ? hkdfDepositAllocator(config.depositMasterSecret) : randomDepositAllocator;
 if (!config.depositMasterSecret) log.warn("DEPOSIT_MASTER_SECRET not set: deposit addresses are random and unrecoverable (dev only)");
 
+const connection = new Connection(config.rpcUrl, "confirmed");
+await loadClusterRent(async (len) => BigInt(await connection.getMinimumBalanceForRentExemption(len))).catch((err: Error) =>
+  log.warn({ err: err.message }, "could not read the cluster's rent; quoting with the default rent"),
+);
+
 const { app } = await buildApp({
   db,
   config,
-  tradeChain: new RpcTradeChain(new Connection(config.rpcUrl, "confirmed")),
+  tradeChain: new RpcTradeChain(connection),
   launches: new DbLaunchService(db, allocator, { ttlMs: config.launchTtlMs, cost: launchCostSettings(config) }),
   events: pgEventSource(db),
   prices:

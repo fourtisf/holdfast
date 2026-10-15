@@ -2,7 +2,8 @@
 
 import { DEFAULT_TRIGGER_BPS, type LaunchResponse } from "@holdfast/core";
 import { useLaunchQuote } from "@/lib/hooks/queries";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ErrorNote } from "@/components/ui/States";
@@ -110,6 +111,19 @@ export function CreateView() {
   const devBuyExtra = quote && devBuySol > 0 ? quote.devBuyExtraSol : 0;
   const paused = quote?.launchesPaused === true;
   const set = <K extends keyof LaunchForm>(key: K, value: LaunchForm[K]) => setForm((f) => ({ ...f, [key]: value }));
+
+  // The connected wallet is the creator unless the user types another one; it follows connects and disconnects.
+  const { publicKey } = useWallet();
+  const connected = publicKey?.toBase58() ?? null;
+  const prefilled = useRef<string | null>(null);
+  useEffect(() => {
+    setForm((f) => {
+      const untouched = f.creatorWallet === "" || f.creatorWallet === prefilled.current;
+      if (!untouched) return f;
+      prefilled.current = connected;
+      return { ...f, creatorWallet: connected ?? "" };
+    });
+  }, [connected]);
   const border = (key: keyof LaunchForm) => (shown[key] ? "border-sell/60" : "border-line-strong");
 
   const submit = async (e: React.FormEvent) => {
@@ -272,7 +286,11 @@ export function CreateView() {
               optional
               htmlFor="creatorWallet"
               error={shown.creatorWallet}
-              hint="Claims your 15% of the coin's fees. Leave empty to use the wallet you send the deposit from; fill it in if you pay from an exchange."
+              hint={
+                connected && form.creatorWallet === connected
+                  ? "Your connected wallet. It claims your 15% of the coin's fees; change it to send them to another wallet."
+                  : "Claims your 15% of the coin's fees. Leave empty to use the wallet you send the deposit from; fill it in if you pay from an exchange."
+              }
             >
               <input
                 id="creatorWallet"
