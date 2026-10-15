@@ -4,7 +4,7 @@
 |---|---|---|
 | `moatpad-tour.mp4` | 60 s, music | Website tour on the real UI: home, a coin card, the coin page (floor and ATH on the chart, the floor vault and its split, trading), holder payouts with a live countdown that pays out on screen, launching a coin (typing, choosing the floor, dev buy, one-transaction launch), leaderboard, how it works |
 | `moatpad-review.mp4` | 45 s, silent | Feature review: the problem, the moat, floor vault and buybacks, holder payouts every 2 minutes, the 40/25/15/10/10 split, no withdraw path and verifiable rounds, the app, launching for 0.015 SOL |
-| `moatpad-live.mp4` | 24 s, music | Cinematic announcement: "The moat is open", a vault-dial 3-2-1, the drop on MOATPAD IS LIVE, four feature hits on the real UI, the fee split, call to action with X and Telegram (post it once launches are open) |
+| `moatpad-live.mp4` | 63 s, music | Launch demo on the real UI: connecting the wallet (the creator wallet fills itself in), name and ticker, choosing the floor, dev buy, confirming in the wallet, the coin going live, then a time-lapse of it trading: the floor rising with the ATH, the vault filling, a buyback at the floor and holder payouts; ends with what makes Moatpad different. Built by `build-demo.sh` |
 
 All are 1920×1080, 30 fps, H.264 (AAC audio at −14 LUFS where there is music).
 
