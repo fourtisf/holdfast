@@ -1,6 +1,7 @@
 """Original soundtracks for the promo videos, synthesized from scratch (no samples, no third-party music).
 
     python3 brand/video/music.py            # writes brand/video/music-tour.wav (60 s) and music-live.wav (24 s)
+    python3 brand/video/music.py burn       # only music-burn.wav (32 s), for burn.html
 
 Cinematic electronic in A minor: warm detuned pads, a sub bass ducked by the kick, plucked arpeggios through a
 dotted-eighth delay, hats and claps, risers and impacts on the cuts. Every section boundary lands on a scene change
@@ -433,8 +434,66 @@ def demo():
     master(mix, os.path.join(HERE, "music-demo.wav"))
 
 
+# ---- burn: the buy & burn feature video (burn.html), 120 BPM, scenes on bar lines ---------------------------
+def burn():
+    total, beat, drop = 32.0, 0.5, 4.0
+    n = int(total * SR)
+    st = lambda x: np.stack([x, x], axis=1)
+
+    # 0-4: the ignition: a low braam, a dark pad, the title hit at 1.3 s, a riser into the drop
+    fx = np.zeros((n, 2))
+    place(fx, saw_stack((33, 40, 45), 3.6, attack=0.9, decay=2.2), 0.0, 0.7)
+    for m in CHORDS[0] + (CHORDS[0][0] + 12,):
+        place(fx, pad_note(hz(m), 3.6, attack=1.2, release=0.9, bright=0.45), 0.0, 1.0)
+    place(fx, riser(1.8), 2.2, 0.75)
+    place(fx, reverse_cymbal(1.2), 2.8, 0.7)
+
+    # 4-24: the groove (trades, the split, buy then burn), 24-28 the flywheel, 28-32 the outro
+    groove, _ = song(total, 120, 12, drop, [
+        (0, 2, {"pad", "kick", "hat", "bass", "arp"}),
+        (3, 5, {"pad", "kick", "hat", "clap", "bass", "arp"}),
+        (6, 9, {"padbright", "kick", "hat", "hat16", "clap", "bass", "bassoct", "arpup"}),
+        (10, 10, {"padbright", "kick", "hat", "hat16", "clap", "bass", "arpup"}),
+        (11, 11, {"padbright", "kick", "hat", "hat16", "clap", "bass", "arpup", "riser"}),
+    ])
+    groove = fade(groove, 27.85, 28.05)
+    outro, _ = song(total, 120, 2, 28.0, [(0, 1, {"pad", "sub", "arp"})])
+
+    hits = np.zeros((n, 2))
+    place(hits, st(impact(2.6)), 1.3, 1.1)
+    place(hits, st(subdrop()), 1.3, 0.9)
+    place(hits, saw_stack((33, 45, 52), 2.4, attack=0.03, decay=1.2), 1.3, 0.55)
+    place(hits, st(impact(2.2)), drop, 0.8)
+    place(hits, st(whoosh(0.6)), 9.45, 0.7)
+    for i in range(5):  # one hit per segment of the fee split
+        place(hits, st(tom(hz(45 + i * 2), 0.5)), 10.5 + i * 0.5, 0.65)
+    place(hits, st(whoosh(0.5)), 12.55, 0.8)
+    place(hits, st(impact(2.4)), 13.0, 0.95)  # the 10% catches fire
+    place(hits, saw_stack((40, 47, 52), 1.8, attack=0.03, decay=0.9), 13.0, 0.45)
+    for at in (15.5, 17.8, 19.8):  # whooshes into each step card
+        place(hits, st(whoosh(0.5)), at, 0.75)
+    place(hits, st(impact(1.8)), 20.3, 0.7)  # the burn
+    for i in range(8):  # fill into the flywheel
+        place(hits, snare(), 23.0 + i * beat / 4 + 0.5, 0.45 + 0.06 * i)
+    place(hits, st(impact(1.6)), 24.0, 0.6)
+    place(hits, st(impact(3.4)), 28.0, 1.15)
+    place(hits, st(subdrop()), 28.0, 0.9)
+    place(hits, saw_stack((33, 40, 45), 3.2, attack=0.03, decay=1.6), 28.0, 0.6)
+    fx += reverb(fx, 2.2, 0.3)
+    hits += reverb(hits, 2.6, 0.25)
+    mix = fx + groove * 0.95 + outro * 0.9 + hits
+    mix = fade(mix, 30.4, 32.0)
+    master(mix, os.path.join(HERE, "music-burn.wav"))
+
+
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        for name in sys.argv[1:]:
+            globals()[name]()
+        sys.exit(0)
     tour()
     live()
+    burn()
     if os.path.exists(os.path.join(HERE, "demo-app.json")):
         demo()

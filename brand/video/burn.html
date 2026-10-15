@@ -1,0 +1,456 @@
+<!doctype html>
+<!--
+  "Buy & burn $MOATPAD" feature video (32 s, 120 BPM: scenes on 2 s bar lines). Every frame is a pure function of
+  time (window.render(t)); render.mjs renders it as `burn`, with music-burn.wav from music.py.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: Cin; src: url(../fonts/Cinzel-SemiBold.woff); }
+@font-face { font-family: G; font-weight: 300; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Light.woff2); }
+@font-face { font-family: G; font-weight: 400; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Regular.woff2); }
+@font-face { font-family: G; font-weight: 500; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Medium.woff2); }
+@font-face { font-family: G; font-weight: 600; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-SemiBold.woff2); }
+@font-face { font-family: GM; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-mono/GeistMono-Regular.woff2); }
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #050506; }
+body { font-family: G, sans-serif; color: #efebe1; -webkit-font-smoothing: antialiased; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #050506; }
+.layer { position: absolute; inset: 0; }
+#bg { background: radial-gradient(1200px 760px at 50% 108%, rgba(255,110,40,var(--fire,.0)), transparent 70%), radial-gradient(1100px 700px at 50% 42%, rgba(232,188,91,.10), transparent 70%), linear-gradient(180deg, #0c0d10, #060608 60%, #040405); }
+canvas { position: absolute; inset: 0; }
+#vig { background: radial-gradient(1500px 880px at 50% 48%, transparent 55%, rgba(0,0,0,.72)); }
+#flash { background: radial-gradient(circle at 50% 46%, #fffaf0, rgba(255,170,90,.75) 25%, transparent 70%); opacity: 0; }
+#fade { background: #050506; opacity: 0; }
+.scene { position: absolute; inset: 0; opacity: 0; }
+.c { position: absolute; left: 0; right: 0; text-align: center; }
+.gold { background: linear-gradient(180deg, #fff6d8 0%, #f1c96f 50%, #a87727 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.fire { background: linear-gradient(180deg, #fff4c8 0%, #ffc04d 35%, #ff7a1a 70%, #d23a12 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kicker { font: 500 24px G; letter-spacing: .42em; text-transform: uppercase; color: #e8bc5b; }
+.h { font: 600 64px/1.08 G; letter-spacing: -.01em; }
+.sub { font: 300 32px/1.4 G; color: #c9c6bd; }
+.sub b { font-weight: 500; color: #efebe1; }
+.pill { display: inline-flex; align-items: center; gap: 14px; padding: 16px 36px; border-radius: 999px; border: 1px solid rgba(232,188,91,.55); background: rgba(232,188,91,.08); font: 600 34px G; }
+.card { position: absolute; border-radius: 24px; background: linear-gradient(180deg, rgba(24,25,30,.94), rgba(13,14,17,.96)); border: 1px solid #2a2c33; box-shadow: 0 40px 100px rgba(0,0,0,.55); }
+/* trades */
+.trade { position: absolute; left: 0; width: 640px; height: 70px; display: flex; align-items: center; gap: 18px; padding: 0 22px; border-radius: 16px; background: rgba(22,23,28,.95); border: 1px solid #2a2c33; font: 500 25px G; }
+.trade .tk { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font: 700 15px G; color: #0a0b0e; }
+.trade .side { padding: 4px 12px; border-radius: 8px; font: 600 19px G; }
+.trade .amt { margin-left: auto; font: 600 25px G; }
+.fee { position: absolute; width: 18px; height: 18px; margin: -9px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff6d8, #f1c96f 45%, #a87727); box-shadow: 0 0 18px rgba(242,199,106,.8); }
+/* split */
+.bar { position: absolute; left: 260px; top: 470px; width: 1400px; height: 64px; display: flex; gap: 8px; }
+.seg { height: 100%; border-radius: 14px; transform-origin: left center; position: relative; }
+.lab { position: absolute; top: 92px; left: 0; white-space: nowrap; font: 500 26px G; color: #c9c6bd; }
+.lab b { display: block; font: 600 44px G; margin-bottom: 6px; }
+/* steps */
+.step { position: absolute; top: 330px; width: 460px; height: 400px; padding: 40px 36px; }
+.step .n { font: 600 22px G; letter-spacing: .3em; color: #8e939f; }
+.step .t { font: 600 40px/1.15 G; margin-top: 18px; }
+.step .d { font: 300 25px/1.45 G; color: #b9b6ad; margin-top: 16px; }
+.arrow { position: absolute; top: 515px; width: 110px; height: 30px; }
+.chip { display: inline-flex; align-items: center; gap: 10px; padding: 10px 18px; border-radius: 12px; font: 600 24px G; }
+/* flywheel */
+.node { position: absolute; width: 330px; margin-left: -165px; text-align: center; font: 600 34px/1.2 G; }
+.node small { display: block; font: 400 22px G; color: #9aa0ab; margin-top: 6px; }
+.coin { position: absolute; }
+.coin img { width: 100%; display: block; filter: drop-shadow(0 30px 60px rgba(0,0,0,.6)); }
+.social { display: inline-flex; align-items: center; gap: 12px; font: 400 30px G; color: #cfccc3; }
+.mono { font-family: GM, monospace; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="bg"></div>
+  <canvas id="embers" width="1920" height="1080"></canvas>
+
+  <!-- 0-4: cold open -->
+  <div class="scene" id="s0">
+    <div class="c kicker" id="s0k" style="top:300px">New on Moatpad</div>
+    <div class="c" id="s0t" style="top:360px"><span class="fire" style="font:400 190px Cin;letter-spacing:.06em">BUY &amp; BURN</span></div>
+    <div class="c" id="s0p" style="top:640px"><span class="pill"><span class="gold">$MOATPAD</span></span></div>
+    <div class="c sub" id="s0s" style="top:760px">Every coin launched on Moatpad now burns $MOATPAD.</div>
+  </div>
+
+  <!-- 4-10: every trade pays a fee into the coin's vault -->
+  <div class="scene" id="s1">
+    <div class="c kicker" style="top:96px">Step 1 · Every trade pays</div>
+    <div class="c h" style="top:146px">Every trade on every Moatpad coin<br>pays a creator fee.</div>
+    <div id="trades" style="position:absolute;left:190px;top:400px;width:640px;height:560px"></div>
+    <div class="card" id="vault" style="left:1180px;top:430px;width:560px;height:400px;padding:44px">
+      <div style="font:500 22px G;letter-spacing:.3em;color:#8e939f">COIN VAULTS · ON-CHAIN</div>
+      <div style="font:600 30px G;margin-top:18px;color:#c9c6bd">Fees collected</div>
+      <div style="font:600 92px G;margin-top:6px"><span id="vsol">0.000</span> <span style="font-size:44px;color:#c9c6bd">SOL</span></div>
+      <div style="font:300 26px/1.45 G;color:#b9b6ad;margin-top:22px">Each coin's creator on pump.fun is its own vault: a program address no person controls.</div>
+    </div>
+  </div>
+
+  <!-- 10-16: the split, the 10% burn share lights up -->
+  <div class="scene" id="s2">
+    <div class="c kicker" style="top:150px">Step 2 · The split</div>
+    <div class="c h" id="s2h" style="top:200px">Each fee is split on-chain.</div>
+    <div class="c h" id="s2h2" style="top:200px;opacity:0"><span class="fire">10%</span> buys and burns $MOATPAD.</div>
+    <div class="bar" id="bar"></div>
+    <div class="c sub" id="s2s" style="top:820px;opacity:0">Taken from every fee, on every coin, on the bonding curve and on PumpSwap.</div>
+  </div>
+
+  <!-- 16-24: how it burns -->
+  <div class="scene" id="s3">
+    <div class="c kicker" style="top:110px">Step 3 · Buy, then burn</div>
+    <div class="c h" style="top:160px">Automatic. On-chain. Verifiable.</div>
+    <div class="card step" id="st1" style="left:150px">
+      <div class="n">01</div>
+      <div class="t">10% is set aside</div>
+      <div class="d">Each coin's vault keeps 10% of its fees for $MOATPAD.</div>
+      <div style="margin-top:34px"><span class="chip" style="background:rgba(164,147,255,.14);color:#a493ff;border:1px solid rgba(164,147,255,.35)"><span id="bsol">0.00</span>&nbsp;SOL ready</span></div>
+    </div>
+    <svg class="arrow" id="ar1" style="left:630px" viewBox="0 0 110 30"><path d="M0 15 H96 M84 3 L100 15 L84 27" stroke="#e8bc5b" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="card step" id="st2" style="left:730px">
+      <div class="n">02</div>
+      <div class="t">The vault buys $MOATPAD</div>
+      <div class="d">On pump.fun or PumpSwap, wherever $MOATPAD trades.</div>
+      <svg id="mini" width="388" height="110" viewBox="0 0 388 110" style="position:absolute;left:36px;bottom:34px"></svg>
+    </div>
+    <svg class="arrow" id="ar2" style="left:1210px" viewBox="0 0 110 30"><path d="M0 15 H96 M84 3 L100 15 L84 27" stroke="#e8bc5b" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="card step" id="st3" style="left:1310px;overflow:hidden">
+      <div class="n">03</div>
+      <div class="t">Every token bought<br>is <span class="fire">burned</span></div>
+      <div class="d">Gone for good. The supply only goes down.</div>
+      <canvas id="pit" width="460" height="400" style="position:absolute;left:0;top:0"></canvas>
+    </div>
+    <div class="c sub" id="s3s" style="top:800px">Anyone can check every burn on Solscan.</div>
+  </div>
+
+  <!-- 24-28: flywheel -->
+  <div class="scene" id="s4">
+    <div class="c kicker" style="top:96px">The flywheel</div>
+    <svg id="wheel" width="1920" height="1080" style="position:absolute;inset:0"></svg>
+    <div class="node" id="n0" style="left:960px;top:166px">More launches<small>on Moatpad</small></div>
+    <div class="node" id="n1" style="left:1440px;top:500px">More trading<small>on pump.fun</small></div>
+    <div class="node" id="n2" style="left:960px;top:838px">More fees<small>in every vault</small></div>
+    <div class="node" id="n3" style="left:480px;top:490px"><span class="fire">More $MOATPAD<br>burned</span></div>
+  </div>
+
+  <!-- 28-32: outro -->
+  <div class="scene" id="s5">
+    <div class="coin" id="ocoin" style="left:870px;top:120px;width:180px"><img src="../3d/renders/hero-coin.png"></div>
+    <div class="c" id="o1" style="top:330px"><span class="fire" style="font:400 112px Cin;letter-spacing:.05em">BUY &amp; BURN IS LIVE</span></div>
+    <div class="c sub" id="o2" style="top:490px">Launch on Moatpad. Every trade burns <b>$MOATPAD</b>.</div>
+    <div class="c" id="o3" style="top:580px"><span class="pill" style="font:500 27px G;gap:16px"><span style="color:#8e939f">CA</span><span class="mono" style="color:#efebe1">4qLdhoVDiAkXVXqU4D3rSPp6pMMnJzRJr38do55Hpump</span></span></div>
+    <div class="c" id="o4" style="top:700px"><span class="pill"><span class="gold">moatpad.fun</span></span></div>
+    <div class="c" id="o5" style="top:840px">
+      <span class="social"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="#cfccc3" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>@moatpad</span>
+      <span class="social" style="margin-left:70px"><svg width="30" height="30" viewBox="0 0 24 24"><path fill="#cfccc3" d="M21.5 4.3 18.4 19.6c-.23 1.03-.85 1.28-1.72.8l-4.75-3.5-2.3 2.2c-.25.25-.47.47-.95.47l.34-4.83 8.8-7.95c.38-.34-.08-.53-.6-.19L6.33 13.45l-4.68-1.46c-1.02-.32-1.04-1.02.21-1.5L20.2 3.4c.85-.31 1.6.2 1.3.9Z"/></svg>t.me/MOATPAD</span>
+    </div>
+  </div>
+
+  <div class="layer" id="vig"></div>
+  <div class="layer" id="flash"></div>
+  <div class="layer" id="fade"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, d) => clamp((t - a) / d);
+const lerp = (a, b, p) => a + (b - a) * p;
+const out3 = (x) => 1 - Math.pow(1 - x, 3);
+const inOut3 = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const outBack = (x) => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2);
+window.DURATION = 32;
+
+let seed = 11;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+// ---- embers: rising sparks, intensity follows the story -------------------------------------------------------
+const EMBERS = Array.from({ length: 260 }, () => ({ x: rnd() * 1920, ph: rnd() * 6.28, v: 60 + rnd() * 160, s: 1 + rnd() * 3.2, a: 0.3 + rnd() * 0.7, life: 4 + rnd() * 5, off: rnd() * 9, sway: 20 + rnd() * 60 }));
+const ectx = $("embers").getContext("2d");
+function embers(t, intensity) {
+  ectx.clearRect(0, 0, 1920, 1080);
+  ectx.globalCompositeOperation = "lighter";
+  for (const e of EMBERS) {
+    const age = (t + e.off) % e.life;
+    const k = age / e.life;
+    const y = 1100 - age * e.v;
+    const x = e.x + Math.sin(t * 0.9 + e.ph) * e.sway * k;
+    const a = e.a * intensity * Math.sin(Math.PI * k) * (0.6 + 0.4 * Math.sin(t * 7 + e.ph * 5));
+    if (a <= 0.01 || y < -20) continue;
+    const r = e.s * (1.6 - k);
+    const g = ectx.createRadialGradient(x, y, 0, x, y, r * 4);
+    g.addColorStop(0, `rgba(255,236,190,${a})`);
+    g.addColorStop(0.35, `rgba(255,150,60,${a * 0.7})`);
+    g.addColorStop(1, "rgba(255,90,20,0)");
+    ectx.fillStyle = g;
+    ectx.beginPath();
+    ectx.arc(x, y, r * 4, 0, 6.283);
+    ectx.fill();
+  }
+  ectx.globalCompositeOperation = "source-over";
+}
+
+function show(el, t, at, dur = 0.55, dy = 30) {
+  const p = out3(prog(t, at, dur));
+  el.style.opacity = p;
+  el.style.transform = `translateY(${(1 - p) * dy}px)`;
+  el.style.filter = p < 1 ? `blur(${(1 - p) * 8}px)` : "none";
+  return p;
+}
+function scene(id, t, a, b, fadeIn = 0.35, fadeOut = 0.35) {
+  const el = $(id);
+  const o = Math.min(prog(t, a, fadeIn), 1 - prog(t, b - fadeOut, fadeOut));
+  el.style.opacity = o;
+  el.style.display = o > 0 ? "block" : "none";
+  return o > 0;
+}
+
+// ---- scene 1: trades ------------------------------------------------------------------------------------------
+const COINS = [
+  { tk: "HOUND", c: "#e8bc5b" }, { tk: "STEADY", c: "#6aa6ff" }, { tk: "ANCHR", c: "#2bd98a" }, { tk: "FLRWZ", c: "#e9a68a" },
+  { tk: "MOAT", c: "#a493ff" }, { tk: "KEEP", c: "#f2c76a" }, { tk: "TOWER", c: "#7fd3ff" },
+];
+const TRADES = Array.from({ length: 13 }, (_, i) => {
+  const coin = COINS[i % COINS.length];
+  const buy = i % 3 !== 1;
+  return { at: 4.55 + i * 0.4, coin, buy, sol: [0.5, 1.2, 0.25, 2.0, 0.8, 0.35, 1.5][i % 7] };
+});
+const tradesEl = $("trades");
+const tradeEls = TRADES.map((tr) => {
+  const d = document.createElement("div");
+  d.className = "trade";
+  d.innerHTML = `<div class="tk" style="background:${tr.coin.c}">${tr.coin.tk.slice(0, 2)}</div><div>$${tr.coin.tk}</div>` +
+    `<span class="side" style="background:${tr.buy ? "rgba(43,217,138,.14)" : "rgba(255,77,106,.14)"};color:${tr.buy ? "#2bd98a" : "#ff4d6a"}">${tr.buy ? "Buy" : "Sell"}</span>` +
+    `<div class="amt">${tr.sol.toFixed(2)} SOL</div>`;
+  tradesEl.appendChild(d);
+  return d;
+});
+const fees = TRADES.map(() => {
+  const f = document.createElement("div");
+  f.className = "fee";
+  $("s1").appendChild(f);
+  return f;
+});
+function trades(t) {
+  let collected = 0;
+  TRADES.forEach((tr, i) => {
+    const el = tradeEls[i];
+    const p = out3(prog(t, tr.at, 0.35));
+    // newest on top: each later trade pushes this one down by a row
+    const later = TRADES.filter((o) => o.at <= t && o.at > tr.at).length;
+    const y = later * 82 - (1 - p) * 40;
+    el.style.opacity = t < tr.at ? 0 : p * clamp(1 - (later - 5) / 1.5);
+    el.style.transform = `translateY(${y}px)`;
+    // its fee flies into the vault card
+    const f = fees[i];
+    const fp = prog(t, tr.at + 0.15, 0.75);
+    const sx = 190 + 600, sy = 400 + y + 35, ex = 1180 + 120, ey = 430 + 210;
+    const e = inOut3(fp);
+    f.style.left = `${lerp(sx, ex, e)}px`;
+    f.style.top = `${lerp(sy, ey, e) - Math.sin(Math.PI * e) * 140}px`;
+    f.style.opacity = fp > 0 && fp < 1 ? 1 : 0;
+    if (fp >= 1) collected += tr.sol * 0.0095;
+  });
+  $("vsol").textContent = collected.toFixed(3);
+  const pulse = TRADES.some((tr) => t > tr.at + 0.9 && t < tr.at + 1.1);
+  $("vault").style.borderColor = pulse ? "rgba(232,188,91,.7)" : "#2a2c33";
+}
+
+// ---- scene 2: split bar ---------------------------------------------------------------------------------------
+const SPLIT = [
+  { pct: 40, label: "Floor vault", c: "#6aa6ff" },
+  { pct: 25, label: "Holders", c: "#f2c76a" },
+  { pct: 15, label: "Creator", c: "#e9a68a" },
+  { pct: 10, label: "Treasury", c: "#ddd6c6" },
+  { pct: 10, label: "Buy & burn $MOATPAD", c: "#a493ff" },
+];
+const segEls = SPLIT.map((s) => {
+  const d = document.createElement("div");
+  d.className = "seg";
+  d.style.width = `${s.pct}%`;
+  d.style.background = s.c;
+  d.innerHTML = `<div class="lab"><b style="color:${s.c}">${s.pct}%</b>${s.label}</div>`;
+  $("bar").appendChild(d);
+  return d;
+});
+function split(t) {
+  const ignite = prog(t, 13.0, 0.6);
+  SPLIT.forEach((s, i) => {
+    const el = segEls[i];
+    const p = outBack(clamp(prog(t, 10.5 + i * 0.5, 0.45)));
+    el.style.transform = `scaleX(${clamp(p, 0, 1.08)})`;
+    el.style.opacity = clamp(prog(t, 10.5 + i * 0.5, 0.2));
+    const lab = el.firstChild;
+    lab.style.opacity = clamp(prog(t, 10.75 + i * 0.5, 0.35)) * (i === 4 ? 1 : 1 - 0.75 * ignite);
+    if (i === 4) {
+      // the burn share catches fire: purple to flame, lifted, glowing
+      const f = ignite;
+      const flick = 0.85 + 0.15 * Math.sin(t * 23) * Math.sin(t * 9.7);
+      el.style.background = f > 0 ? `linear-gradient(180deg, ${mix("#a493ff", "#ffd36b", f)}, ${mix("#a493ff", "#ff5a1a", f)})` : s.c;
+      el.style.boxShadow = f > 0 ? `0 0 ${60 * f * flick}px rgba(255,120,40,${0.8 * f}), 0 0 ${140 * f}px rgba(255,90,20,${0.45 * f})` : "none";
+      el.style.transform += ` translateY(${-26 * out3(f)}px)`;
+      lab.style.transform = `translateY(${30 * out3(f)}px)`;
+      lab.querySelector("b").style.color = f > 0.5 ? "#ffb347" : s.c;
+    } else {
+      el.style.filter = `saturate(${1 - 0.7 * ignite}) brightness(${1 - 0.5 * ignite})`;
+    }
+  });
+  $("s2h").style.opacity = 1 - prog(t, 12.9, 0.3);
+  show($("s2h2"), t, 13.2, 0.5);
+  show($("s2s"), t, 13.8, 0.6);
+}
+function mix(a, b, p) {
+  const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+  const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
+  return `rgb(${pa.map((v, i) => Math.round(lerp(v, pb[i], p))).join(",")})`;
+}
+
+// ---- scene 3: steps -------------------------------------------------------------------------------------------
+const mini = $("mini");
+function miniChart(t) {
+  // a quiet line, then the vault's buy: a green candle and a "Vault buy" tag
+  const p = prog(t, 18.6, 1.2);
+  let path = "";
+  const pts = [];
+  for (let i = 0; i <= 40; i++) {
+    const x = i * 9.5;
+    const base = 70 - i * 0.35 + 6 * Math.sin(i * 0.9) + 3 * Math.sin(i * 2.3);
+    const bump = i > 30 ? -38 * out3(clamp((i - 30) / 6)) * out3(p) : 0;
+    pts.push([x, base + bump]);
+  }
+  path = "M" + pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L");
+  const shown = Math.round(lerp(26, 40, clamp(p * 1.4)));
+  const vis = "M" + pts.slice(0, shown + 1).map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L");
+  const [bx, by] = pts[Math.min(shown, 40)];
+  mini.innerHTML = `<path d="${vis}" fill="none" stroke="#2bd98a" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>` +
+    (p > 0.25 ? `<circle cx="${bx}" cy="${by}" r="7" fill="#2bd98a"/><circle cx="${bx}" cy="${by}" r="${12 + 10 * ((t * 1.6) % 1)}" fill="none" stroke="#2bd98a" stroke-width="2" opacity="${1 - ((t * 1.6) % 1)}"/>` : "") +
+    (p > 0.45 ? `<g opacity="${clamp((p - 0.45) * 4)}"><rect x="${Math.min(bx - 150, 230)}" y="${by - 52}" width="150" height="34" rx="9" fill="rgba(43,217,138,.16)" stroke="rgba(43,217,138,.5)"/><text x="${Math.min(bx - 150, 230) + 75}" y="${by - 29}" fill="#2bd98a" font-family="G" font-weight="600" font-size="18" text-anchor="middle">+ $MOATPAD</text></g>` : "");
+}
+const pit = $("pit").getContext("2d");
+const TOKENS = Array.from({ length: 22 }, (_, i) => ({ x: 50 + rnd() * 360, at: 20.6 + i * 0.13 + rnd() * 0.1, spin: rnd() * 6 }));
+const FLAMES = Array.from({ length: 90 }, () => ({ x: rnd() * 460, ph: rnd() * 6.28, v: 90 + rnd() * 140, s: 10 + rnd() * 26, life: 0.7 + rnd() * 0.9, off: rnd() * 3 }));
+function burnPit(t) {
+  pit.clearRect(0, 0, 460, 400);
+  const fireOn = clamp(prog(t, 20.3, 0.6));
+  if (fireOn <= 0) return;
+  pit.globalCompositeOperation = "lighter";
+  for (const f of FLAMES) {
+    const age = (t + f.off) % f.life;
+    const k = age / f.life;
+    const x = f.x + Math.sin(t * 3 + f.ph) * 10;
+    const y = 400 - age * f.v;
+    const r = f.s * (1 - k * 0.7);
+    const a = 0.32 * fireOn * Math.sin(Math.PI * k);
+    const g = pit.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(255,230,160,${a})`);
+    g.addColorStop(0.4, `rgba(255,130,40,${a * 0.8})`);
+    g.addColorStop(1, "rgba(200,40,10,0)");
+    pit.fillStyle = g;
+    pit.beginPath();
+    pit.arc(x, y, r, 0, 6.283);
+    pit.fill();
+  }
+  pit.globalCompositeOperation = "source-over";
+  // $MOATPAD tokens drop in and burn up
+  for (const tk of TOKENS) {
+    const p = prog(t, tk.at, 0.9);
+    if (p <= 0 || p >= 1) continue;
+    const y = lerp(318, 398, p * p);
+    const fadeOut = clamp((y - 350) / 45);
+    pit.save();
+    pit.translate(tk.x, y);
+    pit.rotate(tk.spin + p * 4);
+    pit.globalAlpha = clamp(p * 6) * (1 - fadeOut);
+    const g = pit.createRadialGradient(-4, -4, 1, 0, 0, 16);
+    g.addColorStop(0, "#fff6d8");
+    g.addColorStop(0.5, "#f1c96f");
+    g.addColorStop(1, "#a87727");
+    pit.fillStyle = g;
+    pit.beginPath();
+    pit.arc(0, 0, 15, 0, 6.283);
+    pit.fill();
+    pit.restore();
+  }
+}
+function steps(t) {
+  const lit = (el, at) => {
+    const p = show(el, t, at, 0.6, 40);
+    const on = clamp(prog(t, at + 0.4, 0.5));
+    el.style.borderColor = on > 0 ? `rgba(232,188,91,${0.25 + 0.35 * on})` : "#2a2c33";
+    return p;
+  };
+  lit($("st1"), 16.3);
+  show($("ar1"), t, 17.9, 0.4, 0);
+  lit($("st2"), 18.3);
+  show($("ar2"), t, 19.9, 0.4, 0);
+  lit($("st3"), 20.3);
+  show($("s3s"), t, 21.6, 0.6);
+  // the burn share drains once the vault has bought
+  const fill = clamp(prog(t, 16.6, 1.6)) * (1 - clamp(prog(t, 18.9, 0.8)));
+  $("bsol").textContent = (0.1 * out3(fill)).toFixed(2);
+  miniChart(t);
+  burnPit(t);
+}
+
+// ---- scene 4: flywheel ----------------------------------------------------------------------------------------
+const C = { x: 960, y: 540 }, R = 270;
+function wheel(t) {
+  const p = clamp(prog(t, 24.2, 1.2));
+  const rot = (t - 24) * 70;
+  let svg = `<defs><linearGradient id="fw" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f1c96f"/><stop offset="1" stop-color="#ff7a1a"/></linearGradient></defs>`;
+  svg += `<circle cx="${C.x}" cy="${C.y}" r="${R}" fill="none" stroke="#24262d" stroke-width="3"/>`;
+  const len = 2 * Math.PI * R;
+  svg += `<circle cx="${C.x}" cy="${C.y}" r="${R}" fill="none" stroke="url(#fw)" stroke-width="6" stroke-linecap="round" stroke-dasharray="${len * p} ${len}" transform="rotate(-90 ${C.x} ${C.y})"/>`;
+  for (let k = 0; k < 4; k++) {
+    const a = ((rot + k * 90) * Math.PI) / 180;
+    const x = C.x + R * Math.cos(a), y = C.y + R * Math.sin(a);
+    svg += `<circle cx="${x}" cy="${y}" r="9" fill="#ffb347" opacity="${p}"/><circle cx="${x}" cy="${y}" r="22" fill="none" stroke="#ffb347" stroke-width="2" opacity="${0.4 * p}"/>`;
+  }
+  svg += `<text x="${C.x}" y="${C.y + 20}" fill="#efebe1" font-family="Cin" font-size="58" text-anchor="middle" opacity="${p}">MOATPAD</text>`;
+  $("wheel").innerHTML = svg;
+  ["n0", "n1", "n2", "n3"].forEach((id, i) => show($(id), t, 24.5 + i * 0.5, 0.5));
+}
+
+// ---- outro ----------------------------------------------------------------------------------------------------
+function outro(t) {
+  const p = Math.min(1, out3(prog(t, 28.05, 0.8)));
+  $("ocoin").style.opacity = p;
+  $("ocoin").style.transform = `perspective(1400px) scale(${lerp(1.6, 1, p) * (1 + 0.012 * Math.sin(t * 2))}) rotateY(${lerp(-70, 0, p) + 4 * Math.sin(t * 1.1)}deg)`;
+  show($("o1"), t, 28.3, 0.6);
+  show($("o2"), t, 28.8, 0.5);
+  show($("o3"), t, 29.2, 0.5);
+  show($("o4"), t, 29.6, 0.5);
+  show($("o5"), t, 30.0, 0.5);
+}
+
+window.render = (t) => {
+  // fire intensity of the whole frame
+  const fire = 0.18 + 0.5 * Math.max(prog(t, 0.6, 1.4) * (1 - prog(t, 3.6, 0.6)), prog(t, 13, 0.8) * (1 - prog(t, 15.6, 0.4)) * 0.8, prog(t, 20.3, 0.8) * (1 - prog(t, 23.6, 0.4)), prog(t, 28, 0.8));
+  $("bg").style.setProperty("--fire", (0.05 + 0.22 * fire).toFixed(3));
+  embers(t, fire);
+
+  if (scene("s0", t, 0, 4.0, 0.01)) {
+    show($("s0k"), t, 0.9, 0.5);
+    const p = out3(prog(t, 1.3, 0.9));
+    const ttl = $("s0t");
+    ttl.style.opacity = p;
+    ttl.style.transform = `scale(${lerp(1.25, 1, p)})`;
+    ttl.style.filter = `blur(${(1 - p) * 14}px) drop-shadow(0 0 ${30 + 20 * Math.sin(t * 9)}px rgba(255,120,40,${0.55 * p}))`;
+    show($("s0p"), t, 2.2, 0.5);
+    show($("s0s"), t, 2.6, 0.5);
+  }
+  if (scene("s1", t, 4.0, 10.0)) trades(t);
+  if (scene("s2", t, 10.0, 16.0)) split(t);
+  if (scene("s3", t, 16.0, 24.0)) steps(t);
+  if (scene("s4", t, 24.0, 28.0)) wheel(t);
+  if (scene("s5", t, 28.0, 33)) outro(t);
+
+  // flashes on the big hits
+  const flash = Math.max(1 - prog(t, 1.3, 0.7), 0) * (t >= 1.3 ? 1 : 0) * 0.85 + (1 - prog(t, 13.0, 0.5)) * (t >= 13.0 ? 0.35 : 0) + (1 - prog(t, 28.0, 0.6)) * (t >= 28 ? 0.6 : 0);
+  $("flash").style.opacity = flash;
+  $("fade").style.opacity = Math.max(1 - prog(t, 0, 0.3), inOut3(prog(t, 31.0, 1.0)));
+};
+window.ready = document.fonts.ready
+  .then(() => Promise.all([...document.images].map((i) => (i.complete ? 1 : new Promise((r) => (i.onload = i.onerror = r))))))
+  .then(() => window.render(0));
+</script>
+</body>
+</html>
