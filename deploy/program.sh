@@ -58,6 +58,8 @@ diagnose() {
     node diagnose-deploy.mjs "$RPC" /admin/deployer.json /program/holdfast_vault.so "$(solana address -k "$PROGRAM")"
 }
 admin_cli() {
+  # The image carries the admin CLI: rebuild it after a git pull (a no-op when nothing changed).
+  docker compose build -q keeper > /dev/null
   docker compose run --rm --no-deps --user root -v "$ADMIN_DIR:/admin:ro" -w /app/apps/keeper keeper \
     tsx src/admin.ts "$@" --rpc "$RPC" --signer /admin/deployer.json
 }
