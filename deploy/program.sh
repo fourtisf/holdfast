@@ -2,8 +2,8 @@
 # Deploys and sets up the vault program from the server, run from the repository root after deploy/init.sh:
 #
 #   bash deploy/program.sh keys          install the Solana CLI, create the deployer and program keypairs
-#   bash deploy/program.sh import-deployer   use your own wallet as the deployer: paste its private key at a hidden
-#                                        prompt (run it before or instead of creating one with `keys`)
+#   bash deploy/program.sh import-deployer   use your own wallet as the deployer: its address, then its private key
+#                                        at a hidden prompt (run it before or instead of creating one with `keys`)
 #   bash deploy/program.sh deploy        deploy deploy/program/holdfast_vault.so, or upgrade it (checks the hash,
 #                                        the address it was built for and the deployer's balance)
 #   bash deploy/program.sh init          create the on-chain Config with the keeper and launcher from keys/, and give
@@ -79,12 +79,18 @@ NEXT
     umask 077
     mkdir -p "$ADMIN_DIR"
     chmod 700 "$ADMIN_DIR"
-    printf 'Private key of the wallet that pays and owns the program (Phantom: Settings > Manage Accounts >\n'
-    printf 'your account > Show Private Key). The input stays hidden; never paste it anywhere else: '
+    printf 'Address of the wallet that pays and owns the program (as Phantom shows it): '
+    IFS= read -r expected
+    expected="$(printf '%s' "$expected" | tr -d '[:space:]')"
+    printf 'Its private key (Phantom: Settings > Manage Accounts > your account > Show Private Key > Solana,\n'
+    printf 'then the copy button). Paste it and press Enter; nothing shows while you paste: '
     IFS= read -rs key
+    # A paste that wrapped over several lines arrives as several lines: take them all, so none reaches the shell.
+    while IFS= read -rs -t 0.5 more; do key+="$more"; done
     echo
     # printf is a builtin: the key never shows up in the process list or the shell history.
-    if ! printf '%s' "$key" | docker run --rm -i -v "$PWD/deploy:/d:ro" node:22-bookworm-slim node /d/import-key.mjs > "$DEPLOYER.tmp" 2> "$ADMIN_DIR/.address"; then
+    if ! printf '%s' "$key" | docker run --rm -i -v "$PWD/deploy:/d:ro" node:22-bookworm-slim node /d/import-key.mjs "$expected" \
+      > "$DEPLOYER.tmp" 2> "$ADMIN_DIR/.address"; then
       unset key
       rm -f "$DEPLOYER.tmp"
       cat "$ADMIN_DIR/.address" >&2
@@ -97,7 +103,7 @@ NEXT
       echo "the previous deployer keypair is kept next to it as deployer.replaced-*.json"
     fi
     mv "$DEPLOYER.tmp" "$DEPLOYER"
-    echo "deployer: $(cat "$ADMIN_DIR/.address") (check that this is your wallet's address)"
+    echo "deployer: $(cat "$ADMIN_DIR/.address"), your wallet. Next: bash deploy/program.sh deploy"
     rm -f "$ADMIN_DIR/.address"
     ;;
 
