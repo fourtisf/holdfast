@@ -4,18 +4,21 @@
 #   bash deploy/program.sh keys          install the Solana CLI, create the deployer and program keypairs
 #   bash deploy/program.sh deploy        deploy deploy/program/holdfast_vault.so, or upgrade it (checks the hash,
 #                                        the address it was built for and the deployer's balance)
-#   bash deploy/program.sh init          create the on-chain Config with the keeper and launcher from keys/
-#   bash deploy/program.sh alt           create the launcher's lookup table and put it in .env
+#   bash deploy/program.sh init          create the on-chain Config with the keeper and launcher from keys/, and give
+#                                        the keeper its starting 0.02 SOL from the deployer
+#   bash deploy/program.sh alt           create the launcher's lookup table (paid by the deployer) and put it in .env
 #   bash deploy/program.sh admin <cmd>   any command of apps/keeper/src/admin.ts, signed by the deployer
 #   bash deploy/program.sh revenue <wallet>   the keeper becomes the platform treasury: the 10% share pays for its
 #                                        transactions and the rest is forwarded to <wallet>
 #   bash deploy/program.sh launches open|pause
 #   bash deploy/program.sh status        addresses and balances
 #
-# The deployer pays for the deploy and is the program's upgrade authority and the Config admin until both
-# move to a multisig (docs/runbook.md, section 3). Its keypair and the program keypair live in $ADMIN_DIR
-# (default ~/moatpad-admin), outside the repository and outside every container. Back that folder up
-# offline, and never paste or screenshot the files in it.
+# Only the deployer needs SOL: about 4.75, the program's rent (it stays in the program account) plus a little for
+# the lookup table and the keeper's start. The launcher runs empty, since every launch reimburses it in the same
+# transaction, and the keeper then lives off the platform share (`revenue`). The deployer is also the program's
+# upgrade authority and the Config admin until both move to a multisig (docs/runbook.md, section 3). Its keypair
+# and the program keypair live in $ADMIN_DIR (default ~/moatpad-admin), outside the repository and every
+# container. Back that folder up offline, and never paste or screenshot the files in it.
 set -euo pipefail
 
 SOLANA_VERSION=2.3.13
@@ -24,6 +27,7 @@ DEPLOYER="$ADMIN_DIR/deployer.json"
 PROGRAM="$ADMIN_DIR/program.json"
 SO=deploy/program/holdfast_vault.so
 PRIORITY="${PRIORITY:-20000}" # micro-lamports per compute unit on the deploy's write transactions
+KEEPER_SEED_LAMPORTS=20000000 # the keeper's start; the platform share refills it
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
 
 [ -f .env ] && [ -f deploy/docker-compose.prod.yml ] || { echo "run this from the repository root, after deploy/init.sh" >&2; exit 1; }
@@ -65,7 +69,7 @@ Deployer (pays the deploy, upgrade authority, admin): $(solana address -k "$DEPL
 Program address (gets built into the program):       $(solana address -k "$PROGRAM")
 
 Back up $ADMIN_DIR off this server. Next: send the program address so the program is built for it,
-fund the deployer with 5 SOL, then git pull and run: bash deploy/program.sh deploy
+send 4.75 SOL to the deployer (no other wallet needs SOL), then git pull and run: bash deploy/program.sh deploy
 NEXT
     ;;
 
@@ -77,7 +81,8 @@ NEXT
     program_id="$(solana address -k "$PROGRAM")"
     built_for="$(cat deploy/program/program-id)"
     [ "$built_for" = "$program_id" ] || { echo "$SO was built for $built_for, but $PROGRAM is $program_id" >&2; exit 1; }
-    # Rent for the program data account (the buffer it is written to first is refunded), plus fees.
+    # Rent for the program data account (the buffer it is written to first is refunded), plus fees, the
+    # lookup table and the keeper's start.
     size="$(stat -c %s "$SO")"
     needed=$(((size + 45 + 128) * 6960 + 50000000))
     balance="$(sol balance --lamports | awk '{ print $1 }')"
@@ -106,11 +111,21 @@ NEXT
     docker compose build keeper
     admin_cli init "$keeper" "$launcher" /admin/params.json
     admin_cli show
+    # Running costs: collect only after trading, refill from the platform share (decisions #29, #30).
+    set_var KEEPER_COLLECT_EVERY_SECS 600
+    set_var KEEPER_MIN_BALANCE_LAMPORTS 5000000
+    keeper_balance="$(solana balance --url "$RPC" --lamports "$keeper" | awk '{ print $1 }')"
+    if [ "$keeper_balance" -lt "$KEEPER_SEED_LAMPORTS" ]; then
+      sol transfer --allow-unfunded-recipient "$keeper" "$(sol_amount $((KEEPER_SEED_LAMPORTS - keeper_balance)))"
+    fi
+    echo "keeper $keeper: $(solana balance --url "$RPC" "$keeper")"
     ;;
 
   alt)
+    need "$DEPLOYER"
     docker compose build launcher
-    out="$(docker compose run --rm --no-deps -T -w /app/apps/launcher launcher tsx src/cli/alt.ts create)"
+    out="$(docker compose run --rm --no-deps -T --user root -v "$ADMIN_DIR:/admin:ro" -e ALT_PAYER_KEYPAIR=/admin/deployer.json \
+      -w /app/apps/launcher launcher tsx src/cli/alt.ts create)"
     echo "$out"
     table="$(printf '%s\n' "$out" | sed -n 's/^LAUNCHER_LOOKUP_TABLE=//p' | tail -1)"
     [ -n "$table" ] || { echo "no lookup table address in the output" >&2; exit 1; }
@@ -159,7 +174,7 @@ NEXT
     ;;
 
   *)
-    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

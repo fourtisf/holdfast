@@ -5,7 +5,9 @@
  *   pnpm --filter @holdfast/launcher alt sync     # add what LAUNCHER_LOOKUP_TABLE is missing
  *   pnpm --filter @holdfast/launcher alt show     # contents and missing addresses
  *
- * Needs SOLANA_RPC_URL and LAUNCHER_KEYPAIR. Put the created address in LAUNCHER_LOOKUP_TABLE (for the
+ * Needs SOLANA_RPC_URL and LAUNCHER_KEYPAIR (the table's authority). ALT_PAYER_KEYPAIR, when set, pays the table's
+ * rent and fees instead, so the launcher can run with no SOL of its own (launches reimburse it in the same
+ * transaction). Put the created address in LAUNCHER_LOOKUP_TABLE (for the
  * launcher and the API, so quotes use the atomic cost). A new table is usable one slot after its last
  * extension.
  */
@@ -20,6 +22,9 @@ const command = process.argv[2] ?? "show";
 const rpc = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 if (!process.env.LAUNCHER_KEYPAIR) throw new Error("LAUNCHER_KEYPAIR is required");
 const authority = loadKeypair(process.env.LAUNCHER_KEYPAIR);
+const payer = process.env.ALT_PAYER_KEYPAIR ? loadKeypair(process.env.ALT_PAYER_KEYPAIR) : authority;
+// The payer goes first: it is the fee payer. A signer listed twice is fine.
+const signers = payer === authority ? [authority] : [payer, authority];
 const connection = new Connection(rpc, "confirmed");
 const chain = new Web3LaunchChain(connection);
 
@@ -29,16 +34,16 @@ const wanted = await launchLookupAddresses(global, authority.publicKey);
 async function extend(table: PublicKey, addresses: PublicKey[]): Promise<void> {
   for (let i = 0; i < addresses.length; i += 20) {
     const chunk = addresses.slice(i, i + 20);
-    const ix = AddressLookupTableProgram.extendLookupTable({ lookupTable: table, authority: authority.publicKey, payer: authority.publicKey, addresses: chunk });
-    const sig = await sendAndConfirmTransaction(connection, new Transaction().add(ix), [authority]);
+    const ix = AddressLookupTableProgram.extendLookupTable({ lookupTable: table, authority: authority.publicKey, payer: payer.publicKey, addresses: chunk });
+    const sig = await sendAndConfirmTransaction(connection, new Transaction().add(ix), signers);
     console.log(`extended with ${chunk.length} addresses: ${sig}`);
   }
 }
 
 if (command === "create") {
   const slot = await connection.getSlot("finalized");
-  const [ix, table] = AddressLookupTableProgram.createLookupTable({ authority: authority.publicKey, payer: authority.publicKey, recentSlot: slot });
-  const sig = await sendAndConfirmTransaction(connection, new Transaction().add(ix), [authority]);
+  const [ix, table] = AddressLookupTableProgram.createLookupTable({ authority: authority.publicKey, payer: payer.publicKey, recentSlot: slot });
+  const sig = await sendAndConfirmTransaction(connection, new Transaction().add(ix), signers);
   console.log(`created lookup table ${table.toBase58()}: ${sig}`);
   await extend(table, wanted);
   console.log(`\nLAUNCHER_LOOKUP_TABLE=${table.toBase58()}`);

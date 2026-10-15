@@ -27,7 +27,7 @@ async function main() {
   if (!programConfig.keeper.equals(keeper.publicKey)) {
     throw new Error(`KEEPER_KEYPAIR ${keeper.publicKey.toBase58()} is not Config.keeper ${programConfig.keeper.toBase58()}`);
   }
-  const monitor = new Monitor({ service: "keeper", lowBalanceLamports: cfg.payout.keeperMinBalanceLamports * 4n, maxLoopAgeMs: Math.max(cfg.tickMs * 4, 120_000) }, log);
+  const monitor = new Monitor({ service: "keeper", lowBalanceLamports: cfg.payout.keeperMinBalanceLamports * 2n, maxLoopAgeMs: Math.max(cfg.tickMs * 4, 120_000) }, log);
   const ops = await monitor.start(opsPort(process.env, "KEEPER_OPS_PORT", 9101));
   log.info(
     { keeper: keeper.publicKey.toBase58(), tickMs: cfg.tickMs, profitWallet: cfg.profitWallet?.toBase58() ?? null, opsPort: ops?.port ?? null, alerts: monitor.alerter.enabled },

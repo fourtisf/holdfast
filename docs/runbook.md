@@ -15,8 +15,8 @@ everything, which is why the upgrade authority goes to a multisig or is frozen.
 |---|---|---|---|
 | Program upgrade authority | nothing | Squads multisig after deploy (or frozen) | The most powerful key. A single hot key here undoes every guarantee. |
 | Config admin | nothing | Squads multisig | `set_params` (within hard bounds), `set_keeper`, `set_launcher`, `set_hold_mint` (once), `set_paused`. |
-| Keeper | ≈ 0.5 SOL working balance | server (`KEEPER_KEYPAIR`) | Pays crank and payout fees. Round rent is refunded on close. |
-| Launcher | small working balance | server (`LAUNCHER_KEYPAIR`) | Signs launches, owns the lookup table. Set `LAUNCHER_ADDRESS` so it is excluded from payouts. |
+| Keeper | 0.02 SOL to start, then refilled by the platform share | server (`KEEPER_KEYPAIR`) | Pays crank and payout fees. Round rent is refunded on close. As platform treasury it forwards its surplus to `KEEPER_PROFIT_WALLET` ([decisions #29, #30](decisions.md)). |
+| Launcher | nothing | server (`LAUNCHER_KEYPAIR`) | Signs launches (each one reimburses its rent in the same transaction) and is the lookup table's authority; the deployer pays the table. Set `LAUNCHER_ADDRESS` so it is excluded from payouts. |
 | Deposit master secret | derives every deposit address | server secret (`DEPOSIT_MASTER_SECRET`) | Losing it strands deposits that were never processed; leaking it lets someone sweep pending deposits. Back it up offline. |
 | Admin API token | moderation only | `ADMIN_TOKEN` (≥ 24 chars) | Hides coins and comments; cannot touch funds. |
 
@@ -113,8 +113,9 @@ the commands below are what it does.
    `NEXT_PUBLIC_SITE_URL`). Keep `PAYOUT_MAX_FEE_BPS` at its default (200) so rounds never cost more than they pay.
    Register the indexer's webhook URL (`/webhooks/helius`, raw transactions) for the program and the launcher.
    On a single server, [deploy/](../deploy/README.md) sets this up behind Caddy with HTTPS.
-8. **Fund** the keeper and launcher wallets. Run `pnpm --filter @holdfast/launcher cost -- --atomic --ipfs` and
-   check the quote is 0.015 SOL.
+8. **Fund** the keeper with its start (0.02 SOL; `deploy/program.sh init` sends it from the deployer) and make it the
+   platform treasury (`deploy/program.sh revenue <wallet>`). The launcher needs no SOL. Run
+   `pnpm --filter @holdfast/launcher cost -- --atomic --ipfs` and check the quote is 0.015 SOL.
 9. **Smoke test on mainnet** with a small real launch from a team wallet: deposit, go live, buy, fees collected,
    first payout round, verify page green (`/coin/<mint>/round/<id>`). Only then announce.
 10. **Legal sign-off** on holder revenue sharing (SPEC §7.6, [decisions #22](decisions.md)) before the public launch.

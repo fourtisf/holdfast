@@ -22,7 +22,7 @@ async function main() {
 
   const programConfig = await loadProgramConfig(chain);
   if (!programConfig.keeper.equals(keeper.publicKey)) throw new Error("KEEPER_KEYPAIR is not Config.keeper");
-  const monitor = new Monitor({ service: "payout", lowBalanceLamports: cfg.payout.keeperMinBalanceLamports * 4n, maxLoopAgeMs: 10 * 60_000 }, log);
+  const monitor = new Monitor({ service: "payout", lowBalanceLamports: cfg.payout.keeperMinBalanceLamports * 2n, maxLoopAgeMs: 10 * 60_000 }, log);
   const ops = await monitor.start(opsPort(process.env, "PAYOUT_OPS_PORT", 9102));
   log.info({ keeper: keeper.publicKey.toBase58(), opsPort: ops?.port ?? null, alerts: monitor.alerter.enabled }, "payout worker started");
 

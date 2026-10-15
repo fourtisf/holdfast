@@ -97,7 +97,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
       coinConcurrency: int(env, "PAYOUT_COIN_CONCURRENCY", 4),
       priorityMicroLamports: int(env, "PAYOUT_PRIORITY_MICROLAMPORTS", 1_000),
       maxFeeBps: int(env, "PAYOUT_MAX_FEE_BPS", 200),
-      keeperMinBalanceLamports: bigintEnv(env, "KEEPER_MIN_BALANCE_LAMPORTS", 50_000_000n),
+      keeperMinBalanceLamports: bigintEnv(env, "KEEPER_MIN_BALANCE_LAMPORTS", 5_000_000n),
     },
   };
 }
