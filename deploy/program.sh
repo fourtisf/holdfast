@@ -15,6 +15,8 @@
 #   bash deploy/program.sh revenue <wallet>   the keeper becomes the platform treasury: the 10% share pays for its
 #                                        transactions and the rest is forwarded to <wallet>
 #   bash deploy/program.sh export keeper|launcher|deployer   show a wallet's private key to import it in Phantom
+#   bash deploy/program.sh new-key keeper|launcher   replace a robot wallet (e.g. after its key was exposed); points
+#                                        the on-chain Config at the new one when it is already initialized
 #   bash deploy/program.sh launches open|pause
 #   bash deploy/program.sh status        addresses and balances
 #
@@ -226,6 +228,28 @@ NEXT
     echo "the $2 private key was shown and cleared from the screen"
     ;;
 
+  new-key)
+    case "${2:-}" in
+      keeper | launcher) ;;
+      *) echo "usage: bash deploy/program.sh new-key keeper|launcher" >&2; exit 1 ;;
+    esac
+    old="$(cat "keys/$2.address" 2> /dev/null || true)"
+    [ -f "keys/$2.json" ] && mv "keys/$2.json" "keys/$2.replaced-$(date +%s).json"
+    docker run --rm -v "$PWD/deploy:/d:ro" node:22-bookworm-slim node /d/keygen.mjs > "keys/$2.json.tmp" 2> "keys/$2.address"
+    mv "keys/$2.json.tmp" "keys/$2.json"
+    chown 1000:1000 "keys/$2.json"
+    chmod 600 "keys/$2.json"
+    new="$(cat "keys/$2.address")"
+    [ "$2" = launcher ] && set_var LAUNCHER_ADDRESS "$new"
+    echo "new $2 wallet: $new (the old one is kept as keys/$2.replaced-*.json)"
+    # Already initialized with the old wallet: the Config must name the new one.
+    if [ -n "$old" ] && admin_cli show 2> /dev/null | grep -q "\"$2\": \"$old\""; then
+      need "$DEPLOYER"
+      admin_cli "set-$2" "$new"
+      docker compose up -d "$2" > /dev/null
+    fi
+    ;;
+
   launches)
     case "${2:-}" in
       open) set_var LAUNCHES_PAUSED false ;;
@@ -250,7 +274,7 @@ NEXT
     ;;
 
   *)
-    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac
