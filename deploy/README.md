@@ -43,17 +43,38 @@ Launches start paused (`LAUNCHES_PAUSED=true`): the API hands out no deposit add
 "Launches open soon". `NEXT_PUBLIC_MOAT_CA` fills the $MOAT contract address in the announcement bar ("Coming soon"
 while empty); `NEXT_PUBLIC_X_URL` overrides the X link (default https://x.com/moatpad).
 
-## The on-chain services
+## The program and the on-chain services
 
-`keeper`, `payout`, `launcher` and `notifier` need the program deployed and initialized with the keeper and
-launcher addresses that `init.sh` printed (`keys/*.address`), plus `TELEGRAM_BOT_TOKEN` for the notifier. Follow
-[docs/runbook.md](../docs/runbook.md) section 1, fund the two wallets, then:
+`keeper`, `payout`, `launcher` and `notifier` need the vault program deployed and initialized with the keeper and
+launcher addresses that `init.sh` printed (`keys/*.address`), plus `TELEGRAM_BOT_TOKEN` for the notifier.
+`deploy/program.sh` does the on-chain part from the server. It keeps the deployer keypair (fee payer, upgrade
+authority, Config admin) and the program keypair in `~/moatpad-admin`, outside the repository and every container:
 
 ```bash
-docker compose up -d keeper payout launcher notifier
+bash deploy/program.sh keys       # installs the Solana CLI, creates both keypairs, prints their addresses
 ```
 
-Then open launches: set `LAUNCHES_PAUSED=false` in `.env` and `docker compose up -d api`.
+The program address is compiled into the program, so the binary is built for it on a machine with the toolchain:
+`bash deploy/build-program.sh <PROGRAM_ADDRESS>` writes `deploy/program/` (binary, sha256, address), which is
+committed. Then, with the deployer funded (about 4.7 SOL: rent for the 653 KB program, kept for as long as the program
+exists, plus fees; send 5) and the keeper and launcher funded (0.5 and 0.1 SOL):
+
+```bash
+git pull
+bash deploy/program.sh deploy     # checks the hash, the address and the balance; sets HOLDFAST_PROGRAM_ID in .env
+bash deploy/program.sh init       # Config with the keeper, the launcher and the mainnet parameters
+bash deploy/program.sh admin set-platform-treasury <TREASURY_WALLET>
+bash deploy/program.sh alt        # the launcher's lookup table, written to LAUNCHER_LOOKUP_TABLE
+docker compose up -d --build      # every service, launches still paused
+bash deploy/program.sh status     # addresses, balances, the program, the pause flag
+bash deploy/program.sh launches open    # `launches pause` closes them again
+```
+
+Right after opening, before announcing, run a small launch from a team wallet through the site (deposit, live, a
+buy, fees collected, a payout round, the verify page green), and pause again if anything is off.
+
+`deploy` also upgrades a deployed program from a newer `deploy/program/`. Moving the upgrade authority and the
+admin to a multisig, and $MOAT, are in [docs/runbook.md](../docs/runbook.md) section 3.
 
 ## Updating and operating
 
