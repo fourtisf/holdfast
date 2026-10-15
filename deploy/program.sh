@@ -8,6 +8,7 @@
 #                                        (run it before or instead of creating one with `keys`)
 #   bash deploy/program.sh deploy        deploy deploy/program/holdfast_vault.so, or upgrade it (checks the hash,
 #                                        the address it was built for and the deployer's balance)
+#   bash deploy/program.sh diagnose      explain a failed deploy: simulates its first transaction and prints the error
 #   bash deploy/program.sh init          create the on-chain Config with the keeper and launcher from keys/, and give
 #                                        the keeper its starting 0.02 SOL from the deployer
 #   bash deploy/program.sh alt           create the launcher's lookup table (paid by the deployer) and put it in .env
@@ -48,6 +49,12 @@ need() { [ -f "$1" ] || { echo "$1 is missing: run \`bash deploy/program.sh keys
 sol_amount() { awk -v l="$1" 'BEGIN { printf "%.4f", l / 1e9 }'; }
 RPC="$(env_get SOLANA_RPC_URL)"
 sol() { solana --url "$RPC" --keypair "$DEPLOYER" "$@"; }
+# Simulates the deploy's first transaction and prints the real error (deploy/diagnose-deploy.mjs).
+diagnose() {
+  docker compose run --rm --no-deps -T --user root -v "$ADMIN_DIR:/admin:ro" -v "$PWD/deploy/program:/program:ro" \
+    -v "$PWD/deploy/diagnose-deploy.mjs:/app/apps/keeper/diagnose-deploy.mjs:ro" -w /app/apps/keeper keeper \
+    node diagnose-deploy.mjs "$RPC" /admin/deployer.json /program/holdfast_vault.so "$(solana address -k "$PROGRAM")"
+}
 admin_cli() {
   docker compose run --rm --no-deps --user root -v "$ADMIN_DIR:/admin:ro" -w /app/apps/keeper keeper \
     tsx src/admin.ts "$@" --rpc "$RPC" --signer /admin/deployer.json
@@ -156,13 +163,24 @@ NEXT
     case "$RPC" in *api.mainnet-beta.solana.com* | *api.devnet.solana.com*) send=() ;; esac
     echo "deploying $program_id ($((size / 1024)) KB) to $(env_get SOLANA_CLUSTER) from $(solana address -k "$DEPLOYER")"
     if ! sol program deploy "$SO" --program-id "$PROGRAM" --with-compute-unit-price "$PRIORITY" --max-sign-attempts 50 ${send[@]+"${send[@]}"}; then
-      echo "the deploy did not finish; run this command again (the SOL in the unfinished buffer comes back after it succeeds)" >&2
+      echo >&2
+      echo "the deploy did not finish. Checking why (nothing is sent):" >&2
+      diagnose >&2 || true
+      echo >&2
+      echo "Run this command again once the cause is fixed. SOL left in an unfinished buffer comes back after a deploy" >&2
+      echo "succeeds; ignore the 12-word phrase above, it only belongs to that temporary buffer." >&2
       exit 1
     fi
     sol program close --buffers > /dev/null 2>&1 || true
     set_var HOLDFAST_PROGRAM_ID "$program_id"
     sol program show "$program_id"
     echo "HOLDFAST_PROGRAM_ID=$program_id is in .env. Next: bash deploy/program.sh init"
+    ;;
+
+  diagnose)
+    need "$DEPLOYER"
+    need "$PROGRAM"
+    diagnose
     ;;
 
   init)
@@ -286,7 +304,7 @@ NEXT
     ;;
 
   *)
-    sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac
