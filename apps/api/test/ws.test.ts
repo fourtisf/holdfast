@@ -190,7 +190,7 @@ describe("SubscriptionHub", () => {
 });
 
 describe("WebSocket /ws and the REST rate limit", () => {
-  it("socket upgrades do not count against the per-IP limit", async () => {
+  it("socket upgrades have their own budget, apart from the REST one", async () => {
     const limited = await makeApi(db, { rateLimitPerMinute: 2 });
     await limited.app.listen({ port: 0, host: "127.0.0.1" });
     const wsUrl = `ws://127.0.0.1:${(limited.app.server.address() as AddressInfo).port}/ws`;
@@ -206,6 +206,10 @@ describe("WebSocket /ws and the REST rate limit", () => {
       );
       expect(sockets).toHaveLength(4);
       for (const ws of sockets) ws.close();
+      // REST still has its own (spent) limit.
+      const codes = [];
+      for (let i = 0; i < 3; i++) codes.push((await limited.app.inject({ method: "GET", url: "/stats" })).statusCode);
+      expect(codes).toEqual([200, 200, 429]);
     } finally {
       await limited.app.close();
     }

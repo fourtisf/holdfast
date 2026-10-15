@@ -112,12 +112,19 @@ describe("fillGaps", () => {
     expect(fillGaps([k(10, 1), k(12, 2)], "1m", 5 * M).map((c) => c.t / M)).toEqual([10, 11, 12]);
     expect(fillGaps([], "1m", 5 * M)).toEqual([]);
   });
-  it("keeps only the newest bars", () => {
-    const out = fillGaps([k(0, 1), k(100, 2)], "1m", 200 * M, 50);
-    expect(out).toHaveLength(50);
-    expect(out[0]!.t).toBe(151 * M);
-    expect(out[49]!.t).toBe(200 * M);
-    expect(fillGaps([k(0, 1), k(1, 2), k(2, 3)], "1m", 2 * M, 2).map((c) => c.t / M)).toEqual([1, 2]);
+  it("keeps every real candle of a long-quiet coin and budgets only the filler", () => {
+    const real = Array.from({ length: 500 }, (_, i) => k(i, 1 + i / 1000));
+    const out = fillGaps(real, "1m", (499 + 26 * 60) * M); // quiet for 26 h
+    expect(out.filter((c) => !isFiller(c))).toHaveLength(500);
+    expect(out.slice(-60).every(isFiller)).toBe(true); // the newest 60 idle buckets, ending now
+    expect(out[out.length - 1]!.t).toBe((499 + 26 * 60) * M);
+    expect(out).toHaveLength(560);
+  });
+  it("collapses long gaps and spends the filler budget on the newest gaps first", () => {
+    const limits = { trailing: 2, perGap: 3, total: 6 };
+    const out = fillGaps([k(0, 1), k(100, 2), k(200, 3)], "1m", 300 * M, limits);
+    expect(out.map((c) => c.t / M)).toEqual([0, 1, 100, 101, 102, 103, 200, 299, 300]);
+    expect(out.filter((c) => !isFiller(c)).map((c) => c.t / M)).toEqual([0, 100, 200]);
   });
   it("works on larger timeframes", () => {
     const H = 60 * M;

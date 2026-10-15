@@ -2,7 +2,7 @@
 
 import type { CoinDetail, Holder, Page, Trade } from "@holdfast/core";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -86,6 +86,14 @@ function TradesTable({ coin, wallet }: { coin: CoinDetail; wallet: string | null
     );
   };
   useEvery(60_000, live, resync);
+  // Trades pushed while the first page was loading were skipped: catch up once it has landed.
+  const caughtUp = useRef(false);
+  useEffect(() => {
+    if (data && !caughtUp.current) {
+      caughtUp.current = true;
+      resync();
+    }
+  });
 
   useCoinChannel(coin.mint, {
     onResync: resync,
@@ -343,9 +351,11 @@ export function ActivityTabs({ coin, wallet }: { coin: CoinDetail; wallet: strin
           { value: "comments", label: "Comments" },
         ]}
       />
-      {tab === "trades" ? (
+      {/* Stays mounted on other tabs so it keeps folding in live trades. */}
+      <div hidden={tab !== "trades"}>
         <TradesTable coin={coin} wallet={wallet} />
-      ) : tab === "rounds" ? (
+      </div>
+      {tab === "trades" ? null : tab === "rounds" ? (
         <RoundsTable coin={coin} />
       ) : tab === "comments" ? (
         <CommentsPanel coin={coin} />

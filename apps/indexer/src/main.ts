@@ -3,7 +3,7 @@ import { pino } from "pino";
 import { parseHoldfastEvents } from "@holdfast/chain";
 import { connectDb, migrate } from "@holdfast/db";
 import { alerterFromEnv, Metrics } from "@holdfast/ops";
-import { loadConfig } from "./config.js";
+import { loadConfig, resolveWsUrl } from "./config.js";
 import { LiveIngest, rpcLogSource } from "./live.js";
 import { Poller, rpcChainSource } from "./poller.js";
 import { serialProcessor, type ProcessDeps } from "./process.js";
@@ -16,9 +16,11 @@ const log = pino({ level: config.logLevel, base: { service: "indexer" } });
 const db = await connectDb(config.databaseUrl, { onError: (err) => log.error({ err }, "db error") });
 if (config.migrate) await migrate(db, { log: (msg) => log.info(msg) });
 
+const ws = resolveWsUrl(config.rpcUrl, config.wsUrl);
+if (ws.ignored) log.warn({ ignored: ws.ignored, using: new URL(ws.url).host }, "SOLANA_WS_URL is not on the RPC host; using the RPC host's WebSocket instead");
 const connection = new Connection(config.rpcUrl, {
   commitment: "confirmed",
-  wsEndpoint: config.wsUrl ?? undefined,
+  wsEndpoint: ws.url,
   // web3.js sets no deadline: a hung request would otherwise hold its tick for minutes.
   fetch: (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(config.rpcTimeoutMs) }),
 });
@@ -80,12 +82,16 @@ if (config.live) {
     db,
     log,
     logs: rpcLogSource(connection),
-    chain,
+    // One retry layer: LiveIngest's own schedule, not the poller's null retries on top of it.
+    chain: rpcChainSource(connection, { maxSupportedTransactionVersion: config.maxSupportedTransactionVersion, nullRetryDelaysMs: [0] }),
     process: process_,
     holdfastProgramId: config.holdfastProgramId,
     onResult: (status) => liveResults.inc({ status }),
   });
-  await live.sync().catch((err: unknown) => log.warn({ err }, "live ingestion could not start; polling only"));
+  await live.sync().then(
+    () => liveWatching.set(live!.watching.length),
+    (err: unknown) => log.warn({ err }, "live ingestion could not start; polling only"),
+  );
 }
 
 const poller = config.poll
@@ -96,6 +102,7 @@ const poller = config.poll
       process: process_,
       holdfastProgramId: config.holdfastProgramId,
       intervalMs: config.pollIntervalMs,
+      addressConcurrency: config.pollConcurrency,
       onTick: (r) => {
         lastActivity = Date.now();
         pollFailures.inc({}, r.failed);
@@ -126,7 +133,7 @@ const server = buildWebhookServer({
 });
 if (!config.heliusWebhookSecret) log.warn("HELIUS_WEBHOOK_SECRET is not set: /webhooks/helius rejects every delivery");
 await server.listen({ port: config.port, host: config.host });
-log.info({ port: config.port, poll: config.poll, live: config.live, order: config.reductionOrder }, "indexer started");
+log.info({ port: config.port, poll: config.poll, live: config.live, ws: new URL(ws.url).host, order: config.reductionOrder }, "indexer started");
 
 let closing = false;
 async function shutdown(signal: string) {

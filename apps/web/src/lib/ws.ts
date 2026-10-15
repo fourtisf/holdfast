@@ -72,8 +72,9 @@ interface Entry {
  * the first subscriber sends `subscribe`, the last one to leave sends `unsubscribe`, and every active
  * subscription is replayed after a reconnect.
  *
- * The server answers every ping, so a socket that has been silent for two ping intervals is dead (sleep,
- * a network change) even if the browser still calls it open: it is dropped and replaced.
+ * The server answers every ping, so a socket whose last ping is still unanswered at the next ping is dead
+ * (sleep, a network change) even if the browser still calls it open: it is dropped and replaced. This counts
+ * pings, not elapsed time, so throttled timers in background tabs do not look like a dead socket.
  */
 export class WsClient {
   private socket: SocketLike | null = null;
@@ -86,6 +87,7 @@ export class WsClient {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private lastFrameAt = 0;
+  private pingSentAt = 0;
   private _serverOffsetMs = 0;
   private closedByUser = false;
   private pending = false;
@@ -224,9 +226,11 @@ export class WsClient {
       this.clearConnectTimer();
       this.attempt = 0;
       this.lastFrameAt = Date.now();
+      this.pingSentAt = 0;
       this.setState("open");
       for (const entry of this.entries.values()) this.send(subscribeMessage(entry.sub, "subscribe"));
       this.startPing();
+      this.ping(); // early pong: the server clock offset
       for (const l of [...this.openListeners]) {
         try {
           l();
@@ -317,12 +321,18 @@ export class WsClient {
   private startPing(): void {
     this.stopPing();
     this.pingTimer = setInterval(() => {
-      if (Date.now() - this.lastFrameAt > 2 * this.opts.pingIntervalMs + 5_000) {
+      // The previous ping got no answer (no frame at all since it was sent): the socket is dead.
+      if (this.pingSentAt > this.lastFrameAt) {
         this.restart();
         return;
       }
-      this.send({ type: "ping" });
+      this.ping();
     }, this.opts.pingIntervalMs);
+  }
+
+  private ping(): void {
+    this.pingSentAt = Date.now();
+    this.send({ type: "ping" });
   }
 
   private stopPing(): void {

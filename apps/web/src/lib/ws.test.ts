@@ -68,7 +68,7 @@ describe("WsClient", () => {
     expect(FakeSocket.instances).toHaveLength(1);
     const socket = FakeSocket.instances[0]!;
     socket.open();
-    expect(socket.sent).toEqual([{ type: "subscribe", channel: "trades", mint: "M" }]);
+    expect(socket.sent).toEqual([{ type: "subscribe", channel: "trades", mint: "M" }, { type: "ping" }]);
 
     socket.push({ channel: "trades", mint: "M", data: { sig: "1" } as never });
     socket.push({ channel: "vault", mint: "M", data: {} as never });
@@ -77,11 +77,11 @@ describe("WsClient", () => {
     expect(b).toHaveBeenCalledTimes(2);
 
     offA();
-    expect(socket.sent).toHaveLength(1);
-    offB();
-    expect(socket.sent[1]).toEqual({ type: "unsubscribe", channel: "trades", mint: "M" });
-    offB(); // idempotent
     expect(socket.sent).toHaveLength(2);
+    offB();
+    expect(socket.sent[2]).toEqual({ type: "unsubscribe", channel: "trades", mint: "M" });
+    offB(); // idempotent
+    expect(socket.sent).toHaveLength(3);
     expect(client.activeChannels).toEqual([]);
   });
 
@@ -105,10 +105,7 @@ describe("WsClient", () => {
     expect(FakeSocket.instances).toHaveLength(2);
     const second = FakeSocket.instances[1]!;
     second.open();
-    expect(second.sent).toEqual([
-      { type: "subscribe", channel: "stats" },
-      { type: "subscribe", channel: "deposit-status", launchId: "L" },
-    ]);
+    expect(second.sent).toEqual([{ type: "subscribe", channel: "stats" }, { type: "subscribe", channel: "deposit-status", launchId: "L" }, { type: "ping" }]);
     expect(states).toEqual(["connecting", "open", "reconnecting", "open"]);
   });
 
@@ -153,10 +150,14 @@ describe("WsClient", () => {
     vi.advanceTimersByTime(100);
     await flush();
     FakeSocket.instances[1]!.open();
-    expect(seen).toEqual([[{ type: "subscribe", channel: "trades", mint: "M" }], [{ type: "subscribe", channel: "trades", mint: "M" }]]);
+    const sub = { type: "subscribe", channel: "trades", mint: "M" };
+    expect(seen).toEqual([
+      [sub, { type: "ping" }],
+      [sub, { type: "ping" }],
+    ]);
   });
 
-  it("replaces a socket that went silent (no pong for two ping intervals)", async () => {
+  it("replaces a socket whose ping went unanswered, but not a slow one", async () => {
     vi.useRealTimers();
     vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval", "Date"] });
     const client = make();
@@ -164,11 +165,20 @@ describe("WsClient", () => {
     await flush();
     const socket = FakeSocket.instances[0]!;
     socket.open();
-    vi.advanceTimersByTime(10_000);
+    expect(socket.sent.at(-1)).toEqual({ type: "ping" }); // pinged on open
+    vi.advanceTimersByTime(1);
     socket.push({ channel: "pong", serverTime: Date.now() + 2_000 });
     expect(client.serverOffsetMs).toBe(2_000);
-    vi.advanceTimersByTime(20_000);
-    expect(FakeSocket.instances).toHaveLength(1); // 20 s since the last frame: still fine
+    // Throttled background timers: each ping is answered, however long the gap between ticks.
+    for (let i = 0; i < 3; i++) {
+      vi.advanceTimersByTime(10_000);
+      vi.advanceTimersByTime(1);
+      socket.push({ channel: "pong", serverTime: Date.now() });
+    }
+    expect(FakeSocket.instances).toHaveLength(1);
+    // A ping with no answer by the next tick: dead.
+    vi.advanceTimersByTime(10_000);
+    expect(socket.readyState).toBe(1);
     vi.advanceTimersByTime(10_000);
     expect(socket.readyState).toBe(3);
     expect(client.state).toBe("reconnecting");

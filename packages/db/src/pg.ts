@@ -62,7 +62,14 @@ export function createPgDb(options: PgDbOptions): Db {
       let failures = 0;
 
       const connect = async (): Promise<void> => {
-        const c = new pg.Client({ connectionString: options.connectionString, keepAlive: true, keepAliveInitialDelayMillis: 10_000, query_timeout: 10_000 });
+        // A connect that never completes must fail too, or nothing would schedule the next attempt.
+        const c = new pg.Client({
+          connectionString: options.connectionString,
+          keepAlive: true,
+          keepAliveInitialDelayMillis: 10_000,
+          query_timeout: 10_000,
+          connectionTimeoutMillis: 10_000,
+        });
         let dead = false;
         // A drop can surface both as an 'error' event and as a rejected query: retry once per connection.
         const drop = (err: Error) => {

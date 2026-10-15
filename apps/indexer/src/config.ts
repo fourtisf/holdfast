@@ -9,6 +9,8 @@ export interface IndexerConfig {
   live: boolean;
   /** Abort RPC requests after this long (one stuck request must not stall ingestion). */
   rpcTimeoutMs: number;
+  /** Addresses the poller lists at the same time (each is one RPC call). */
+  pollConcurrency: number;
   holdfastProgramId: string;
   heliusWebhookSecret: string | null;
   port: number;
@@ -42,7 +44,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IndexerConfig 
     rpcUrl: env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com",
     wsUrl: env.SOLANA_WS_URL || null,
     live: bool(env.INDEXER_LIVE, true),
-    rpcTimeoutMs: Number(env.INDEXER_RPC_TIMEOUT_MS ?? 20_000),
+    rpcTimeoutMs: Number(env.INDEXER_RPC_TIMEOUT_MS || 20_000),
+    pollConcurrency: Math.max(1, Number(env.INDEXER_POLL_CONCURRENCY || 2)),
     holdfastProgramId: env.HOLDFAST_PROGRAM_ID ?? "8pVgMgwxbhPuKLwsP7z9sa6ADs7L3KWYAbhBGnrtgSmN",
     heliusWebhookSecret: env.HELIUS_WEBHOOK_SECRET || null,
     port: Number(env.INDEXER_PORT ?? 4100),
@@ -55,4 +58,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IndexerConfig 
     migrate: bool(env.INDEXER_MIGRATE, true),
     logLevel: env.LOG_LEVEL ?? "info",
   };
+}
+
+/**
+ * The RPC WebSocket for live ingestion. A SOLANA_WS_URL on another host than SOLANA_RPC_URL is most likely
+ * left over (the public endpoint after the RPC moved to a paid provider), so it is replaced by the one
+ * derived from the RPC URL (https → wss, same host and key), with a warning.
+ */
+export function resolveWsUrl(rpcUrl: string, wsUrl: string | null): { url: string; ignored: string | null } {
+  const derived = rpcUrl.replace(/^http/, "ws");
+  if (!wsUrl) return { url: derived, ignored: null };
+  try {
+    if (new URL(wsUrl).host !== new URL(rpcUrl).host) return { url: derived, ignored: new URL(wsUrl).host };
+  } catch {
+    return { url: derived, ignored: "invalid URL" };
+  }
+  return { url: wsUrl, ignored: null };
 }

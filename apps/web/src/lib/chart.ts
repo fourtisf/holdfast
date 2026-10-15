@@ -117,22 +117,36 @@ export function isFiller(c: Candle): boolean {
   return c.v === 0;
 }
 
+/** Limits for gap filling: idle buckets after the last trade, inside one gap, and in total. */
+export const FILL_LIMITS = { trailing: 60, perGap: 120, total: 1500 };
+
 /**
- * Continuous time axis: insert a flat candle (the previous close, no volume) for every bucket without
- * trades, between candles and from the last one up to the bucket of `now`. Only the newest `maxBars`
- * are returned, so a long idle stretch costs no more than a full chart.
+ * Continuous time axis: insert a flat candle (the previous close, no volume) for buckets without trades,
+ * between candles and from the last one up to the bucket of `now`. Real candles are always kept; only the
+ * filler is budgeted (newest gaps first), so a coin that has been quiet for days still shows its trades,
+ * followed by at most `trailing` idle buckets that keep moving with the clock.
  */
-export function fillGaps(candles: readonly Candle[], tf: CandleTimeframe, now: number, maxBars = 1500): Candle[] {
+export function fillGaps(candles: readonly Candle[], tf: CandleTimeframe, now: number, limits = FILL_LIMITS): Candle[] {
   if (candles.length === 0) return [];
   const size = bucketMs(tf);
-  const out: Candle[] = [];
-  // Newest first: buckets after candle i (up to `next`) are flat at its close.
-  let next = Math.max(candles[candles.length - 1]!.t, candleBucket(now, tf));
-  for (let i = candles.length - 1; i >= 0 && out.length < maxBars; i--) {
+  const flat = (t: number, c: number): Candle => ({ t, o: c, h: c, l: c, c, v: 0 });
+  let budget = limits.total;
+  const out: Candle[] = []; // built newest first
+  const last = candles[candles.length - 1]!;
+  const end = candleBucket(now, tf);
+  // Trailing idle buckets: the newest ones (ending at the current bucket), when the quiet stretch is long.
+  const trailing = Math.min(Math.max(0, Math.round((end - last.t) / size)), limits.trailing, budget);
+  for (let k = 0; k < trailing; k++) out.push(flat(end - k * size, last.c));
+  budget -= trailing;
+  for (let i = candles.length - 1; i >= 0; i--) {
     const c = candles[i]!;
-    for (let t = next; t > c.t && out.length < maxBars; t -= size) out.push({ t, o: c.c, h: c.c, l: c.c, c: c.c, v: 0 });
-    if (out.length < maxBars) out.push(c);
-    next = c.t - size;
+    out.push(c);
+    const prev = candles[i - 1];
+    if (!prev || budget <= 0) continue;
+    // Buckets right after `prev`, flat at its close; a longer gap is collapsed past the per-gap limit.
+    const gap = Math.min(Math.max(0, Math.round((c.t - prev.t) / size) - 1), limits.perGap, budget);
+    for (let k = gap; k >= 1; k--) out.push(flat(prev.t + k * size, prev.c));
+    budget -= gap;
   }
   return out.reverse();
 }

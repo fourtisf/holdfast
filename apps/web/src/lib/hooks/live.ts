@@ -35,35 +35,64 @@ export interface CoinChannelHandlers {
   onResync?: () => void;
 }
 
-/** Subscribe to a coin's `trades` channel (which also carries `vault`, `round` and `resync` messages). */
+/**
+ * Subscribe to a coin's `trades` channel (which also carries `vault`, `round` and `resync` messages).
+ * Resyncs are spread over a random delay (every open tab gets the server's `resync` at the same moment)
+ * and merged while one is pending.
+ */
 export function useCoinChannel(mint: string | null, handlers: CoinChannelHandlers) {
   const ref = useRef(handlers);
   ref.current = handlers;
   useEffect(() => {
     if (!mint) return;
     const client = getWsClient();
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const resyncWithin = (maxDelayMs: number) => {
+      if (pending || !ref.current.onResync) return;
+      pending = setTimeout(() => {
+        pending = null;
+        ref.current.onResync?.();
+      }, Math.random() * maxDelayMs);
+    };
     const off = client.subscribe({ channel: "trades", mint }, (msg) => {
       if (msg.channel === "trades") ref.current.onTrade?.(msg.data);
       else if (msg.channel === "vault") ref.current.onVault?.(msg.data);
       else if (msg.channel === "round") ref.current.onRound?.(msg.data);
-      else if (msg.channel === "resync") ref.current.onResync?.();
+      else if (msg.channel === "resync") resyncWithin(5_000);
     });
-    const offOpen = client.onOpen(() => ref.current.onResync?.());
+    const offOpen = client.onOpen(() => resyncWithin(1_500));
     return () => {
       off();
       offOpen();
+      if (pending) clearTimeout(pending);
     };
   }, [mint]);
 }
 
-/** Run `fn` every `ms` while `enabled` (a safety-net resync for anything a live view might have missed). */
+/**
+ * Run `fn` every `ms` while `enabled` (a safety-net resync for anything a live view might have missed).
+ * Hidden tabs skip it and run it once when they become visible again.
+ */
 export function useEvery(ms: number, enabled: boolean, fn: () => void) {
   const ref = useRef(fn);
   ref.current = fn;
   useEffect(() => {
     if (!enabled) return;
-    const id = setInterval(() => ref.current(), ms);
-    return () => clearInterval(id);
+    let missed = false;
+    const id = setInterval(() => {
+      if (document.visibilityState === "hidden") missed = true;
+      else ref.current();
+    }, ms);
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || !missed) return;
+      missed = false;
+      ref.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [ms, enabled]);
 }
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTradesBySig, isProcessed, type Db } from "@holdfast/db";
-import { LiveIngest, Poller, type ChainSource, type LogSource } from "../src/index.js";
+import { LiveIngest, Poller, resolveWsUrl, type ChainSource, type LogSource } from "../src/index.js";
 import type { ParsedTx } from "../src/tx.js";
 import { coinFixture, harness, HOLDFAST, launchTx, silentLog, TxBuilder, wallet, type CoinFixture, type Harness } from "./fixtures.js";
 
@@ -179,6 +179,41 @@ describe("LiveIngest", () => {
     expect(polled).toEqual([]);
   });
 
+  it("fetches at most maxConcurrent signatures at once and drops pushes past the backlog", async () => {
+    const logs = new FakeLogs();
+    let active = 0;
+    let peak = 0;
+    const results: string[] = [];
+    const slowChain: ChainSource = {
+      getSignaturesForAddress: async () => [],
+      getTransaction: async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((r) => setTimeout(r, 5));
+        active--;
+        return null;
+      },
+    };
+    const live = new LiveIngest({
+      db,
+      logs,
+      chain: slowChain,
+      process: h.run,
+      log: silentLog,
+      holdfastProgramId: HOLDFAST,
+      retryDelaysMs: [0],
+      maxConcurrent: 2,
+      maxBacklog: 3,
+      onResult: (s) => results.push(s),
+    });
+    await live.sync();
+    for (let i = 0; i < 8; i++) logs.emit(`Burst${i}`.padEnd(64, "1"), [HOLDFAST]);
+    await live.idle();
+    expect(peak).toBe(2);
+    expect(results.filter((r) => r === "dropped")).toHaveLength(3); // 2 running + 3 queued, the other 3 dropped
+    expect(results.filter((r) => r === "unavailable")).toHaveLength(5);
+  });
+
   it("stops watching on stop()", async () => {
     const { logs, live } = setup();
     await live.sync();
@@ -187,5 +222,15 @@ describe("LiveIngest", () => {
     logs.emit("x", [HOLDFAST]);
     await live.sync();
     expect(logs.addresses).toEqual([]);
+  });
+});
+
+describe("resolveWsUrl", () => {
+  it("derives the WebSocket from the RPC URL and ignores one on another host", () => {
+    const rpc = "https://mainnet.helius-rpc.com/?api-key=k";
+    expect(resolveWsUrl(rpc, null)).toEqual({ url: "wss://mainnet.helius-rpc.com/?api-key=k", ignored: null });
+    expect(resolveWsUrl(rpc, "wss://mainnet.helius-rpc.com/?api-key=k")).toEqual({ url: "wss://mainnet.helius-rpc.com/?api-key=k", ignored: null });
+    expect(resolveWsUrl(rpc, "wss://api.mainnet-beta.solana.com")).toEqual({ url: "wss://mainnet.helius-rpc.com/?api-key=k", ignored: "api.mainnet-beta.solana.com" });
+    expect(resolveWsUrl("http://127.0.0.1:8899", "nonsense")).toEqual({ url: "ws://127.0.0.1:8899", ignored: "invalid URL" });
   });
 });
