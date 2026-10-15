@@ -15,8 +15,8 @@ export const X_URL = process.env.NEXT_PUBLIC_X_URL || "https://x.com/moatpad";
 export const X_HANDLE = `@${X_URL.replace(/\/+$/, "").split("/").pop() || "moatpad"}`;
 /** Official Telegram channel, linked next to the X account. */
 export const TELEGRAM_URL = process.env.NEXT_PUBLIC_TELEGRAM_URL || "https://t.me/MOATPAD";
-/** $MOATPAD contract address; empty shows "Coming soon". */
-export const MOAT_CA = (process.env.NEXT_PUBLIC_MOAT_CA ?? "").trim();
+/** The official $MOATPAD contract address (pump.fun), shown in the announcement bar; NEXT_PUBLIC_MOAT_CA overrides it. */
+export const MOAT_CA = (process.env.NEXT_PUBLIC_MOAT_CA || "4qLdhoVDiAkXVXqU4D3rSPp6pMMnJzRJr38do55Hpump").trim();
 
 const DEFAULT_RPC: Record<Cluster, string> = {
   devnet: "https://api.devnet.solana.com",
