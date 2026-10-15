@@ -2,8 +2,9 @@
 # Deploys and sets up the vault program from the server, run from the repository root after deploy/init.sh:
 #
 #   bash deploy/program.sh keys          install the Solana CLI, create the deployer and program keypairs
-#   bash deploy/program.sh import-deployer   use your own wallet as the deployer: its address, then its private key
-#                                        at a hidden prompt (run it before or instead of creating one with `keys`)
+#   bash deploy/program.sh import-deployer [file]   use your own wallet as the deployer: its address, then its
+#                                        private key at a hidden prompt or from a file that is deleted after reading
+#                                        (run it before or instead of creating one with `keys`)
 #   bash deploy/program.sh deploy        deploy deploy/program/holdfast_vault.so, or upgrade it (checks the hash,
 #                                        the address it was built for and the deployer's balance)
 #   bash deploy/program.sh init          create the on-chain Config with the keeper and launcher from keys/, and give
@@ -82,12 +83,20 @@ NEXT
     printf 'Address of the wallet that pays and owns the program (as Phantom shows it): '
     IFS= read -r expected
     expected="$(printf '%s' "$expected" | tr -d '[:space:]')"
-    printf 'Its private key (Phantom: Settings > Manage Accounts > your account > Show Private Key > Solana,\n'
-    printf 'then the copy button). Paste it and press Enter; nothing shows while you paste: '
-    IFS= read -rs key
-    # A paste that wrapped over several lines arrives as several lines: take them all, so none reaches the shell.
-    while IFS= read -rs -t 0.5 more; do key+="$more"; done
-    echo
+    if [ -n "${2:-}" ]; then
+      # From a file (e.g. pasted with `nano`, or uploaded over SFTP), deleted right after it is read.
+      [ -f "$2" ] || { echo "$2 does not exist" >&2; exit 1; }
+      key="$(cat "$2")"
+      shred -u "$2" 2> /dev/null || rm -f "$2"
+      echo "read the key from $2 and deleted the file"
+    else
+      printf 'Its private key (Phantom: Settings > Manage Accounts > your account > Show Private Key > Solana,\n'
+      printf 'then the copy button). Paste it and press Enter; nothing shows while you paste: '
+      IFS= read -rs key
+      # A paste that wrapped over several lines arrives as several lines: take them all, so none reaches the shell.
+      while IFS= read -rs -t 0.5 more; do key+="$more"; done
+      echo
+    fi
     # printf is a builtin: the key never shows up in the process list or the shell history.
     if ! printf '%s' "$key" | docker run --rm -i -v "$PWD/deploy:/d:ro" node:22-bookworm-slim node /d/import-key.mjs "$expected" \
       > "$DEPLOYER.tmp" 2> "$ADMIN_DIR/.address"; then
@@ -208,7 +217,7 @@ NEXT
     ;;
 
   *)
-    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

@@ -57,6 +57,14 @@ bash deploy/program.sh keys              # installs the Solana CLI, creates the 
 
 With your own wallet as deployer, its private key sits on the server while you deploy and administer. Delete
 `~/moatpad-admin/deployer.json` afterwards and run `import-deployer` again when you need it (upgrades, `admin`).
+The import takes Phantom's base58 export, a hex export or a JSON byte array, and checks the key against the address
+you give. If pasting at the hidden prompt keeps failing, put the key in a file and import that (the file is deleted
+right after it is read; nothing else may see your screen while `nano` shows the key):
+
+```bash
+nano ~/moatpad-admin/key.txt     # paste the key, Ctrl+O, Enter, Ctrl+X
+bash deploy/program.sh import-deployer ~/moatpad-admin/key.txt
+```
 
 The program address is compiled into the program, so the binary is built for it on a machine with the toolchain:
 `bash deploy/build-program.sh <PROGRAM_ADDRESS>` writes `deploy/program/` (binary, sha256, address), which is
