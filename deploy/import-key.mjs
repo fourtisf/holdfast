@@ -12,7 +12,7 @@ const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 // PKCS#8 wrapper of a raw Ed25519 seed (RFC 8410).
 const PKCS8_ED25519_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 
-function base58Encode(bytes) {
+export function base58Encode(bytes) {
   let n = BigInt(`0x${Buffer.from(bytes).toString("hex")}`);
   let out = "";
   while (n > 0n) {

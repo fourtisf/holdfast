@@ -14,6 +14,7 @@
 #   bash deploy/program.sh admin <cmd>   any command of apps/keeper/src/admin.ts, signed by the deployer
 #   bash deploy/program.sh revenue <wallet>   the keeper becomes the platform treasury: the 10% share pays for its
 #                                        transactions and the rest is forwarded to <wallet>
+#   bash deploy/program.sh export keeper|launcher|deployer   show a wallet's private key to import it in Phantom
 #   bash deploy/program.sh launches open|pause
 #   bash deploy/program.sh status        addresses and balances
 #
@@ -207,6 +208,24 @@ NEXT
     echo "platform treasury: the keeper; it keeps $(sol_amount "${reserve:-300000000}") SOL for fees and forwards the rest to $wallet"
     ;;
 
+  export)
+    case "${2:-}" in
+      keeper | launcher) file="keys/$2.json" ;;
+      deployer) file="$DEPLOYER" ;;
+      *) echo "usage: bash deploy/program.sh export keeper|launcher|deployer" >&2; exit 1 ;;
+    esac
+    [ -f "$file" ] || { echo "$file is missing" >&2; exit 1; }
+    echo "Private key of the $2 wallet $(solana address -k "$file"), to import in Phantom (Add account > Import"
+    echo "Private Key). The server keeps its copy: the services sign with it. Make sure nobody can see this screen and"
+    printf 'take no screenshot. Press Enter to show it: '
+    read -r _
+    docker run --rm -i -v "$PWD/deploy:/d:ro" node:22-bookworm-slim node /d/export-key.mjs < "$file"
+    printf 'Press Enter when you have copied it; the screen and scrollback are cleared: '
+    read -r _
+    printf '\033[2J\033[3J\033[H'
+    echo "the $2 private key was shown and cleared from the screen"
+    ;;
+
   launches)
     case "${2:-}" in
       open) set_var LAUNCHES_PAUSED false ;;
@@ -231,7 +250,7 @@ NEXT
     ;;
 
   *)
-    sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

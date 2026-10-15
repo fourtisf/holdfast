@@ -62,6 +62,9 @@ you give. If pasting at the hidden prompt keeps failing, `import-deployer --show
 you can check what arrived, and wipes the screen and scrollback right after; `import-deployer <file>` reads it from a
 file (e.g. uploaded over SFTP) and deletes the file.
 
+`bash deploy/program.sh export keeper` (or `launcher`, `deployer`) shows a wallet's private key in the format Phantom
+imports, then clears the screen. The server keeps its copy, since the services sign with it.
+
 The program address is compiled into the program, so the binary is built for it on a machine with the toolchain:
 `bash deploy/build-program.sh <PROGRAM_ADDRESS>` writes `deploy/program/` (binary, sha256, address), which is
 committed. Only the deployer needs SOL: send it 4.75 (about 4.66 is the rent of the 653 KB program, which stays in the
