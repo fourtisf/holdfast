@@ -263,7 +263,7 @@ export function CreateView() {
                   value={form.name}
                   maxLength={NAME_MAX}
                   onChange={(e) => set("name", e.target.value)}
-                  placeholder="Kelp Lord"
+                  placeholder="Moatpad"
                   className={cn(inputClass, border("name"))}
                   autoComplete="off"
                 />
@@ -284,7 +284,7 @@ export function CreateView() {
                     id="ticker"
                     value={form.ticker}
                     onChange={(e) => set("ticker", normalizeTicker(e.target.value))}
-                    placeholder="KELP"
+                    placeholder="MOATPAD"
                     className={cn(inputClass, "pl-6 uppercase", border("ticker"))}
                     autoComplete="off"
                   />
