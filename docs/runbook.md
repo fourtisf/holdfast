@@ -69,6 +69,9 @@ Do not deploy to mainnet without an external audit of `programs/holdfast-vault`.
 
 ## 3. Mainnet deployment
 
+On a single server, `deploy/program.sh` runs steps 1, 2, 4 and 6 (see [deploy/README.md](../deploy/README.md));
+the commands below are what it does.
+
 1. **Program.** Deploy from a clean machine with the audited commit:
    ```bash
    anchor build --verifiable -p holdfast_vault
