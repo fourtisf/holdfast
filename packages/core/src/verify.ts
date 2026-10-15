@@ -7,7 +7,7 @@
 import { base58, base64 } from "@scure/base";
 import { toHex } from "./merkle.js";
 
-export const HOLDFAST_PROGRAM_ADDRESS = "8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM";
+export const HOLDFAST_PROGRAM_ADDRESS = "8pVgMgwxbhPuKLwsP7z9sa6ADs7L3KWYAbhBGnrtgSmN";
 
 /** Anchor event discriminator of `RoundOpened` (sha256("event:RoundOpened")[..8]). */
 const ROUND_OPENED_DISCRIMINATOR = [99, 173, 228, 72, 142, 57, 109, 178];

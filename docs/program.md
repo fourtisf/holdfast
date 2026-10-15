@@ -1,7 +1,7 @@
 # Moatpad Vault program (`programs/holdfast-vault`)
 
 Anchor 0.32 program. Program id (devnet placeholder, regenerate per deployment with `anchor keys sync`):
-`8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM`.
+`8pVgMgwxbhPuKLwsP7z9sa6ADs7L3KWYAbhBGnrtgSmN`.
 
 ## Accounts and PDAs
 

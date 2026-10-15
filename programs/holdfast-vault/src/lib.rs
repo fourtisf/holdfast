@@ -20,7 +20,7 @@ pub mod venue;
 use instructions::*;
 use state::Params;
 
-declare_id!("8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM");
+declare_id!("8pVgMgwxbhPuKLwsP7z9sa6ADs7L3KWYAbhBGnrtgSmN");
 
 #[program]
 pub mod holdfast_vault {

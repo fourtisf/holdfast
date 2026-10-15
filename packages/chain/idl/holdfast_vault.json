@@ -1,5 +1,5 @@
 {
-  "address": "8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM",
+  "address": "8pVgMgwxbhPuKLwsP7z9sa6ADs7L3KWYAbhBGnrtgSmN",
   "metadata": {
     "name": "holdfast_vault",
     "version": "0.1.0",
@@ -1198,7 +1198,7 @@
           "docs": [
             "Only the program's upgrade authority may create the config (prevents an init front-run)."
           ],
-          "address": "8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM"
+          "address": "8pVgMgwxbhPuKLwsP7z9sa6ADs7L3KWYAbhBGnrtgSmN"
         },
         {
           "name": "program_data"

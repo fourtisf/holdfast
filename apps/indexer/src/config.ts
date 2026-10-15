@@ -34,7 +34,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IndexerConfig 
   return {
     databaseUrl,
     rpcUrl: env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com",
-    holdfastProgramId: env.HOLDFAST_PROGRAM_ID ?? "8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM",
+    holdfastProgramId: env.HOLDFAST_PROGRAM_ID ?? "8pVgMgwxbhPuKLwsP7z9sa6ADs7L3KWYAbhBGnrtgSmN",
     heliusWebhookSecret: env.HELIUS_WEBHOOK_SECRET || null,
     port: Number(env.INDEXER_PORT ?? 4100),
     host: env.INDEXER_HOST ?? "0.0.0.0",

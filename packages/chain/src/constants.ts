@@ -1,6 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 
-export const HOLDFAST_PROGRAM_ID = new PublicKey(process.env.HOLDFAST_PROGRAM_ID ?? "8WhCTXTNjZi1fJn5uK6E4cRiGJtKt3RUsnJjCWf5ytdM");
+export const HOLDFAST_PROGRAM_ID = new PublicKey(process.env.HOLDFAST_PROGRAM_ID ?? "8pVgMgwxbhPuKLwsP7z9sa6ADs7L3KWYAbhBGnrtgSmN");
 
 /** pump.fun programs (same ids on mainnet and devnet). Verified against @pump-fun/pump-sdk 4.1.0 IDLs. */
 export const PUMP_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
