@@ -5,21 +5,16 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { ButtonLink } from "@/components/ui/Button";
 import { api } from "@/lib/api";
+import { isLaunchId, solanaPayUrl } from "@/lib/launch";
 import { DepositModal } from "./DepositModal";
-
-/** `solana:` URI for wallets and the QR code (the same format the API hands out). */
-function solanaPayUrl(address: string, lamports: string, ticker: string): string {
-  const sol = (Number(lamports) / 1e9).toString();
-  const params = new URLSearchParams({ amount: sol, label: "Moatpad", message: `Launch $${ticker}` });
-  return `solana:${address}?${params.toString().replace(/\+/g, "%20")}`;
-}
 
 /** A launch started elsewhere (the Telegram bot), shown with the same payment and progress screen as /create. */
 export function PayView({ launchId }: { launchId: string }) {
   const router = useRouter();
-  const { data, error } = useSWR(["launch", launchId], () => api.launchStatus(launchId), { revalidateOnFocus: false });
+  const valid = isLaunchId(launchId);
+  const { data, error } = useSWR(valid ? ["launch", launchId] : null, () => api.launchStatus(launchId), { revalidateOnFocus: false });
 
-  if (error) {
+  if (error || !valid) {
     return (
       <div className="mx-auto max-w-md py-16 text-center">
         <h1 className="text-xl font-semibold text-fg">Launch not found</h1>
@@ -41,5 +36,15 @@ export function PayView({ launchId }: { launchId: string }) {
     solanaPayUrl: solanaPayUrl(data.depositAddress, data.requiredLamports, ticker),
     expiresAt: data.expiresAt ?? Date.now(),
   };
-  return <DepositModal launch={launch} ticker={ticker} devBuySol={data.devBuySol ?? 0} onClose={() => router.push("/")} onRestart={() => router.push("/create")} />;
+  return (
+    <DepositModal
+      launch={launch}
+      ticker={ticker}
+      name={data.name}
+      devBuySol={data.devBuySol ?? 0}
+      initialStatus={data}
+      onClose={() => router.push("/")}
+      onRestart={() => router.push("/create")}
+    />
+  );
 }

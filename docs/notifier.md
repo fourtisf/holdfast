@@ -24,7 +24,8 @@ TELEGRAM_BOT_TOKEN=123456:ABC... pnpm --filter @holdfast/notifier start
 Addresses must be base58 Solana addresses (32 to 44 characters that decode to 32 bytes). `/watch` on a coin mint
 points to `/coin` instead. A chat holds at most **20 subscriptions** (wallets and coins together). The bot works in
 private chats, groups (commands only; `/cmd@OtherBot` is ignored) and channels where it is an admin. In a group
-anyone can change the group's subscriptions, `/stop` included.
+only admins add or remove the group's alerts (`/follow`, `/watch`, `/unfollow`, `/unwatch`, `/stop`, `/buybot`, the
+alerts button).
 
 ## Events
 
@@ -50,7 +51,7 @@ Not announced:
 - Payouts that are pending, failed or carried to the next round; rounds with no confirmed payout.
 - Events older than 24 hours (history re-indexed long after the fact).
 - Events from more than 10 minutes before the chat subscribed (no graduation news for a coin followed after it
-  graduated).
+  graduated). Catch-up replays are stricter: only chats that were subscribed when the event happened get it.
 - Excluded addresses (pools, PDAs): they hold no earning lots.
 
 ## Idempotency
@@ -78,8 +79,22 @@ sends nothing new. Selling out and buying back starts a new position, which gets
 The getUpdates offset lives in `tg_state` (`telegram_update_offset`), stored after each update. Claims older than
 30 days are pruned daily, except milestone claims, which are kept.
 
-On startup the notifier replays rounds closed, vault buybacks and graduations from the last `NOTIFIER_CATCHUP_MS`
-(15 minutes), so a restart or a short outage loses nothing. NOTIFYs sent while it was down for longer are not replayed.
+On startup, and when its LISTEN connection to the database comes back after a drop, the notifier replays rounds
+closed, vault buybacks, graduations, launch progress and burns from the last `NOTIFIER_CATCHUP_MS` (15 minutes), and
+buys from the last 2 minutes (buy alerts are only posted while fresh), so a restart or a short outage loses nothing.
+NOTIFYs sent while it was down for longer are not replayed.
+
+A group gets at most 15 buy alerts a minute. A buy is claimed (`buy:<sig>:<index>`) before it takes one of those
+slots, so a replay of buys already posted uses none. Buys over the limit keep their claim (a replay never posts them
+late) and are counted in the group's next alert ("+N more buys since the last alert").
+
+## End-to-end check
+
+`pnpm --filter @holdfast/notifier e2e` runs the real API and notifier against a throwaway Postgres 16 cluster and a
+fake Telegram Bot API, uses the bot like people do (launch wizard, buy bot and its per-minute limit, alerts, weight
+milestones, burns, restarts, supergroup migrations) and prints a pass/fail table. It takes about a minute and a half,
+most of it waiting out the buy limit's one-minute window. How it works and its options: the comment at the top of
+`apps/notifier/e2e/run.ts`. It is not part of `pnpm test`.
 
 ## Schema
 
@@ -98,7 +113,7 @@ Migration `005_notifier.sql`: `tg_subscriptions (chat_id, kind 'wallet' | 'coin'
 | `NOTIFIER_OPS_PORT` | `9104` | `/healthz` and `/metrics`; `0` disables |
 | `NOTIFIER_MILESTONE_INTERVAL_MS` | `600000` | Weight sweep interval |
 | `NOTIFIER_POLL_TIMEOUT_SECS` | `30` | getUpdates long-poll timeout |
-| `NOTIFIER_CATCHUP_MS` | `900000` | Startup replay window; `0` disables |
+| `NOTIFIER_CATCHUP_MS` | `900000` | Replay window at startup and after a database reconnect; `0` disables |
 | `NOTIFIER_MIGRATE` | `1` | `0` skips migrations at startup |
 | `TELEGRAM_API_URL` | `https://api.telegram.org` | A self-hosted Bot API server |
 | `LOG_LEVEL` | `info` | pino level |

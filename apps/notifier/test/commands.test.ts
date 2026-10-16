@@ -266,10 +266,14 @@ describe("/watch, /follow and the alert list", () => {
     expect(await countChatSubscriptions(db, 7)).toBe(1);
   });
 
-  it("in a group only admins remove alerts: a non-admin's /stop keeps the buy bot", async () => {
+  it("in a group only admins add or remove alerts: a non-admin's /stop keeps the buy bot", async () => {
     const coin = await seedCoin(db, "hound");
     const wallet = addr("alice");
     tg.members.set(`${GROUP.id}:9`, "administrator");
+    // Like the alerts button: a member cannot fill the group with alerts only admins could remove.
+    expect(await say(`/follow ${coin.mint}`, GROUP, 3)).toBe("Only group admins can change this group's alerts.");
+    expect(await say(`/watch ${wallet}`, GROUP, 3)).toBe("Only group admins can change this group's alerts.");
+    expect(await countChatSubscriptions(db, GROUP.id)).toBe(0);
     await say(`/buybot ${coin.mint}`, GROUP, 9);
     await say(`/follow ${coin.mint}`, GROUP, 9);
     await say(`/watch ${wallet}`, GROUP, 9);

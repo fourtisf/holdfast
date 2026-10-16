@@ -272,6 +272,7 @@ export function launchStatusMessage(
   const t = escapeHtml(l.ticker);
   switch (l.status) {
     case "deposit_received":
+    case "creating":
       return { html: `✅ <b>Payment received</b> (${formatSolNumber(l.receivedSol)} SOL)\nCreating $${t} on pump.fun... this takes a few seconds.` };
     case "live": {
       if (!l.mint) return null;
@@ -295,8 +296,14 @@ export function launchStatusMessage(
     }
     case "expired":
       return { html: `⌛ No payment arrived in time, so the $${t} launch expired.\nIf you sent SOL late, it will be refunded automatically. Send /launch to start again.` };
-    case "failed":
-      return { html: `⚠️ The $${t} launch failed${l.error ? `: ${escapeHtml(l.error)}` : ""}.\nYour SOL will be refunded automatically.` };
+    case "failed": {
+      // The launcher only marks a launch failed once its refund went out (refunding → failed).
+      const lines = [`⚠️ The $${t} launch failed${l.error ? `: ${escapeHtml(l.error)}` : ""}.`];
+      if (l.refundSig) lines.push(`Your SOL was refunded to the wallet that paid: <a href="${escapeHtml(solscanTxUrl(l.refundSig, links.cluster))}">Refund on Solscan</a>`);
+      else lines.push("Anything left of your deposit goes back to the wallet that paid.");
+      lines.push("", "Send /launch to try again.");
+      return { html: lines.join("\n") };
+    }
     default:
       return null;
   }

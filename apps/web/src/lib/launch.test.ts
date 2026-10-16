@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSocial, normalizeTicker, parseDevBuy, requiredDepositSol, toLaunchRequest, validateLaunch, type LaunchForm } from "./launch";
+import { isLaunchId, normalizeSocial, normalizeTicker, parseDevBuy, requiredDepositSol, solanaPayUrl, toLaunchRequest, validateLaunch, type LaunchForm } from "./launch";
 
 const base: LaunchForm = { name: "Kelp Lord", ticker: "KELP", description: "", imageUrl: null, x: "", telegram: "", website: "", triggerBps: 2500, devBuy: "", creatorWallet: "" };
 
@@ -73,5 +73,23 @@ describe("toLaunchRequest", () => {
     expect(req.imageUrl).toBe("https://img");
     const wallet = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
     expect(toLaunchRequest({ ...base, creatorWallet: ` ${wallet} ` }).creatorWallet).toBe(wallet);
+  });
+});
+
+describe("pay page", () => {
+  it("only looks up launch ids that are UUIDs", () => {
+    expect(isLaunchId("3326d68a-e134-4e5c-abc9-d433a7ffbfc3")).toBe(true);
+    expect(isLaunchId("3326D68A-E134-4E5C-ABC9-D433A7FFBFC3")).toBe(true);
+    expect(isLaunchId("not-a-launch")).toBe(false);
+    expect(isLaunchId("x".repeat(120))).toBe(false);
+    expect(isLaunchId("3326d68a-e134-4e5c-abc9-d433a7ffbfc3/extra")).toBe(false);
+  });
+
+  it("builds the same solana: URI as the API, with the exact amount", () => {
+    const address = "FtbBXcTHnkdhdHYv2NWVSjzrtSoDurHmb4Ts9LR3xaA";
+    expect(solanaPayUrl(address, "74285300", "TGPAY")).toBe(`solana:${address}?amount=0.0742853&label=Moatpad&message=Launch%20%24TGPAY`);
+    expect(solanaPayUrl(address, "10073173658", "BIG")).toContain("amount=10.073173658&");
+    expect(solanaPayUrl(address, "2000000000", "TWO")).toContain("amount=2&");
+    expect(solanaPayUrl(address, "1", "DUST")).toContain("amount=0.000000001&");
   });
 });

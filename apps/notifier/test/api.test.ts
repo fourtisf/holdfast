@@ -23,9 +23,15 @@ describe("HttpMoatpadApi", () => {
     const api = new HttpMoatpadApi("http://api:4000/", { fetch, internalToken: TOKEN });
     await api.createLaunch(LAUNCH, 7);
     await api.uploadImage(new Uint8Array(3), "a.png", 7);
-    await api.quote(0.5, 7);
+    await api.quote({ devBuySol: 0.5, name: "Moat Dog", ticker: "MDOG" }, 7);
     await api.trending(5);
-    expect(calls.map((c) => c.url)).toEqual(["http://api:4000/launch", "http://api:4000/uploads/image", "http://api:4000/launch/quote?devBuySol=0.5", "http://api:4000/coins?sort=trending&limit=5"]);
+    expect(calls.map((c) => c.url)).toEqual([
+      "http://api:4000/launch",
+      "http://api:4000/uploads/image",
+      // The name and ticker change the cost (the mint account's rent), so the quote is for this coin.
+      "http://api:4000/launch/quote?devBuySol=0.5&name=Moat%20Dog&ticker=MDOG",
+      "http://api:4000/coins?sort=trending&limit=5",
+    ]);
     for (const c of calls.slice(0, 3)) expect(c.headers).toMatchObject({ [INTERNAL_TOKEN_HEADER]: TOKEN, [TELEGRAM_USER_HEADER]: "7" });
     expect(calls[0]!.headers["content-type"]).toBe("application/json");
     expect(calls[3]!.headers).toEqual({});

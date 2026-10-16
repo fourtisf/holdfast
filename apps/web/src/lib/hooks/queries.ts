@@ -19,10 +19,15 @@ export const keys = {
   profile: (wallet: string) => ["profile", wallet] as const,
 };
 
-/** Launch deposit quote (rounded dev buy keeps the cache key small). */
-export function useLaunchQuote(devBuySol = 0) {
+/** Launch deposit quote (rounded dev buy keeps the cache key small); the name and ticker lengths change the rent. */
+export function useLaunchQuote(devBuySol = 0, coin: { name?: string; ticker?: string } = {}) {
   const dev = Math.round(devBuySol * 1e4) / 1e4;
-  return useSWR(["launchQuote", dev] as const, () => api.launchQuote({ devBuySol: dev }), { revalidateOnFocus: false, dedupingInterval: 60_000, keepPreviousData: true });
+  const { name, ticker } = coin;
+  return useSWR(["launchQuote", dev, name ?? "", ticker ?? ""] as const, () => api.launchQuote({ devBuySol: dev, name, ticker }), {
+    revalidateOnFocus: false,
+    dedupingInterval: 60_000,
+    keepPreviousData: true,
+  });
 }
 
 export function useStats() {

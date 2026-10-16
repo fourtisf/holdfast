@@ -19,15 +19,19 @@ export const TELEGRAM_URL = process.env.NEXT_PUBLIC_TELEGRAM_URL || "https://t.m
 /** Username of the Moatpad Telegram bot (launches, buy bot, alerts); empty hides the bot links. */
 export const TELEGRAM_BOT = (process.env.NEXT_PUBLIC_TELEGRAM_BOT || "").trim().replace(/^@/, "");
 
+/** Telegram ignores a start payload longer than 64 characters or with anything but A-Z, a-z, 0-9, _ and -. */
+const START_PAYLOAD = /^[A-Za-z0-9_-]{1,64}$/;
+
 /**
  * Deep link into the bot: a private chat that runs `/start <payload>`, or (group) the "add to a group"
- * picker that runs it in the chosen group. Null when no bot is configured.
+ * picker that runs it in the chosen group. Null when no bot is configured or Telegram would drop the payload.
  */
 export function botUrl(payload?: string, group = false): string | null {
   if (!TELEGRAM_BOT) return null;
   const base = `https://t.me/${TELEGRAM_BOT}`;
   if (payload === undefined) return base;
-  return `${base}?${group ? "startgroup" : "start"}=${encodeURIComponent(payload)}`;
+  if (!START_PAYLOAD.test(payload)) return null;
+  return `${base}?${group ? "startgroup" : "start"}=${payload}`;
 }
 /** The official $MOATPAD contract address (pump.fun), shown in the announcement bar; NEXT_PUBLIC_MOAT_CA overrides it. */
 export const MOAT_CA = (process.env.NEXT_PUBLIC_MOAT_CA || "4qLdhoVDiAkXVXqU4D3rSPp6pMMnJzRJr38do55Hpump").trim();

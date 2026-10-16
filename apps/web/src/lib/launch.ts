@@ -73,6 +73,21 @@ export function launchFeeSol(quote?: LaunchQuote | null): number {
   return quote?.launchFeeSol ?? SPEC_LAUNCH_FEE_SOL;
 }
 
+/** Launch ids are UUIDs: anything else is not a launch, so it is not looked up. */
+export function isLaunchId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+/** `solana:` transfer request for the wallet link and QR code, the same URI the API hands out at POST /launch. */
+export function solanaPayUrl(address: string, lamports: string, ticker: string): string {
+  const n = BigInt(lamports);
+  const whole = (n / 1_000_000_000n).toString();
+  const frac = (n % 1_000_000_000n).toString().padStart(9, "0").replace(/0+$/, "");
+  const amount = frac ? `${whole}.${frac}` : whole;
+  const params = new URLSearchParams({ amount, label: "Moatpad", message: `Launch $${ticker}` });
+  return `solana:${address}?${params.toString().replace(/\+/g, "%20")}`;
+}
+
 export function validateLaunch(form: LaunchForm): LaunchErrors {
   const errors: LaunchErrors = {};
   const name = form.name.trim();

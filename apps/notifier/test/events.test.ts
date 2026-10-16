@@ -323,4 +323,12 @@ describe("listenForEvents", () => {
       await unlisten();
     }
   });
+
+  it("hands onReconnect to the LISTEN connection (notifications in a gap are lost: the notifier catches up)", async () => {
+    const onReconnect = () => {};
+    let given: unknown;
+    const fakeDb = { listen: async (_channel: string, _fn: (payload: string) => void, opts?: unknown) => ((given = opts), async () => {}) };
+    await listenForEvents(fakeDb, () => {}, { onReconnect });
+    expect(given).toEqual({ onReconnect });
+  });
 });

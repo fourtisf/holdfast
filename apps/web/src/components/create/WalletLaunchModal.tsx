@@ -51,7 +51,7 @@ export function WalletLaunchModal({
   // Closing is blocked while the transaction is in the wallet or in flight.
   const busy = state.step === "confirm" || state.step === "launching";
   return (
-    <Modal open onClose={busy ? () => {} : onClose} labelledBy="wallet-launch-title" title={<span id="wallet-launch-title">Launch ${ticker}</span>}>
+    <Modal open onClose={busy ? () => {} : onClose} labelledBy="wallet-launch-title" title={`Launch $${ticker}`}>
       <div className="space-y-5 px-5 py-5">
         <ol className="flex items-center gap-1.5">
           {STEPS.map((label, i) => {

@@ -148,16 +148,19 @@ export function useCoinLive(mint: string, wallet: string | null) {
 
 const TERMINAL: LaunchStatus["status"][] = ["live", "refunded", "expired", "failed"];
 
-/** Launch progress: pushed over the `deposit-status` channel, polled every 3s whenever the socket is down. */
-export function useDepositStatus(launchId: string | null): LaunchStatus | null {
-  const [status, setStatus] = useState<LaunchStatus | null>(null);
+/**
+ * Launch progress: pushed over the `deposit-status` channel, polled every 3s whenever the socket is down.
+ * `initial` is a status already fetched for `launchId`, shown until a newer one arrives.
+ */
+export function useDepositStatus(launchId: string | null, initial: LaunchStatus | null = null): LaunchStatus | null {
+  const [status, setStatus] = useState<LaunchStatus | null>(initial && initial.launchId === launchId ? initial : null);
   const wsState = useWsState();
   const accept = useCallback((next: LaunchStatus) => {
     setStatus((prev) => (!prev || prev.launchId !== next.launchId || next.updatedAt >= prev.updatedAt ? next : prev));
   }, []);
 
   useEffect(() => {
-    setStatus(null);
+    setStatus((prev) => (prev && prev.launchId === launchId ? prev : null));
     if (!launchId) return;
     return getWsClient().subscribe({ channel: "deposit-status", launchId }, (msg) => {
       if (msg.channel === "deposit-status") accept(msg.data);

@@ -600,5 +600,11 @@ describe("telegram notifier", () => {
       { kind: "coin", mint: c.mint },
     ]);
     expect(await recentNotifierEvents(db, T0 + 1)).toEqual([]);
+    // Buys only when asked for, and not before `sinceMs` (the notifier asks for the last 2 minutes: buy alerts are live news).
+    const withBuys = await recentNotifierEvents(db, T0 - 1000, { buysSinceMs: T0 - 500 });
+    expect(withBuys).toHaveLength(4);
+    expect(withBuys).toEqual(expect.arrayContaining([{ kind: "trade", mint: c.mint, sig: sig("b") }, { kind: "trade", mint: c.mint, sig: sig("v") }]));
+    expect(await recentNotifierEvents(db, T0 - 1000, { buysSinceMs: T0 + 1 })).toHaveLength(3);
+    expect(await recentNotifierEvents(db, T0 + 1, { buysSinceMs: T0 - 500 })).toEqual([]);
   });
 });

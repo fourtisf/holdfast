@@ -28,7 +28,7 @@ export interface NotifierConfig {
   milestoneIntervalMs: number;
   /** getUpdates long-poll timeout. */
   pollTimeoutSec: number;
-  /** On startup, re-check rounds, defences, graduations, bot launches and burns of this window (missed while down). */
+  /** On startup and after a database reconnect, re-check rounds, defences, graduations, bot launches, burns and fresh buys of this window. */
   catchUpMs: number;
   /** Run the migrations at startup (NOTIFIER_MIGRATE=0 skips them). */
   migrate: boolean;

@@ -195,13 +195,20 @@ export async function openLotsByWallet(q: Queryable, wallets: readonly string[])
 
 /**
  * Notifications the notifier may have missed while it was down: rounds closed, vault buybacks,
- * graduations, status changes of launches started from Telegram and $MOATPAD burns since `sinceMs`.
+ * graduations, status changes of launches started from Telegram and $MOATPAD burns since `sinceMs`,
+ * and with `buysSinceMs` the buys since then (buy alerts are only posted while fresh).
  * Replaying them is safe because every message is claimed in tg_sent.
  */
-export async function recentNotifierEvents(q: Queryable, sinceMs: number): Promise<HoldfastNotification[]> {
+export async function recentNotifierEvents(q: Queryable, sinceMs: number, opts: { buysSinceMs?: number } = {}): Promise<HoldfastNotification[]> {
   const since = ts(sinceMs);
+  const buysSince = opts.buysSinceMs === undefined ? null : ts(Math.max(sinceMs, opts.buysSinceMs));
   const rounds = await q.query("SELECT mint, round_id FROM payout_rounds WHERE status = 'closed' AND ts >= $1 ORDER BY ts, mint, round_id", [since]);
-  const trades = await q.query("SELECT mint, sig, min(ts) AS ts FROM trades WHERE side = 'vault' AND ts >= $1 GROUP BY mint, sig ORDER BY min(ts), sig", [since]);
+  const trades = await q.query(
+    `SELECT mint, sig, min(ts) AS ts FROM trades
+     WHERE (side = 'vault' AND ts >= $1) OR (side = 'buy' AND $2::timestamptz IS NOT NULL AND ts >= $2::timestamptz)
+     GROUP BY mint, sig ORDER BY min(ts), sig`,
+    [since, buysSince],
+  );
   const coins = await q.query("SELECT mint FROM coins WHERE graduated AND graduated_at >= $1 ORDER BY graduated_at, mint", [since]);
   // launch_id is text (no cast that a bad row could break): compare as text.
   const launches = await q.query(

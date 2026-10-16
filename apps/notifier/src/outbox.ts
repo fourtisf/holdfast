@@ -27,19 +27,25 @@ export class Outbox {
     private readonly opts: { metrics?: DeliveryMetrics; log?: Logger } = {},
   ) {}
 
-  /** Claim `eventKey` without sending (a lower milestone superseded by a higher one). */
-  async claim(chatId: number, eventKey: string): Promise<boolean> {
-    return markSent(this.db, chatId, eventKey);
+  /**
+   * Claim `eventKey` without sending: a lower milestone superseded by a higher one, or a message claimed
+   * up front and sent later with `deliver(..., { claimed: true })`. With `kind`, a key claimed already counts as a duplicate.
+   */
+  async claim(chatId: number, eventKey: string, kind?: string): Promise<boolean> {
+    const claimed = await markSent(this.db, chatId, eventKey);
+    if (!claimed && kind) this.opts.metrics?.delivered(kind, "duplicate");
+    return claimed;
   }
 
-  async deliver(chatId: number, eventKey: string, html: string, kind: string, buttons?: Keyboard): Promise<DeliveryResult> {
-    const result = await this.attempt(chatId, eventKey, html, buttons);
+  /** Sends the message unless `eventKey` was claimed already (`claimed`: this caller holds the claim). */
+  async deliver(chatId: number, eventKey: string, html: string, kind: string, buttons?: Keyboard, opts: { claimed?: boolean } = {}): Promise<DeliveryResult> {
+    const result = await this.attempt(chatId, eventKey, html, buttons, !opts.claimed);
     this.opts.metrics?.delivered(kind, result);
     return result;
   }
 
-  private async attempt(chatId: number, eventKey: string, html: string, buttons?: Keyboard, followMigration = true): Promise<DeliveryResult> {
-    if (!(await markSent(this.db, chatId, eventKey))) return "duplicate";
+  private async attempt(chatId: number, eventKey: string, html: string, buttons: Keyboard | undefined, claim: boolean, followMigration = true): Promise<DeliveryResult> {
+    if (claim && !(await markSent(this.db, chatId, eventKey))) return "duplicate";
     try {
       await this.tg.sendMessage(chatId, html, buttons ? { buttons } : undefined);
       return "sent";
@@ -55,7 +61,7 @@ export class Outbox {
         // The claim was released first, so it is not moved with the others and the new id can claim it.
         await moveTelegramChat(this.db, chatId, err.migrateToChatId);
         this.opts.log?.info({ chatId, to: err.migrateToChatId }, "group became a supergroup; its buy bot and alerts moved");
-        return this.attempt(err.migrateToChatId, eventKey, html, buttons, false);
+        return this.attempt(err.migrateToChatId, eventKey, html, buttons, true, false);
       }
       this.opts.log?.warn({ chatId, eventKey, err: err instanceof Error ? err.message : String(err) }, "message not delivered");
       return "failed";

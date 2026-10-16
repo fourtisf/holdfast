@@ -98,6 +98,8 @@ function Stat({ label, value, sub, tone = "text-fg" }: { label: string; value: R
 function ProfileContent({ wallet, own }: { wallet: string; own: boolean }) {
   const { data, error, isLoading } = useProfile(wallet);
   const countdown = useRoundCountdown(1000);
+  // The bot only watches real addresses; a mistyped ?wallet= gets no alerts link.
+  const alerts = isAddress(wallet) ? botUrl(`watch_${wallet}`) : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -126,8 +128,8 @@ function ProfileContent({ wallet, own }: { wallet: string; own: boolean }) {
               <ExternalIcon size={13} />
             </a>
           </div>
-          {botUrl(`watch_${wallet}`) ? (
-            <a href={botUrl(`watch_${wallet}`)!} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs font-semibold text-brand hover:underline">
+          {alerts ? (
+            <a href={alerts} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs font-semibold text-brand hover:underline">
               🔔 Payout alerts on Telegram →
             </a>
           ) : null}

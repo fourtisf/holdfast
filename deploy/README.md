@@ -56,6 +56,7 @@ older `.env`, add `INTERNAL_API_TOKEN=$(openssl rand -hex 32)` and recreate `api
 calls then carry it with the Telegram user's id and the API rate limits them per user, not all together per IP. Without
 it the bot still limits each user (3 launch tries per 10 minutes, 10 images a minute). Caddy strips these headers from
 public requests, so they only count from inside the compose network.
+To check the bot end to end first (real API and notifier, a throwaway Postgres, a fake Telegram): `pnpm --filter @holdfast/notifier e2e`.
 `deploy/program.sh` does the on-chain part from the server. It keeps the deployer keypair (fee payer, upgrade
 authority, Config admin) and the program keypair in `~/moatpad-admin`, outside the repository and every container:
 

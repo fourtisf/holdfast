@@ -27,9 +27,16 @@ export class ApiError extends Error {
   }
 }
 
+/** What a quote is for: the cost depends on the name and ticker too (their length sets the mint account's rent). */
+export interface QuoteRequest {
+  devBuySol: number;
+  name?: string;
+  ticker?: string;
+}
+
 /** `userId`: the Telegram user a launch call is made for (the API's rate-limit key with INTERNAL_API_TOKEN). */
 export interface MoatpadApi {
-  quote(devBuySol: number, userId?: number): Promise<LaunchQuote>;
+  quote(req: QuoteRequest, userId?: number): Promise<LaunchQuote>;
   createLaunch(req: LaunchRequest, userId?: number): Promise<LaunchResponse>;
   /** Returns the hosted image URL to put in the launch form. */
   uploadImage(bytes: Uint8Array, filename: string, userId?: number): Promise<string>;
@@ -82,8 +89,11 @@ export class HttpMoatpadApi implements MoatpadApi {
     return body as T;
   }
 
-  quote(devBuySol: number, userId?: number): Promise<LaunchQuote> {
-    return this.request(`/launch/quote?devBuySol=${encodeURIComponent(String(devBuySol))}`, {}, userId);
+  quote(req: QuoteRequest, userId?: number): Promise<LaunchQuote> {
+    const params = [`devBuySol=${encodeURIComponent(String(req.devBuySol))}`];
+    if (req.name) params.push(`name=${encodeURIComponent(req.name)}`);
+    if (req.ticker) params.push(`ticker=${encodeURIComponent(req.ticker)}`);
+    return this.request(`/launch/quote?${params.join("&")}`, {}, userId);
   }
 
   createLaunch(req: LaunchRequest, userId?: number): Promise<LaunchResponse> {

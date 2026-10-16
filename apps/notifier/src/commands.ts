@@ -198,8 +198,8 @@ export async function isAdmin(ctx: CommandContext, src: CommandSource): Promise<
 }
 
 /**
- * Removing a chat's alerts (/stop, /unfollow, /unwatch): anyone in a private chat; only admins in a
- * group. Channel posts have no sender, and only channel admins can post there.
+ * Changing a chat's alerts (/follow, /watch, /stop, /unfollow, /unwatch): anyone in a private chat; only
+ * admins in a group, like the alerts button. Channel posts have no sender, and only channel admins can post there.
  */
 async function mayChangeAlerts(ctx: CommandContext, src: CommandSource): Promise<boolean> {
   return src.chat.type === "private" || src.chat.type === "channel" || isAdmin(ctx, src);
@@ -296,6 +296,7 @@ export async function runCommand(ctx: CommandContext, src: CommandSource, cmd: P
     case "buybot":
       return buybot(ctx, src, cmd.args);
     case "follow": {
+      if (!(await mayChangeAlerts(ctx, src))) return text(ADMINS_ONLY);
       const arg = addressArg(cmd, "coin");
       return text("reply" in arg ? arg.reply : await follow(ctx, chatId, arg.address));
     }
@@ -304,6 +305,7 @@ export async function runCommand(ctx: CommandContext, src: CommandSource, cmd: P
       if (!(await mayChangeAlerts(ctx, src))) return text(ADMINS_ONLY);
       return text(await unfollow(ctx, chatId, cmd, "coin"));
     case "watch": {
+      if (!(await mayChangeAlerts(ctx, src))) return text(ADMINS_ONLY);
       const arg = addressArg(cmd, "wallet");
       return text("reply" in arg ? arg.reply : await watch(ctx, chatId, arg.address));
     }

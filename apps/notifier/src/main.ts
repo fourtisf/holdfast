@@ -58,7 +58,17 @@ const queue = new SerialQueue((err) => {
   monitor.error("queue");
   log.error({ err: err instanceof Error ? err.message : String(err) }, "background task failed");
 });
-const unlisten = await listenForEvents(db, (n) => queue.push(() => notifier.handle(n)));
+const catchUp = (reason: "startup" | "reconnect") =>
+  queue.push(async () => {
+    const sent = await notifier.catchUp(Date.now() - config.catchUpMs);
+    if (sent > 0) log.info({ sent, windowMs: config.catchUpMs, reason }, "caught up on missed events");
+  });
+const unlisten = await listenForEvents(db, (n) => queue.push(() => notifier.handle(n)), {
+  onReconnect: () => {
+    log.warn("database notifications are back after a dropped connection; catching up");
+    if (config.catchUpMs > 0) catchUp("reconnect");
+  },
+});
 
 const sweep = () =>
   queue.push(async () => {
@@ -72,12 +82,7 @@ const prune = () =>
     if (removed > 0) log.info({ removed }, "pruned old delivery records");
   });
 
-if (config.catchUpMs > 0) {
-  queue.push(async () => {
-    const sent = await notifier.catchUp(Date.now() - config.catchUpMs);
-    if (sent > 0) log.info({ sent, windowMs: config.catchUpMs }, "caught up on missed events");
-  });
-}
+if (config.catchUpMs > 0) catchUp("startup");
 sweep();
 prune();
 const timers = [setInterval(sweep, config.milestoneIntervalMs), setInterval(prune, PRUNE_EVERY_MS)];

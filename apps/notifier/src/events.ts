@@ -32,9 +32,12 @@ import {
   openLotsByWallet,
   parseNotification,
   recentNotifierEvents,
+  type CoinRow,
   type Db,
   type HoldfastNotification,
+  type ListenOptions,
   type Queryable,
+  type TradeRow,
   type Unlisten,
   type Watcher,
 } from "@holdfast/db";
@@ -84,7 +87,11 @@ export class BuyThrottle {
 export const MAX_EVENT_AGE_MS = 24 * 3600_000;
 /** Buy alerts are live news: older buys (an indexer backfill, a late replay) are not posted, and do not use up a group's throttle. */
 export const MAX_BUY_ALERT_AGE_MS = 2 * 60_000;
-/** An event that happened shortly before a chat subscribed still reaches it; older ones do not. */
+/**
+ * A live event that happened shortly before a chat subscribed still reaches it (block time and indexing
+ * lag); older ones do not. Replays (catch-up) use no grace: the event was likely handled live before the
+ * chat subscribed, so it goes only to chats that were subscribed when it happened.
+ */
 export const SUBSCRIBE_GRACE_MS = 10 * 60_000;
 
 export const MILESTONES: readonly { label: Milestone; ppm: bigint }[] = [
@@ -118,6 +125,8 @@ interface Outgoing {
   key: string;
   html: string;
   buttons?: Keyboard;
+  /** The key was claimed already (by this handler). */
+  claimed?: boolean;
 }
 
 /** Average weight of `lots` in parts per million (0 for an empty position). */
@@ -139,6 +148,16 @@ export function crossedMilestones(lots: readonly WeightedLot[], fromMs: number, 
   return MILESTONES.filter((m) => after >= total * m.ppm && before < total * m.ppm).map((m) => m.label);
 }
 
+/**
+ * The coin's market cap right after a buy: its spot price (as on the coin page) while no later trade has moved
+ * it; otherwise (a burst of buys, a replayed one) the buy's own price, which is closer than the price now.
+ */
+export function buyMarketCapSol(coin: Pick<CoinRow, "lastPrice" | "lastTradeAt">, t: Pick<TradeRow, "price" | "ts">): number {
+  const spot = coin.lastPrice ?? 0;
+  const afterThisBuy = spot > 0 && (coin.lastTradeAt === null || coin.lastTradeAt <= t.ts);
+  return marketCapSol(afterThisBuy ? spot : t.price);
+}
+
 export class Notifier {
   private readonly now: () => number;
   private readonly throttle = new BuyThrottle();
@@ -147,17 +166,18 @@ export class Notifier {
     this.now = deps.now ?? Date.now;
   }
 
-  /** Handles one notification; returns the number of messages sent. Never throws (errors are logged). */
-  async handle(n: HoldfastNotification): Promise<number> {
+  /** Handles one notification (`replay`: from catch-up); returns the number of messages sent. Never throws (errors are logged). */
+  async handle(n: HoldfastNotification, opts: { replay?: boolean } = {}): Promise<number> {
     this.deps.metrics?.event(n.kind);
+    const grace = opts.replay ? 0 : SUBSCRIBE_GRACE_MS;
     try {
       switch (n.kind) {
         case "round":
-          return await this.roundChanged(n.mint, n.roundId);
+          return await this.roundChanged(n.mint, n.roundId, grace);
         case "trade":
-          return await this.tradeRecorded(n.mint, n.sig);
+          return await this.tradeRecorded(n.mint, n.sig, grace);
         case "coin":
-          return await this.coinChanged(n.mint);
+          return await this.coinChanged(n.mint, grace);
         case "launch":
           return await this.launchChanged(n.launchId);
         case "burn":
@@ -172,10 +192,14 @@ export class Notifier {
     }
   }
 
-  /** Re-handles what happened since `sinceMs` (startup after downtime); already-sent messages are skipped. */
+  /**
+   * Re-handles what happened since `sinceMs` (startup after downtime, a dropped LISTEN connection);
+   * already-sent messages are skipped. Buys count from MAX_BUY_ALERT_AGE_MS ago at most.
+   */
   async catchUp(sinceMs: number): Promise<number> {
     let sent = 0;
-    for (const n of await recentNotifierEvents(this.deps.db, sinceMs)) sent += await this.handle(n);
+    const missed = await recentNotifierEvents(this.deps.db, sinceMs, { buysSinceMs: this.now() - MAX_BUY_ALERT_AGE_MS });
+    for (const n of missed) sent += await this.handle(n, { replay: true });
     return sent;
   }
 
@@ -183,18 +207,18 @@ export class Notifier {
     return atMs < this.now() - MAX_EVENT_AGE_MS;
   }
 
-  private static isNewFor(w: Watcher, atMs: number): boolean {
-    return atMs >= w.createdAt - SUBSCRIBE_GRACE_MS;
+  private static isNewFor(w: Watcher, atMs: number, grace: number): boolean {
+    return atMs >= w.createdAt - grace;
   }
 
   private async send(out: readonly Outgoing[], kind: string): Promise<number> {
     let sent = 0;
-    for (const o of out) if ((await this.deps.outbox.deliver(o.chatId, o.key, o.html, kind, o.buttons)) === "sent") sent++;
+    for (const o of out) if ((await this.deps.outbox.deliver(o.chatId, o.key, o.html, kind, o.buttons, { claimed: o.claimed })) === "sent") sent++;
     return sent;
   }
 
   /** A closed round: payouts to watched wallets, totals to coin followers. Other statuses are ignored. */
-  async roundChanged(mint: string, roundId: number): Promise<number> {
+  async roundChanged(mint: string, roundId: number, grace = SUBSCRIBE_GRACE_MS): Promise<number> {
     const { db, links } = this.deps;
     const round = await getRoundRow(db, mint, roundId);
     if (!round || round.status !== "closed" || this.stale(round.ts)) return 0;
@@ -216,11 +240,11 @@ export class Notifier {
     for (const [wallet, watchers] of await chatsWatchingWallets(db, [...byWallet.keys()])) {
       const e = byWallet.get(wallet)!;
       const html = payoutMessage(links, { coin, roundId: round.roundId, wallet, sol: e.sol, tokens: e.tokens, sig: e.sig });
-      for (const w of watchers) if (Notifier.isNewFor(w, round.ts)) payouts.push({ chatId: w.chatId, key: `round:${mint}:${id}:${wallet}`, html });
+      for (const w of watchers) if (Notifier.isNewFor(w, round.ts, grace)) payouts.push({ chatId: w.chatId, key: `round:${mint}:${id}:${wallet}`, html });
     }
     let sent = await this.send(payouts, "payout");
 
-    const followers = (await chatsWatchingCoin(db, mint)).filter((w) => Notifier.isNewFor(w, round.ts));
+    const followers = (await chatsWatchingCoin(db, mint)).filter((w) => Notifier.isNewFor(w, round.ts, grace));
     if (followers.length > 0) {
       let sol = 0n;
       let tokens = 0n;
@@ -238,12 +262,12 @@ export class Notifier {
   }
 
   /** Trades of `sig`: a vault buyback (side 'vault') is a floor defence; buys go to the coin's buy bot groups. */
-  async tradeRecorded(mint: string, sig: string): Promise<number> {
-    const { db, links } = this.deps;
+  async tradeRecorded(mint: string, sig: string, grace = SUBSCRIBE_GRACE_MS): Promise<number> {
+    const { db, links, outbox } = this.deps;
     const all = (await getTradesBySig(db, sig)).filter((t) => t.mint === mint);
     const first = all[0];
     if (!first || this.stale(first.ts)) return 0;
-    const followers = (await chatsWatchingCoin(db, mint)).filter((w) => Notifier.isNewFor(w, first.ts));
+    const followers = (await chatsWatchingCoin(db, mint)).filter((w) => Notifier.isNewFor(w, first.ts, grace));
     const groups = await buybotsForMint(db, mint);
     if (followers.length === 0 && groups.length === 0) return 0;
     const coin = await getCoin(db, mint);
@@ -257,7 +281,7 @@ export class Notifier {
       const tokens = defends.reduce((s, t) => s + t.tokens, 0n);
       const floorPrice = vault && vault.floor > 0n ? fixedToSolPerToken(vault.floor, coin.decimals) : null;
       const html = defendMessage(links, { coin, sol, price: tradePrice(sol, tokens, coin.decimals), floorPrice, sig });
-      const chats = new Set([...followers.map((w) => w.chatId), ...groups.filter((g) => g.createdAt <= first.ts + SUBSCRIBE_GRACE_MS).map((g) => g.chatId)]);
+      const chats = new Set([...followers.map((w) => w.chatId), ...groups.filter((g) => g.createdAt <= first.ts + grace).map((g) => g.chatId)]);
       sent += await this.send(
         [...chats].map((chatId) => ({ chatId, key: `defend:${mint}:${sig}`, html })),
         "defend",
@@ -265,9 +289,13 @@ export class Notifier {
     }
 
     for (const t of all.filter((x) => x.side === "buy" && x.ts >= this.now() - MAX_BUY_ALERT_AGE_MS)) {
-      const targets = groups.filter((g) => t.sol >= g.minLamports && Notifier.isNewFor({ chatId: g.chatId, createdAt: g.createdAt }, t.ts));
+      const targets = groups.filter((g) => t.sol >= g.minLamports && Notifier.isNewFor({ chatId: g.chatId, createdAt: g.createdAt }, t.ts, grace));
       for (const g of targets) {
+        const key = `buy:${sig}:${t.ixIndex}`;
+        // Claimed before the throttle: a buy handled already (a repeated NOTIFY, a catch-up replay) takes no slot.
+        if (!(await outbox.claim(g.chatId, key, "buy"))) continue;
         const skipped = this.throttle.take(g.chatId, this.now());
+        // A dropped buy keeps its claim: the next alert counts it, so a replay must not post it as well.
         if (skipped === null) continue;
         const alert = buyAlert(links, {
           coin,
@@ -275,11 +303,11 @@ export class Notifier {
           tokens: t.tokens,
           wallet: t.wallet,
           sig,
-          marketCapSol: marketCapSol(t.price),
+          marketCapSol: buyMarketCapSol(coin, t),
           floorSol: vault ? Number(vault.floorSol) / 1e9 : null,
           skipped,
         });
-        sent += await this.send([{ chatId: g.chatId, key: `buy:${sig}:${t.ixIndex}`, html: alert.html, buttons: alert.buttons }], "buy");
+        sent += await this.send([{ chatId: g.chatId, key, html: alert.html, buttons: alert.buttons, claimed: true }], "buy");
       }
     }
     return sent;
@@ -301,7 +329,10 @@ export class Notifier {
       error: l.error,
     });
     if (!msg) return 0;
-    return this.send([{ chatId, key: `launch:${launchId}:${l.status}`, html: msg.html, buttons: msg.buttons }], "launch");
+    // The launcher moves on to "creating" milliseconds after the deposit arrives: by the time the deposit's
+    // notification is handled the row usually says "creating". Both are the one "payment received" message.
+    const stage = l.status === "creating" ? "deposit_received" : l.status;
+    return this.send([{ chatId, key: `launch:${launchId}:${stage}`, html: msg.html, buttons: msg.buttons }], "launch");
   }
 
   /** A vault bought and burned $MOATPAD: post it to the burn channel. */
@@ -316,7 +347,7 @@ export class Notifier {
   }
 
   /** Coin rows change for many reasons; only the graduation is announced. */
-  async coinChanged(mint: string): Promise<number> {
+  async coinChanged(mint: string, grace = SUBSCRIBE_GRACE_MS): Promise<number> {
     const { db, links } = this.deps;
     const followers = await chatsWatchingCoin(db, mint);
     if (followers.length === 0) return 0;
@@ -326,7 +357,7 @@ export class Notifier {
     if (this.stale(at)) return 0;
     const html = graduatedMessage(links, coin);
     return this.send(
-      followers.filter((w) => Notifier.isNewFor(w, at)).map((w) => ({ chatId: w.chatId, key: `graduated:${mint}`, html })),
+      followers.filter((w) => Notifier.isNewFor(w, at, grace)).map((w) => ({ chatId: w.chatId, key: `graduated:${mint}`, html })),
       "graduated",
     );
   }
@@ -371,10 +402,17 @@ export class Notifier {
   }
 }
 
-/** LISTEN holdfast_events (the same subscription as the API's pgEventSource). */
-export function listenForEvents(db: Pick<Db, "listen">, handler: (n: HoldfastNotification) => void): Promise<Unlisten> {
-  return db.listen(HOLDFAST_EVENTS_CHANNEL, (payload) => {
-    const n = parseNotification(payload);
-    if (n) handler(n);
-  });
+/**
+ * LISTEN holdfast_events (the same subscription as the API's pgEventSource). Notifications sent while the
+ * connection was down are lost: `onReconnect` runs once it is back, to catch up on them.
+ */
+export function listenForEvents(db: Pick<Db, "listen">, handler: (n: HoldfastNotification) => void, opts: ListenOptions = {}): Promise<Unlisten> {
+  return db.listen(
+    HOLDFAST_EVENTS_CHANNEL,
+    (payload) => {
+      const n = parseNotification(payload);
+      if (n) handler(n);
+    },
+    opts,
+  );
 }

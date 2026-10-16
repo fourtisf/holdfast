@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect } from "react";
 import { useRoundClock } from "@/components/providers/ScheduleProvider";
-import { Button, ButtonLink } from "@/components/ui/Button";
+import { Button, ButtonLink, buttonClass } from "@/components/ui/Button";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/components/ui/cn";
@@ -75,17 +75,22 @@ function lamportsToSol(lamports: string): number {
 export function DepositModal({
   launch,
   ticker,
+  name,
   devBuySol,
+  initialStatus = null,
   onClose,
   onRestart,
 }: {
   launch: LaunchResponse;
   ticker: string;
+  name?: string;
   devBuySol: number;
+  /** Already fetched (the /pay page), so a launch that moved on never shows the payment screen first. */
+  initialStatus?: LaunchStatus | null;
   onClose: () => void;
   onRestart: () => void;
 }) {
-  const status = useDepositStatus(launch.launchId);
+  const status = useDepositStatus(launch.launchId, initialStatus);
   const router = useRouter();
   const clock = useRoundClock();
   const now = useNow(1000);
@@ -100,13 +105,23 @@ export function DepositModal({
   }, [status?.status, status?.mint, router]);
 
   return (
-    <Modal open onClose={onClose} labelledBy="deposit-title" title={<span id="deposit-title">Launch ${ticker}</span>}>
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="deposit-title"
+      title={
+        <>
+          Launch ${ticker}
+          {name ? <span className="ml-2 text-sm font-normal text-muted">{name}</span> : null}
+        </>
+      }
+    >
       <div className="space-y-5 px-5 py-5">
         <Stepper status={expired ? "expired" : kind} />
         {expired ? (
           <Expired onRestart={onRestart} />
         ) : kind === "awaiting_deposit" ? (
-          <AwaitingDeposit launch={launch} devBuySol={devBuySol} remainingMs={remaining} />
+          <AwaitingDeposit launch={launch} ticker={ticker} name={name} devBuySol={devBuySol} remainingMs={remaining} />
         ) : kind === "live" && status ? (
           <Live status={status} ticker={ticker} />
         ) : kind === "failed" || kind === "refunding" || kind === "refunded" ? (
@@ -119,8 +134,8 @@ export function DepositModal({
   );
 }
 
-function AwaitingDeposit({ launch, devBuySol, remainingMs }: { launch: LaunchResponse; devBuySol: number; remainingMs: number }) {
-  const { data: quote } = useLaunchQuote(devBuySol);
+function AwaitingDeposit({ launch, ticker, name, devBuySol, remainingMs }: { launch: LaunchResponse; ticker: string; name?: string; devBuySol: number; remainingMs: number }) {
+  const { data: quote } = useLaunchQuote(devBuySol, { name, ticker });
   const fee = launchFeeSol(quote);
   return (
     <div className="space-y-4">
@@ -157,6 +172,9 @@ function AwaitingDeposit({ launch, devBuySol, remainingMs }: { launch: LaunchRes
           </div>
         </div>
       </div>
+      <a href={launch.solanaPayUrl} className={buttonClass("primary", "lg", "w-full sm:hidden")}>
+        Open in wallet app
+      </a>
       <p className="text-xs leading-relaxed text-faint">
         No wallet connection needed. Send from a wallet you control (not an exchange): refunds and dev-buy tokens go back to the sender.
       </p>

@@ -12,13 +12,14 @@ import {
   insertTrade,
   listChatSubscriptions,
   setBuybot,
+  updateLastPrice,
   updateLaunchStatus,
   upsertVaultState,
   type Db,
   type NewCoin,
 } from "@holdfast/db";
 
-import { ApiError, type MoatpadApi } from "../src/api.js";
+import { ApiError, type MoatpadApi, type QuoteRequest } from "../src/api.js";
 import { Bot } from "../src/bot.js";
 import { BuyThrottle, Notifier } from "../src/events.js";
 import { applyButton, applyText, ask, MAX_LINK_LENGTH, parseLinks, summary, type Step } from "../src/launch.js";
@@ -40,7 +41,10 @@ class RecordingApi implements MoatpadApi {
   launchUsers: (number | undefined)[] = [];
   uploadUsers: (number | undefined)[] = [];
   fail: ApiError | null = null;
-  async quote(devBuySol: number) {
+  quotes: QuoteRequest[] = [];
+  async quote(req: QuoteRequest) {
+    this.quotes.push(req);
+    const devBuySol = req.devBuySol;
     const required = Math.round((0.015 + devBuySol * 1.01) * 1e4) / 1e4;
     return { launchFeeSol: 0.015, devBuySol, devBuyExtraSol: 0, requiredSol: required, requiredLamports: String(required * 1e9), specFeeSol: 0.015, exceedsSpecFee: false };
   }
@@ -138,6 +142,7 @@ describe("/launch wizard", () => {
     expect(summary.text).toContain("Dev buy: 0.5 SOL");
     expect(summary.text).toContain("Links: X, Telegram, Website");
     expect(summary.text).toContain("Total to pay: 0.52 SOL");
+    expect(api.quotes).toEqual([{ devBuySol: 0.5, name: "Moat Dog", ticker: "MDOG" }]);
     expect(buttonData(summary)).toEqual(["l:go", "l:restart", "l:cancel"]);
 
     await send(buttonUpdate(0, DM, "l:go"));
@@ -199,6 +204,13 @@ describe("/launch wizard", () => {
     expect(applyText("description", {}, "d".repeat(500))).toMatchObject({ ok: true });
     expect(applyText("description", {}, "d".repeat(501))).toMatchObject({ ok: false });
     expect(applyText("description", { name: "Dog" }, "   ")).toEqual({ ok: true, data: { name: "Dog", description: undefined } });
+    // Lengths count like the API (an emoji is 2), and the answer says so when that is the reason.
+    expect(applyText("name", {}, "x".repeat(33))).toEqual({ ok: false, error: "That name is 33 characters. Please keep it to 32 or less." });
+    expect(applyText("description", {}, "🐶".repeat(250))).toMatchObject({ ok: true });
+    expect(applyText("description", {}, "🐶".repeat(251))).toEqual({
+      ok: false,
+      error: "That description is too long: emoji count as 2 characters, so it is 502 of the 500 allowed. Please make it a bit shorter.",
+    });
     // Blocked terms (the API's moderation) are refused at their own step.
     expect(applyText("name", {}, "Wallet Drainer")).toEqual({ ok: false, error: "That name is not allowed on Moatpad. Please choose another one." });
     expect(applyText("ticker", {}, "csam")).toMatchObject({ ok: false });
@@ -446,6 +458,29 @@ describe("events for the launchpad bot", () => {
     expect(buttonData(alert)).toEqual([`${LINKS.webUrl}/coin/${coin.mint}`, "https://t.me/HoldfastBot?start=launch"]);
   });
 
+  it("a buy alert shows the coin's market cap after the buy, not at the buy's average price", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    await insertTrade(db, { sig: "Buy2", ixIndex: 0, mint: coin.mint, wallet: addr("buyer"), side: "buy", sol: 500_000_000n, tokens: 10_000_000n * TOK, price: 5e-8, ts: NOW - MIN, slot: 13, source: "curve" });
+    // The indexer stores the spot price after the trade as the coin's last price (what the coin page shows).
+    await updateLastPrice(db, coin.mint, 5.5e-8, NOW - MIN, 13);
+    expect(await makeNotifier().handle({ kind: "trade", mint: coin.mint, sig: "Buy2" })).toBe(1);
+    expect(tg.last(GROUP_A)!.text).toContain("📊 Market cap: 55 SOL");
+  });
+
+  it("a buy handled after later trades moved the price (a burst, a replay) shows its own market cap", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    const buy = async (sig: string, price: number, spotAfter: number, ts: number, slot: number) => {
+      await insertTrade(db, { sig, ixIndex: 0, mint: coin.mint, wallet: addr(`buyer:${sig}`), side: "buy", sol: 500_000_000n, tokens: 10_000_000n * TOK, price, ts, slot, source: "curve" });
+      await updateLastPrice(db, coin.mint, spotAfter, ts, slot);
+    };
+    await buy("Burst1", 5e-8, 5.5e-8, NOW - MIN, 13);
+    await buy("Burst2", 6e-8, 6.5e-8, NOW - MIN + 1_000, 14);
+    const n = makeNotifier();
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Burst1" })).toBe(1);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Burst2" })).toBe(1);
+    expect(tg.to(GROUP_A).map((t) => /Market cap: ([\d.]+) SOL/.exec(t)?.[1])).toEqual(["50", "65"]);
+  });
+
   it("posts only fresh buys (an indexer backfill does not flood groups), while older floor defences still go out", async () => {
     await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
     const trade = (sig: string, side: "buy" | "vault", ts: number) =>
@@ -474,6 +509,65 @@ describe("events for the launchpad bot", () => {
     expect(await n.catchUp(NOW - 15 * MIN)).toBe(0);
   });
 
+  it("catch-up posts the fresh buys made while the bot was down, once", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    const buy = (sig: string, ts: number) =>
+      insertTrade(db, { sig, ixIndex: 0, mint: coin.mint, wallet: addr("buyer"), side: "buy", sol: 100_000_000n, tokens: 5n * TOK, price: 5e-8, ts, slot: 1, source: "curve" });
+    await buy("DownBuy", NOW - MIN);
+    await buy("StaleBuy", NOW - 5 * MIN);
+    const n = makeNotifier();
+    expect(await n.catchUp(NOW - 15 * MIN)).toBe(1);
+    expect(tg.to(GROUP_A)).toEqual([expect.stringContaining("DownBuy")]);
+    expect(await n.catchUp(NOW - 15 * MIN)).toBe(0);
+  });
+
+  it("catch-up does not post to a group what happened before it turned the buy bot on", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW });
+    await insertTrade(db, { sig: "EarlyBuy", ixIndex: 0, mint: coin.mint, wallet: addr("buyer"), side: "buy", sol: 100_000_000n, tokens: 5n * TOK, price: 5e-8, ts: NOW - MIN, slot: 1, source: "curve" });
+    await insertTrade(db, { sig: "EarlyDefend", ixIndex: 0, mint: coin.mint, wallet: coin.treasury, side: "vault", sol: 100_000_000n, tokens: 5n * TOK, price: 5e-8, ts: NOW - MIN, slot: 1, source: "vault" });
+    // A replay re-reads events that were handled live before the group had the buy bot: nothing for it.
+    expect(await makeNotifier().catchUp(NOW - 15 * MIN)).toBe(0);
+    // Live, the grace covers block time and indexing lag: a buy notified after the group turned it on is posted.
+    expect(await makeNotifier().handle({ kind: "trade", mint: coin.mint, sig: "EarlyBuy" })).toBe(1);
+    expect(tg.to(GROUP_A)).toHaveLength(1);
+  });
+
+  it("a catch-up replay of buys posted already takes no throttle slot; the next alert counts only dropped buys", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    const n = makeNotifier();
+    const buy = async (sig: string, at: number) => {
+      now = at;
+      await insertTrade(db, { sig, ixIndex: 0, mint: coin.mint, wallet: addr(`buyer:${sig}`), side: "buy", sol: 100_000_000n, tokens: 5n * TOK, price: 5e-8, ts: at, slot: 1, source: "curve" });
+      return n.handle({ kind: "trade", mint: coin.mint, sig });
+    };
+    for (let i = 0; i < 10; i++) expect(await buy(`Live${i}`, NOW + i * 1_000)).toBe(1);
+    // The database connection came back: catch-up re-reads the ten buys, all posted already.
+    now = NOW + 10_000;
+    expect(await n.catchUp(NOW - 15 * MIN)).toBe(0);
+    for (let i = 0; i < 5; i++) expect(await buy(`After${i}`, NOW + 11_000 + i * 1_000)).toBe(1);
+    // 15 alerts this minute: the next two are dropped and counted, and a replay does not post them later.
+    expect(await buy("Over1", NOW + 20_000)).toBe(0);
+    expect(await buy("Over2", NOW + 21_000)).toBe(0);
+    now = NOW + 30_000;
+    expect(await n.catchUp(NOW - 15 * MIN)).toBe(0);
+    expect(await buy("Later", NOW + 61_000)).toBe(1);
+    const alerts = tg.to(GROUP_A);
+    expect(alerts).toHaveLength(16);
+    expect(alerts.filter((t) => t.includes("since the last alert"))).toEqual([expect.stringContaining("+2 more buys since the last alert")]);
+    expect(alerts[15]).toContain("Later");
+  });
+
+  it("a buy alert Telegram refused is posted by a later replay", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    await insertTrade(db, { sig: "Refused1", ixIndex: 0, mint: coin.mint, wallet: addr("buyer"), side: "buy", sol: 100_000_000n, tokens: 5n * TOK, price: 5e-8, ts: NOW - MIN, slot: 1, source: "curve" });
+    tg.fail.set(GROUP_A, new TelegramError("sendMessage", 500, "Internal Server Error"));
+    const n = makeNotifier();
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Refused1" })).toBe(0);
+    tg.fail.clear();
+    expect(await n.catchUp(NOW - 15 * MIN)).toBe(1);
+    expect(tg.to(GROUP_A)).toEqual([expect.stringContaining("Refused1")]);
+  });
+
   it("throttles each group under Telegram's limit and counts what it skipped", () => {
     const t = new BuyThrottle(2);
     expect([t.take(1, 0), t.take(1, 1), t.take(1, 2), t.take(1, 3), t.take(2, 3)]).toEqual([0, 0, null, null, 0]);
@@ -492,6 +586,8 @@ describe("events for the launchpad bot", () => {
     await updateLaunchStatus(db, id, "deposit_received", { receivedLamports: 15_000_000n, sender: addr("s") });
     expect(await n.handle({ kind: "launch", launchId: id })).toBe(1);
     expect(tg.last(DM.id)!.text).toContain("Payment received</b> (0.015 SOL)");
+    await updateLaunchStatus(db, id, "creating", {});
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(0);
     await updateLaunchStatus(db, id, "live", { mint: coin.mint });
     expect(await n.handle({ kind: "launch", launchId: id })).toBe(1);
     expect(await n.handle({ kind: "launch", launchId: id })).toBe(0);
@@ -503,6 +599,35 @@ describe("events for the launchpad bot", () => {
     expect(buttonData(live)[2]).toMatch(/^https:\/\/x\.com\/intent\/tweet\?text=/);
     // Launches not started from Telegram are ignored.
     expect(await n.handle({ kind: "launch", launchId: "99999999-2222-3333-4444-555555555555" })).toBe(0);
+  });
+
+  it("says payment received when the launcher is already creating the coin", async () => {
+    // The launcher moves deposit_received → creating within milliseconds: the deposit's notification finds "creating".
+    const id = "11111111-2222-3333-4444-777777777777";
+    await insertLaunch(db, { id, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr("dep2"), depositIndex: 2n, requiredLamports: 15_000_000n, devBuyLamports: 0n, expiresAt: NOW + 30 * MIN });
+    await addTgLaunch(db, id, DM.id);
+    await updateLaunchStatus(db, id, "deposit_received", { receivedLamports: 20_000_000n, sender: addr("s") });
+    await updateLaunchStatus(db, id, "creating", {});
+    const n = makeNotifier();
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(1);
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(0);
+    expect(tg.to(DM.id)).toEqual([expect.stringContaining("Payment received</b> (0.02 SOL)")]);
+  });
+
+  it("a failed launch says its SOL was refunded, with the refund", async () => {
+    const id = "11111111-2222-3333-4444-888888888888";
+    await insertLaunch(db, { id, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr("dep3"), depositIndex: 3n, requiredLamports: 15_000_000n, devBuyLamports: 0n, expiresAt: NOW + 30 * MIN });
+    await addTgLaunch(db, id, DM.id);
+    await updateLaunchStatus(db, id, "refunding", { error: "create: Blockhash not found" });
+    const n = makeNotifier();
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(0);
+    await updateLaunchStatus(db, id, "failed", { refundSig: "RefundSig1" });
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(1);
+    const text = tg.last(DM.id)!.text;
+    expect(text).toContain("⚠️ The $DOG launch failed: create: Blockhash not found.");
+    expect(text).toContain("Your SOL was refunded to the wallet that paid");
+    expect(text).toContain('href="https://solscan.io/tx/RefundSig1?cluster=devnet"');
+    expect(text).not.toContain("will be refunded");
   });
 
   it("posts every $MOATPAD burn to the burn channel", async () => {

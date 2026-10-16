@@ -184,13 +184,20 @@ export function parseLinks(text: string): Socials | null {
 
 const notAllowed = (what: string) => `That ${what} is not allowed on Moatpad. Please choose another one.`;
 
+/** The limit counts UTF-16 units like the API, so an emoji takes 2: say so when that is why it is too long. */
+function tooLong(what: string, t: string, max: number): string {
+  const chars = Array.from(t).length;
+  if (chars > max) return `That ${what} is ${chars} characters. Please keep it to ${max} or less.`;
+  return `That ${what} is too long: emoji count as 2 characters, so it is ${t.length} of the ${max} allowed. Please make it a bit shorter.`;
+}
+
 /** Validates a typed answer for `step`. */
 export function applyText(step: Step, d: LaunchDraft, text: string): Applied {
   const t = text.trim();
   switch (step) {
     case "name":
       if (!t) return { ok: false, error: "Please type a name." };
-      if (t.length > MAX_NAME_LENGTH) return { ok: false, error: `That name is ${t.length} characters. Please keep it to ${MAX_NAME_LENGTH} or less.` };
+      if (t.length > MAX_NAME_LENGTH) return { ok: false, error: tooLong("name", t, MAX_NAME_LENGTH) };
       if (containsBlockedTerm(t)) return { ok: false, error: notAllowed("name") };
       return { ok: true, data: { ...d, name: t } };
     case "ticker": {
@@ -202,7 +209,7 @@ export function applyText(step: Step, d: LaunchDraft, text: string): Applied {
     case "image":
       return { ok: false, error: "Please send the image as a photo, or tap Skip." };
     case "description":
-      if (t.length > MAX_DESCRIPTION_LENGTH) return { ok: false, error: `That description is ${t.length} characters. Please keep it to ${MAX_DESCRIPTION_LENGTH} or less.` };
+      if (t.length > MAX_DESCRIPTION_LENGTH) return { ok: false, error: tooLong("description", t, MAX_DESCRIPTION_LENGTH) };
       if (containsBlockedTerm(t)) return { ok: false, error: "That description is not allowed on Moatpad. Please write another one." };
       return { ok: true, data: { ...d, description: t || undefined } };
     case "links": {
@@ -344,7 +351,7 @@ export class LaunchFlow {
     const next = nextStep(step);
     await saveDraft(this.deps.db, { chatId, userId, step: next, data: data as Record<string, unknown> });
     if (next !== "confirm") return ask(next, data);
-    const quote = await this.deps.api.quote(data.devBuySol ?? 0, userId).catch(() => null);
+    const quote = await this.deps.api.quote({ devBuySol: data.devBuySol ?? 0, name: data.name, ticker: data.ticker }, userId).catch(() => null);
     return ask("confirm", data, quote);
   }
 
