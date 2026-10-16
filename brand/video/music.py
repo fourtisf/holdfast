@@ -2,6 +2,7 @@
 
     python3 brand/video/music.py            # writes brand/video/music-tour.wav (60 s) and music-live.wav (24 s)
     python3 brand/video/music.py burn       # only music-burn.wav (32 s), for burn.html
+    python3 brand/video/music.py bot        # only music-bot.wav (40 s), for bot.html
 
 Cinematic electronic in A minor: warm detuned pads, a sub bass ducked by the kick, plucked arpeggios through a
 dotted-eighth delay, hats and claps, risers and impacts on the cuts. Every section boundary lands on a scene change
@@ -486,6 +487,88 @@ def burn():
     master(mix, os.path.join(HERE, "music-burn.wav"))
 
 
+def pop(freq=1250, dur=0.09):
+    """A soft UI "pop" for a chat bubble: a sine that drops in pitch."""
+    t = tt(dur)
+    f = freq * (1 + 0.45 * np.exp(-t / 0.012))
+    return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.028) * (1 - np.exp(-t / 0.0015)) * 0.45
+
+
+def chime(dur=0.9):
+    """A two-note notification chime."""
+    out = np.zeros(int(dur * SR))
+    for m, at in ((88, 0.0), (93, 0.085)):
+        s = pluck(hz(m), dur - at) * 0.9
+        i = int(at * SR)
+        out[i:i + len(s)] += s[: len(out) - i]
+    return out
+
+
+def bot():
+    """Moatpad Bot teaser (bot.html): 40 s at 120 BPM, a pop for every chat bubble and a chime for every notification."""
+    total, beat, drop = 40.0, 0.5, 4.0
+    n = int(total * SR)
+    st = lambda x: np.stack([x, x], axis=1)
+
+    # 0-4: the logo, the Telegram plane flying in (1.0-1.95), the title hit at 2.0, a riser into the drop
+    fx = np.zeros((n, 2))
+    for m in CHORDS[0] + (CHORDS[0][0] + 12,):
+        place(fx, pad_note(hz(m), 3.8, attack=1.0, release=0.9, bright=0.55), 0.0, 1.0)
+    place(fx, st(whoosh(1.0)), 1.0, 0.9)
+    place(fx, riser(1.8), 2.2, 0.6)
+    place(fx, reverse_cymbal(1.0), 3.0, 0.55)
+
+    # 4-36: the groove; 22-26 drops to an airy break under the lock-screen notifications
+    groove, _ = song(total, 120, 16, drop, [
+        (0, 2, {"pad", "kick", "hat", "bass", "arp"}),
+        (3, 5, {"padbright", "kick", "hat", "clap", "bass", "arp"}),
+        (6, 8, {"padbright", "kick", "hat", "hat16", "clap", "bass", "bassoct", "arpup"}),
+        (9, 10, {"pad", "sub", "arp"}),
+        (11, 12, {"padbright", "kick", "hat", "hat16", "clap", "bass", "arpup"}),
+        (13, 13, {"padbright", "kick", "hat", "hat16", "clap", "bass", "arpup", "riser"}),
+        (14, 15, {"pad", "kick", "hat", "clap", "bass", "arp"}),
+    ])
+    groove = fade(groove, 35.85, 36.05)
+    outro, _ = song(total, 120, 2, 36.0, [(0, 1, {"pad", "sub", "arp"})])
+
+    hits = np.zeros((n, 2))
+    place(hits, st(impact(2.4)), 2.0, 0.95)
+    place(hits, saw_stack((33, 45, 52), 2.2, attack=0.03, decay=1.1), 2.0, 0.45)
+    place(hits, st(impact(2.0)), drop, 0.7)
+    place(hits, st(impact(1.6)), 14.6, 0.55)  # $MDOG is live
+    for at in (15.75, 21.75, 25.75, 31.75):  # the phone changes screen
+        place(hits, st(whoosh(0.5)), at, 0.6)
+    place(hits, st(impact(1.4)), 32.0, 0.45)
+    place(hits, st(impact(3.2)), 36.0, 1.05)
+    place(hits, st(subdrop()), 36.0, 0.8)
+    place(hits, saw_stack((33, 40, 45), 3.0, attack=0.03, decay=1.5), 36.0, 0.5)
+
+    # UI sounds, on the bubbles, taps and notifications of bot.html
+    ui = np.zeros((n, 2))
+    bot_in = (5.1, 6.1, 7.0, 7.9, 8.5, 9.1, 9.85, 10.6, 11.3, 12.35, 13.75, 14.6, 17.15, 18.0, 19.0, 19.5, 20.7, 29.5, 30.8, 33.9)
+    me_out = (4.75, 5.8, 6.7, 7.55, 16.75, 29.15, 30.45, 33.55)
+    taps = (8.3, 8.9, 9.6, 10.35, 11.05, 12.05, 12.95, 27.6, 28.05, 28.5, 28.95, 33.35, 34.55)
+    for i, at in enumerate(bot_in):
+        place(ui, pop(1150 + 90 * (i % 3)), at, 0.55, pan=-0.15)
+    for at in me_out:
+        place(ui, pop(1650), at, 0.45, pan=0.2)
+    for at in taps:
+        place(ui, tick(), at, 0.5, pan=0.1)
+    for at in (22.4, 22.95, 23.5, 24.05, 24.6):
+        place(ui, chime(), at, 0.5, pan=0.15)
+    place(ui, st(whoosh(0.4)), 26.95, 0.35)  # the "/" menu slides up
+    for at in (33.4, 34.6):  # the beams between the site and the bot
+        place(ui, st(whoosh(0.55)), at, 0.45)
+    ui += delay(ui, beat * 0.75, fb=0.25, mix=0.18, taps=2)
+
+    fx += reverb(fx, 2.2, 0.3)
+    hits += reverb(hits, 2.6, 0.25)
+    ui += reverb(ui, 1.2, 0.12)
+    mix = fx + groove * 0.85 + outro * 0.9 + hits + ui * 0.9
+    mix = fade(mix, 38.4, 40.0)
+    master(mix, os.path.join(HERE, "music-bot.wav"))
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
@@ -495,5 +578,6 @@ if __name__ == "__main__":
     tour()
     live()
     burn()
+    bot()
     if os.path.exists(os.path.join(HERE, "demo-app.json")):
         demo()

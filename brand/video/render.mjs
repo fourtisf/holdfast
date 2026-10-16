@@ -1,5 +1,5 @@
 // Renders a promo video frame by frame into an MP4 (H.264, 1920x1080, 30 fps), or a few stills to check a cut.
-// "tour" is tour.html, "live" is live.html, "burn" is burn.html, "review" is ad.html?v=review, demo-intro/demo-outro are demo.html; music-<video>.wav, when present, is muxed in (AAC,
+// "tour" is tour.html, "live" is live.html, "burn" is burn.html, "bot" is bot.html, "review" is ad.html?v=review, demo-intro/demo-outro are demo.html; music-<video>.wav, when present, is muxed in (AAC,
 // loudness-normalized to -14 LUFS). Run from apps/web, where Playwright is installed:
 //   cp ../../brand/video/render.mjs .render.mjs && node .render.mjs tour ../../brand/video/moatpad-tour.mp4; rm .render.mjs
 //   node .render.mjs live ../../brand/video/moatpad-live.mp4
@@ -14,7 +14,7 @@ const [video = "review", out = `moatpad-${video}.mp4`, flag, list] = process.arg
 const FPS = 30;
 const page = await (await chromium.launch()).newPage({ viewport: { width: 1920, height: 1080 } });
 // demo-intro / demo-outro are the two ends of the launch demo (demo.html?part=…, see build-demo.sh)
-const html = video.startsWith("demo-") ? "demo.html" : ({ tour: "tour.html", live: "live.html", burn: "burn.html" }[video] ?? "ad.html");
+const html = video.startsWith("demo-") ? "demo.html" : ({ tour: "tour.html", live: "live.html", burn: "burn.html", bot: "bot.html" }[video] ?? "ad.html");
 await page.goto(`${pathToFileURL(resolve(`../../brand/video/${html}`)).href}?v=${video}&part=${video.replace(/^demo-/, "")}`);
 await page.evaluate(() => window.ready);
 const duration = await page.evaluate(() => window.DURATION);
