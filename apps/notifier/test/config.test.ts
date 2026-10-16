@@ -12,6 +12,7 @@ describe("loadConfig", () => {
       databaseUrl: "postgres://h/db",
       webUrl: "http://localhost:3000",
       apiUrl: "http://localhost:4000",
+      internalApiToken: null,
       burnChatId: null,
       moatCa: "4qLdhoVDiAkXVXqU4D3rSPp6pMMnJzRJr38do55Hpump",
       cluster: "mainnet-beta",
@@ -28,6 +29,13 @@ describe("loadConfig", () => {
     const cfg = loadConfig({ ...BASE, API_INTERNAL_URL: "http://api:4000/", NOTIFIER_BURN_CHAT_ID: "-1001234567890", MOAT_CA: "Moat111" });
     expect(cfg).toMatchObject({ apiUrl: "http://api:4000", burnChatId: -1001234567890, moatCa: "Moat111" });
     expect(() => loadConfig({ ...BASE, NOTIFIER_BURN_CHAT_ID: "@channel" })).toThrow(/NOTIFIER_BURN_CHAT_ID/);
+  });
+
+  it("reads INTERNAL_API_TOKEN and refuses a short one", () => {
+    const token = "a".repeat(64);
+    expect(loadConfig({ ...BASE, INTERNAL_API_TOKEN: ` ${token}\n` }).internalApiToken).toBe(token);
+    expect(loadConfig({ ...BASE, INTERNAL_API_TOKEN: "" }).internalApiToken).toBeNull();
+    expect(() => loadConfig({ ...BASE, INTERNAL_API_TOKEN: "short" })).toThrow("INTERNAL_API_TOKEN must be at least 24 characters");
   });
 
   it("reads overrides", () => {

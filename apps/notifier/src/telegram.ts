@@ -50,6 +50,8 @@ export interface TgMessage {
   /** Sizes of one photo, smallest first. */
   photo?: TgPhotoSize[];
   document?: TgDocument;
+  /** Service message in a basic group that became a supergroup: the group's new chat id. */
+  migrate_to_chat_id?: number;
 }
 
 export interface TgCallbackQuery {
@@ -127,6 +129,8 @@ export class TelegramError extends Error {
     readonly code: number,
     readonly description: string,
     readonly retryAfterSec?: number,
+    /** The group became a supergroup with this chat id (400 "group chat was upgraded to a supergroup chat"). */
+    readonly migrateToChatId?: number,
   ) {
     super(`telegram ${method} failed: ${code} ${description}`);
     this.name = "TelegramError";
@@ -202,7 +206,7 @@ export class TelegramClient implements TelegramApi {
         await this.sleepFn(Math.max(1, retryAfter ?? 1) * 1000, opts.signal);
         continue;
       }
-      throw new TelegramError(method, code, body.description ?? `HTTP ${res.status}`, retryAfter);
+      throw new TelegramError(method, code, body.description ?? `HTTP ${res.status}`, retryAfter, body.parameters?.migrate_to_chat_id);
     }
   }
 

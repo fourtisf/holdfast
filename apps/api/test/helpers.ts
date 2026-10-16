@@ -38,6 +38,7 @@ export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     logLevel: "silent",
     production: false,
     adminToken: ADMIN_TOKEN,
+    internalApiToken: null,
     moderation: { lists: DEFAULT_MODERATION_LISTS, imageWebhookUrl: null, imageFailClosed: false, autoHideReports: 0, reportSalt: "test-salt" },
     ...overrides,
   };

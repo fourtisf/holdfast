@@ -74,6 +74,8 @@ services:
       API_PORT: "4000"
       # wallet-signed launches are built and co-signed by the launcher (its ops port, internal only)
       LAUNCHER_INTERNAL_URL: http://launcher:9103
+      # shared with the notifier: the Telegram bot's calls are rate limited per Telegram user, not per IP
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
     ports:
       - "4000:4000"
     volumes:
@@ -162,6 +164,8 @@ services:
       NOTIFIER_OPS_PORT: "9104"
       # /launch, /coin, /trending and /burns go through the API, like the website
       API_INTERNAL_URL: http://api:4000
+      # same value as the api's: launch calls carry the Telegram user, so users don't share one rate limit
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
     depends_on:
       api:
         condition: service_healthy

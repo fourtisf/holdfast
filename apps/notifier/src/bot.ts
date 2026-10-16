@@ -3,16 +3,22 @@
  * we act on is claimed in tg_sent (`update:<id>`) first, so an update Telegram delivers again after
  * a restart is neither executed nor answered twice.
  */
-import { getTelegramOffset, markSent, setTelegramOffset, type Queryable } from "@holdfast/db";
+import { getTelegramOffset, markSent, moveTelegramChat, setTelegramOffset, type Queryable } from "@holdfast/db";
 
-import { follow, handleText, parseCommand, runCommand, type CommandContext } from "./commands.js";
+import { follow, handleText, isAdmin, parseCommand, runCommand, type CommandContext } from "./commands.js";
 import { MENU, type BotReply } from "./messages.js";
 import { sleep, TelegramError, type TelegramApi, type TgCallbackQuery, type TgChatMemberUpdated, type TgUpdate } from "./telegram.js";
 
 interface Logger {
+  info(obj: object, msg?: string): void;
   warn(obj: object, msg?: string): void;
   error(obj: object, msg?: string): void;
 }
+
+/** Menu buttons ("m:<name>") may only run these commands; anything else is just answered. */
+const MENU_COMMANDS: ReadonlySet<string> = new Set(["launch", "trending", "burns", "help"]);
+const CHANNEL_TOAST = "Buttons don't work in channels. Open me in a private chat to use them.";
+const FOLLOW_ADMINS_TOAST = "Only group admins can turn on alerts here. Open me in a private chat to follow it yourself.";
 
 export interface BotMetrics {
   pollDone(): Promise<void>;
@@ -59,6 +65,8 @@ export class Bot {
     const msg = u.message ?? u.channel_post;
     if (!msg) return;
     const { chat } = msg;
+    // A basic group became a supergroup (service message in the old group): its buy bot and alerts move to the new id.
+    if (msg.migrate_to_chat_id !== undefined && chat.type === "group") return this.migrated(chat.id, msg.migrate_to_chat_id);
     const isPrivate = chat.type === "private";
     const body = msg.text ?? msg.caption ?? "";
     const isCommand = body !== "" && parseCommand(body, this.deps.botUsername) !== null;
@@ -85,14 +93,22 @@ export class Bot {
     await this.reply(chat.id, result.reply);
   }
 
-  /** A pressed inline button: "l:..." launch steps, "m:..." menu items, "f:<mint>" alerts for a coin. */
+  /**
+   * A pressed inline button: "l:..." launch steps (private chat), "m:<name>" menu items (MENU_COMMANDS
+   * only), "f:<mint>" alerts for a coin (group admins only in a group). Every subscriber of a channel can
+   * press the buttons of its posts, so in a channel a button only gets a toast.
+   */
   private async handleCallback(updateId: number, q: TgCallbackQuery): Promise<void> {
     const chat = q.message?.chat;
     const data = q.data ?? "";
-    await this.deps.tg.answerCallback(q.id).catch(() => {});
-    if (!chat || !(await markSent(this.deps.db, chat.id, `update:${updateId}`))) return;
+    const answer = (toast?: string) => this.deps.tg.answerCallback(q.id, toast).catch(() => {});
+    if (!chat) return answer();
+    if (chat.type === "channel") return answer(CHANNEL_TOAST);
     const ctx = this.deps.commands;
     const src = { chat, from: q.from };
+    if (data.startsWith("f:") && chat.type !== "private" && !(await isAdmin(ctx, src))) return answer(FOLLOW_ADMINS_TOAST);
+    await answer();
+    if (!(await markSent(this.deps.db, chat.id, `update:${updateId}`))) return;
     let reply: BotReply | null = null;
     if (data.startsWith("l:")) {
       if (chat.type !== "private" || !ctx.launch) return;
@@ -100,6 +116,7 @@ export class Bot {
       this.deps.metrics?.command("launch_step");
     } else if (data.startsWith("m:")) {
       const name = data.slice(2);
+      if (!MENU_COMMANDS.has(name)) return;
       reply = await runCommand(ctx, src, { name, args: [] });
       this.deps.metrics?.command(name);
     } else if (data.startsWith("f:")) {
@@ -126,11 +143,22 @@ export class Bot {
     });
   }
 
-  private async reply(chatId: number, r: BotReply): Promise<void> {
+  /** The group `from` is now the supergroup `to`: everything the bot keeps for it follows. */
+  private async migrated(from: number, to: number): Promise<void> {
+    await moveTelegramChat(this.deps.db, from, to);
+    this.deps.log?.info({ from, to }, "group became a supergroup; its buy bot and alerts moved");
+  }
+
+  private async reply(chatId: number, r: BotReply, followMigration = true): Promise<void> {
     try {
       await this.deps.tg.sendMessage(chatId, r.html, { buttons: r.buttons, preview: r.preview });
     } catch (err) {
       if (err instanceof TelegramError && err.chatUnavailable) return;
+      // Answered in a group that just became a supergroup: move it, then answer once at the new id.
+      if (err instanceof TelegramError && err.migrateToChatId !== undefined && followMigration) {
+        await this.migrated(chatId, err.migrateToChatId);
+        return this.reply(err.migrateToChatId, r, false);
+      }
       throw err;
     }
   }

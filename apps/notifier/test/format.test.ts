@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { coinUrl, formatMultiplier, formatPrice, formatSol, formatTokens, shortAddress, solscanTxUrl } from "../src/format.js";
+import { clip, coinUrl, ellipsize, formatMultiplier, formatPrice, formatSol, formatTokens, shortAddress, solscanTxUrl } from "../src/format.js";
 import { defendMessage, graduatedMessage, milestoneMessage, payoutMessage, roundSummaryMessage } from "../src/messages.js";
 import { escapeHtml } from "../src/telegram.js";
 import { addr, LINKS, TOK } from "./helpers.js";
@@ -63,6 +63,14 @@ describe("links", () => {
   it("shortens addresses", () => {
     expect(shortAddress("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")).toBe("7xKX…gAsU");
     expect(shortAddress("short")).toBe("short");
+    expect(shortAddress("😀😀😀😀abcdefgh😀😀😀😀")).toBe("😀😀😀😀…😀😀😀😀");
+  });
+
+  it("cuts user text by characters, never inside an emoji", () => {
+    expect(clip("ab😀cd", 3)).toBe("ab😀");
+    expect(clip("ab", 3)).toBe("ab");
+    expect(ellipsize("ab😀cd", 3)).toBe("ab😀…");
+    expect(ellipsize("ab😀", 3)).toBe("ab😀");
   });
 });
 

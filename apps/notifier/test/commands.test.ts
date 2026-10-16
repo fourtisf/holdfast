@@ -5,7 +5,7 @@ import { countChatSubscriptions, getBuybot, listChatSubscriptions, type Db } fro
 import type { MoatpadApi } from "../src/api.js";
 import { GROUP_COMMANDS, handleText, isValidAddress, MAX_SUBSCRIPTIONS_PER_CHAT, parseCommand, PRIVATE_COMMANDS, runCommand, type CommandContext } from "../src/commands.js";
 import type { BotReply } from "../src/messages.js";
-import { addr, FakeTelegram, freshDb, LINKS, NOW, resetDb, seedCoin } from "./helpers.js";
+import { addr, FakeTelegram, freshDb, LINKS, NOW, resetDb, seedCoin, wellFormed } from "./helpers.js";
 
 let db: Db;
 let ctx: CommandContext;
@@ -264,6 +264,42 @@ describe("/watch, /follow and the alert list", () => {
     expect(await say("/stop")).toBe("Removed 3 alerts. Send /start to begin again.");
     expect(await say("/stop")).toBe("Nothing to remove: this chat has no alerts.");
     expect(await countChatSubscriptions(db, 7)).toBe(1);
+  });
+
+  it("in a group only admins remove alerts: a non-admin's /stop keeps the buy bot", async () => {
+    const coin = await seedCoin(db, "hound");
+    const wallet = addr("alice");
+    tg.members.set(`${GROUP.id}:9`, "administrator");
+    await say(`/buybot ${coin.mint}`, GROUP, 9);
+    await say(`/follow ${coin.mint}`, GROUP, 9);
+    await say(`/watch ${wallet}`, GROUP, 9);
+    for (const cmd of ["/stop", `/unfollow ${coin.mint}`, `/uncoin ${coin.mint}`, `/unwatch ${wallet}`]) {
+      expect(await say(cmd, GROUP, 3)).toBe("Only group admins can change this group's alerts.");
+    }
+    expect(await getBuybot(db, GROUP.id)).toMatchObject({ mint: coin.mint });
+    expect(await countChatSubscriptions(db, GROUP.id)).toBe(2);
+    expect(await say(`/unwatch ${wallet}`, GROUP, 9)).toBe(`Stopped watching <code>${wallet}</code>.`);
+    expect(await say("/stop", GROUP, 9)).toBe("Removed 2 alerts. Send /start to begin again.");
+    expect(await getBuybot(db, GROUP.id)).toBeNull();
+  });
+
+  it("channel posts (no sender) and private chats need no admin check", async () => {
+    const CHANNEL = { id: -100900, type: "channel" as const };
+    const coin = await seedCoin(db, "hound");
+    expect((await handleText(ctx, { chat: CHANNEL }, `/follow ${coin.mint}`, "HoldfastBot"))?.reply.html).toContain("🔔 Alerts on for $HOUND");
+    expect((await handleText(ctx, { chat: CHANNEL }, `/unfollow ${coin.mint}`, "HoldfastBot"))?.reply.html).toBe(`Alerts off for <code>${coin.mint}</code>.`);
+    expect((await handleText(ctx, { chat: CHANNEL }, "/stop", "HoldfastBot"))?.reply.html).toBe("Nothing to remove: this chat has no alerts.");
+  });
+
+  it("never cuts an emoji in half when it quotes a bad address", async () => {
+    const bad = `${"a".repeat(63)}😀${"b".repeat(10)}`;
+    const reply = await say(`/watch ${bad}`);
+    expect(reply).toBe(`<code>${"a".repeat(63)}😀</code> is not a valid Solana address.\nUsage: /watch &lt;wallet address&gt;`);
+    expect(wellFormed(reply)).toBe(true);
+    tg.members.set(`${GROUP.id}:9`, "administrator");
+    const group = await say(`/buybot ${bad}`, GROUP, 9);
+    expect(group).toContain(`<code>${"a".repeat(63)}😀</code> is not a coin address.`);
+    expect(wellFormed(group)).toBe(true);
   });
 });
 

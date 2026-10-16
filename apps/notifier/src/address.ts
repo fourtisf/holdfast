@@ -11,3 +11,8 @@ export function isValidAddress(value: string): boolean {
     return false;
   }
 }
+
+/** A regular wallet: a valid address on the ed25519 curve, so it has a private key and can sign (a program address cannot). */
+export function isWalletAddress(value: string): boolean {
+  return isValidAddress(value) && PublicKey.isOnCurve(new PublicKey(value).toBytes());
+}

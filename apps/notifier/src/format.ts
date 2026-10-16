@@ -50,7 +50,23 @@ export function formatMultiplier(ppm: bigint): string {
 
 /** First and last four characters: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU" → "7xKX…gAsU". */
 export function shortAddress(address: string): string {
-  return address.length <= 10 ? address : `${address.slice(0, 4)}…${address.slice(-4)}`;
+  const chars = Array.from(address);
+  return chars.length <= 10 ? address : `${chars.slice(0, 4).join("")}…${chars.slice(-4).join("")}`;
+}
+
+/**
+ * The first `max` characters of user text, counted in code points: cutting UTF-16 units can split an
+ * emoji in half, and Telegram refuses a message with half an emoji (400), so it would never arrive.
+ */
+export function clip(text: string, max: number): string {
+  const chars = Array.from(text);
+  return chars.length <= max ? text : chars.slice(0, max).join("");
+}
+
+/** `clip` with "…" when something was cut. */
+export function ellipsize(text: string, max: number): string {
+  const cut = clip(text, max);
+  return cut === text ? text : `${cut}…`;
 }
 
 export type Cluster = "mainnet-beta" | "devnet" | "testnet" | "localnet";

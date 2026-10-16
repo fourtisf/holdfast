@@ -3,8 +3,10 @@ import { applyDecrease, applyBuy, buildRoundSnapshot, computeRound, emptyLedger,
 import {
   addExcluded,
   addSubscription,
+  addTgLaunch,
   applyLotConsumptions,
   applyVaultDelta,
+  chatForLaunch,
   chatsWatchingCoin,
   chatsWatchingWallets,
   countCoins,
@@ -17,8 +19,10 @@ import {
   expireLaunches,
   filterExcluded,
   findCoinsByVenue,
+  getBuybot,
   getCarry,
   getCoin,
+  getDraft,
   getCoins,
   getLatestRound,
   getLaunch,
@@ -33,6 +37,7 @@ import {
   insertCoin,
   insertDefend,
   insertFloorPoint,
+  insertHoldBurn,
   insertLaunch,
   insertLot,
   insertRound,
@@ -59,6 +64,7 @@ import {
   markGraduated,
   markPayout,
   markSent,
+  moveTelegramChat,
   nextDepositIndex,
   openLotsByWallet,
   pruneSent,
@@ -67,7 +73,9 @@ import {
   removeChatSubscriptions,
   removeSubscription,
   saveCarries,
+  saveDraft,
   saveLedger,
+  setBuybot,
   setLaunchSig,
   setTelegramOffset,
   sumCarries,
@@ -492,6 +500,64 @@ describe("telegram notifier", () => {
     expect(await pruneSent(db, Date.now() + 60_000, ["weight:"])).toBe(2);
     expect(await markSent(db, 1, "weight:w:m:1.0:1")).toBe(false);
     expect(await markSent(db, 1, "round:m:1:w")).toBe(true);
+  });
+
+  it("moves a migrated group's rows to its new chat id, keeping the new chat's rows on conflicts", async () => {
+    const [OLD, NEW, OTHER] = [-4001, -1004001, -4002];
+    const [m1, m2, w1] = [addr("m1"), addr("m2"), addr("w1")];
+    await setBuybot(db, { chatId: OLD, mint: m1, minLamports: 5n, createdBy: 9, atMs: T0 });
+    await setBuybot(db, { chatId: OTHER, mint: m2, minLamports: 0n, createdBy: 9, atMs: T0 });
+    await addSubscription(db, { chatId: OLD, kind: "coin", target: m1, atMs: T0 });
+    await addSubscription(db, { chatId: OLD, kind: "wallet", target: w1, atMs: T0 });
+    await addSubscription(db, { chatId: NEW, kind: "wallet", target: w1, atMs: T0 + 5 });
+    await saveDraft(db, { chatId: OLD, userId: 7, step: "ticker", data: { name: "Dog" } });
+    const launchId = "6f1c5c34-8a32-4bb1-9d0e-6a7a0f8b2a13";
+    await addTgLaunch(db, launchId, OLD);
+    await markSent(db, OLD, "defend:m1:sig1");
+    await markSent(db, OLD, "buy:sig2:0");
+    await markSent(db, NEW, "buy:sig2:0");
+
+    await moveTelegramChat(db, OLD, NEW);
+    expect(await getBuybot(db, OLD)).toBeNull();
+    expect(await getBuybot(db, NEW)).toMatchObject({ chatId: NEW, mint: m1, minLamports: 5n });
+    expect(await getBuybot(db, OTHER)).toMatchObject({ mint: m2 });
+    expect(await countChatSubscriptions(db, OLD)).toBe(0);
+    expect(await listChatSubscriptions(db, NEW)).toEqual([
+      { chatId: NEW, kind: "wallet", target: w1, createdAt: T0 + 5 },
+      { chatId: NEW, kind: "coin", target: m1, createdAt: T0 },
+    ]);
+    expect(await getDraft(db, OLD)).toBeNull();
+    expect(await getDraft(db, NEW)).toMatchObject({ userId: 7, step: "ticker", data: { name: "Dog" } });
+    expect(await chatForLaunch(db, launchId)).toBe(NEW);
+    // Claims follow the chat: a replay never re-sends to the new id what the old one already got.
+    expect(await markSent(db, NEW, "defend:m1:sig1")).toBe(false);
+    expect(await markSent(db, OLD, "buy:sig2:0")).toBe(true);
+
+    // Running it again (or for a chat the bot knows nothing about) changes nothing; the new chat's buy bot wins over the old one's.
+    await moveTelegramChat(db, OLD, NEW);
+    await setBuybot(db, { chatId: OTHER, mint: m1, minLamports: 1n, createdBy: 9, atMs: T0 });
+    await moveTelegramChat(db, OTHER, NEW);
+    expect(await getBuybot(db, NEW)).toMatchObject({ mint: m1, minLamports: 5n });
+    expect(await getBuybot(db, OTHER)).toBeNull();
+  });
+
+  it("recent events include launches started from Telegram and $MOATPAD burns", async () => {
+    const c = await seedCoin(db, "n");
+    const since = Date.now() - 60_000;
+    const [fromBot, fromSite] = ["6f1c5c34-8a32-4bb1-9d0e-6a7a0f8b2a21", "6f1c5c34-8a32-4bb1-9d0e-6a7a0f8b2a22"];
+    for (const [i, id] of [fromBot, fromSite].entries()) {
+      await insertLaunch(db, { id, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr(`dep${i}`), depositIndex: await nextDepositIndex(db), requiredLamports: 1n, devBuyLamports: 0n, expiresAt: T0 });
+    }
+    await addTgLaunch(db, fromBot, 42);
+    await updateLaunchStatus(db, fromBot, "live", { mint: c.mint });
+    await updateLaunchStatus(db, fromSite, "live", { mint: c.mint });
+    await insertHoldBurn(db, { sig: sig("burn"), mint: c.mint, solSpent: 1n, holdBurned: 2n, ts: Date.now() - 1000 });
+    await insertHoldBurn(db, { sig: sig("old-burn"), mint: c.mint, solSpent: 1n, holdBurned: 2n, ts: since - 1000 });
+    expect(await recentNotifierEvents(db, since)).toEqual([
+      { kind: "launch", launchId: fromBot },
+      { kind: "burn", mint: c.mint, sig: sig("burn") },
+    ]);
+    expect(await recentNotifierEvents(db, Date.now() + 60_000)).toEqual([]);
   });
 
   it("reads open lots of watched wallets and recent events", async () => {

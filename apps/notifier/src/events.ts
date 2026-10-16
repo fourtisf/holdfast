@@ -5,7 +5,7 @@
  * - trade (side 'vault'): coin followers get the floor defence.
  * - coin (graduated): coin followers get the graduation.
  * - weight milestones: a watched wallet's position in a coin crossing 0.5x and 1.0x average weight.
- * - trade (side 'buy'): groups with the buy bot on for the coin get the buy (throttled per group).
+ * - trade (side 'buy'): groups with the buy bot on for the coin get the buy (throttled per group, at most 2 minutes old).
  * - launch: the chat that started a launch from the bot hears about its progress (paid, live, refunded).
  * - burn: the burn channel (NOTIFIER_BURN_CHAT_ID) gets every $MOATPAD buy & burn.
  *
@@ -82,6 +82,8 @@ export class BuyThrottle {
 
 /** Events older than this are never announced (re-indexed history, very late replays). */
 export const MAX_EVENT_AGE_MS = 24 * 3600_000;
+/** Buy alerts are live news: older buys (an indexer backfill, a late replay) are not posted, and do not use up a group's throttle. */
+export const MAX_BUY_ALERT_AGE_MS = 2 * 60_000;
 /** An event that happened shortly before a chat subscribed still reaches it; older ones do not. */
 export const SUBSCRIBE_GRACE_MS = 10 * 60_000;
 
@@ -262,7 +264,7 @@ export class Notifier {
       );
     }
 
-    for (const t of all.filter((x) => x.side === "buy")) {
+    for (const t of all.filter((x) => x.side === "buy" && x.ts >= this.now() - MAX_BUY_ALERT_AGE_MS)) {
       const targets = groups.filter((g) => t.sol >= g.minLamports && Notifier.isNewFor({ chatId: g.chatId, createdAt: g.createdAt }, t.ts));
       for (const g of targets) {
         const skipped = this.throttle.take(g.chatId, this.now());

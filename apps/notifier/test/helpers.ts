@@ -60,6 +60,8 @@ export class FakeTelegram implements TelegramApi {
   readonly batches: TgUpdate[][] = [];
   readonly fail = new Map<number, Error>();
   readonly answered: string[] = [];
+  /** Toast texts of answered callbacks, by callback id. */
+  readonly toasts = new Map<string, string>();
   readonly commandMenus: { scope: string; commands: readonly BotCommandSpec[] }[] = [];
   /** getChatMemberStatus answers: `${chatId}:${userId}` → status (default "member"). */
   readonly members = new Map<string, string>();
@@ -83,8 +85,9 @@ export class FakeTelegram implements TelegramApi {
     this.sent.push({ chatId, text: html, buttons: opts?.buttons });
   }
 
-  async answerCallback(callbackId: string): Promise<void> {
+  async answerCallback(callbackId: string, text?: string): Promise<void> {
     this.answered.push(callbackId);
+    if (text) this.toasts.set(callbackId, text);
   }
 
   async downloadFile(fileId: string): Promise<{ bytes: Uint8Array; path: string }> {
@@ -131,6 +134,11 @@ export function buttonUpdate(updateId: number, chat: Pick<TgChat, "id" | "type">
     update_id: updateId,
     callback_query: { id: `cb${updateId}`, from: { id: fromId, is_bot: false, first_name: "Ann" }, data, message: { message_id: ++messageId, date: Math.floor(NOW / 1000), chat } },
   };
+}
+
+/** No lone UTF-16 surrogate (half an emoji): Telegram refuses such a message. */
+export function wellFormed(text: string): boolean {
+  return !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text);
 }
 
 /** Every callback_data / url of a sent message's buttons, flattened. */

@@ -13,6 +13,7 @@ import type { ApiConfig } from "./config.js";
 import type { ApiContext } from "./context.js";
 import type { LaunchService } from "./launch/service.js";
 import { HttpWalletLauncher, type WalletLauncher } from "./launch/wallet.js";
+import { rateLimitKey } from "./ratelimit.js";
 import { RpcTxRelay, type TxRelay } from "./relay.js";
 import type { TradeChain } from "./trade/chain.js";
 import { NO_PRICE, type SolPriceSource } from "./services/price.js";
@@ -122,6 +123,8 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
     await app.register(rateLimit, {
       max: deps.config.rateLimitPerMinute,
       timeWindow: "1 minute",
+      // Per IP; the Telegram bot's requests per Telegram user when they carry INTERNAL_API_TOKEN (route limits use the same key).
+      keyGenerator: (req) => rateLimitKey(req, deps.config.internalApiToken),
       errorResponseBuilder: (_req, c) => ({ statusCode: c.statusCode, error: `Rate limit exceeded, retry in ${c.after}`, message: `Rate limit exceeded, retry in ${c.after}` }),
     });
   }

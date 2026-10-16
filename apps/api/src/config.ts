@@ -45,6 +45,11 @@ export interface ApiConfig {
   production: boolean;
   /** Bearer token for /admin/*; null disables the admin API. */
   adminToken: string | null;
+  /**
+   * INTERNAL_API_TOKEN, shared with the Telegram bot (apps/notifier): its requests that carry it are rate
+   * limited per Telegram user instead of per IP. Null (unset or shorter than 24 characters): per IP only.
+   */
+  internalApiToken: string | null;
   moderation: ModerationConfig;
 }
 
@@ -60,6 +65,12 @@ export function resolveFromLaunchDir(path: string, env: NodeJS.ProcessEnv = proc
 export function moderationListsFromEnv(env: NodeJS.ProcessEnv, read: (path: string) => string = (p) => readFileSync(p, "utf8")): ModerationLists {
   const file = env.MODERATION_BLOCKLIST_FILE;
   return file ? withExtraBlocked(DEFAULT_MODERATION_LISTS, parseBlocklist(read(resolveFromLaunchDir(file, env)))) : DEFAULT_MODERATION_LISTS;
+}
+
+/** At least 24 characters (`openssl rand -hex 32`), else no token. */
+export function internalToken(value: string | undefined): string | null {
+  const v = (value ?? "").trim();
+  return v.length >= 24 ? v : null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -89,6 +100,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     logLevel: env.LOG_LEVEL ?? "info",
     production: env.NODE_ENV === "production",
     adminToken: env.ADMIN_TOKEN && env.ADMIN_TOKEN.length >= 24 ? env.ADMIN_TOKEN : null,
+    internalApiToken: internalToken(env.INTERNAL_API_TOKEN),
     moderation: {
       lists: moderationListsFromEnv(env),
       imageWebhookUrl: env.MODERATION_IMAGE_WEBHOOK_URL || null,

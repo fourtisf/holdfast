@@ -106,4 +106,14 @@ describe("TelegramClient", () => {
     expect(gateway).toBeInstanceOf(TelegramError);
     expect(gateway.code).toBe(502);
   });
+
+  it("keeps the new chat id of a group that became a supergroup", async () => {
+    const { fetch } = fakeFetch([
+      { status: 400, body: { ok: false, error_code: 400, description: "Bad Request: group chat was upgraded to a supergroup chat", parameters: { migrate_to_chat_id: -1001234567890 } } },
+    ]);
+    const tg = new TelegramClient(TOKEN, { fetch });
+    const err = await tg.sendMessage(-4001, "hi").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TelegramError);
+    expect(err).toMatchObject({ code: 400, migrateToChatId: -1001234567890, chatUnavailable: false });
+  });
 });

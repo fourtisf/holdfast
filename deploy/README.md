@@ -30,7 +30,7 @@ docker compose up -d --build postgres migrate api indexer web caddy
 ```
 
 `deploy/init.sh` writes `.env` (production URLs, random `POSTGRES_PASSWORD`, `DEPOSIT_MASTER_SECRET`,
-`ADMIN_TOKEN`, `REPORT_SALT`, and `COMPOSE_FILE` so plain `docker compose` also loads
+`ADMIN_TOKEN`, `INTERNAL_API_TOKEN`, `REPORT_SALT`, and `COMPOSE_FILE` so plain `docker compose` also loads
 `deploy/docker-compose.prod.yml`) and creates `keys/keeper.json` and `keys/launcher.json`. It never overwrites
 either. Copy `.env` and `keys/` somewhere safe off the server: `DEPOSIT_MASTER_SECRET` derives every launch
 deposit address.
@@ -51,6 +51,11 @@ addresses that `init.sh` printed (`keys/*.address`). The Telegram bot (`notifier
 buy bot, alerts and the $MOATPAD burn feed) is opt-in: create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN`,
 `NEXT_PUBLIC_TELEGRAM_BOT=<its username>` and `COMPOSE_PROFILES=telegram` in `.env` (optionally
 `NOTIFIER_BURN_CHAT_ID` for the burn channel, with the bot as an admin there), then `docker compose up -d --build`.
+Every bot user reaches the API from the notifier's address, so set `INTERNAL_API_TOKEN` too (`init.sh` does; for an
+older `.env`, add `INTERNAL_API_TOKEN=$(openssl rand -hex 32)` and recreate `api` and `notifier`): the bot's launch
+calls then carry it with the Telegram user's id and the API rate limits them per user, not all together per IP. Without
+it the bot still limits each user (3 launch tries per 10 minutes, 10 images a minute). Caddy strips these headers from
+public requests, so they only count from inside the compose network.
 `deploy/program.sh` does the on-chain part from the server. It keeps the deployer keypair (fee payer, upgrade
 authority, Config admin) and the program keypair in `~/moatpad-admin`, outside the repository and every container:
 

@@ -12,6 +12,11 @@ export interface NotifierConfig {
   webUrl: string;
   /** The API the bot launches and reads through (inside compose: http://api:4000). */
   apiUrl: string;
+  /**
+   * INTERNAL_API_TOKEN, also set on the API: launch calls then carry it with the Telegram user's id and
+   * are rate limited per user instead of all sharing the notifier's IP. Null: unset.
+   */
+  internalApiToken: string | null;
   /** Channel or group that gets every $MOATPAD burn (e.g. -1001234567890); null = none. */
   burnChatId: number | null;
   /** The official $MOATPAD mint, linked from /burns. */
@@ -23,7 +28,7 @@ export interface NotifierConfig {
   milestoneIntervalMs: number;
   /** getUpdates long-poll timeout. */
   pollTimeoutSec: number;
-  /** On startup, re-check rounds, defences and graduations of this window (missed while down). */
+  /** On startup, re-check rounds, defences, graduations, bot launches and burns of this window (missed while down). */
   catchUpMs: number;
   /** Run the migrations at startup (NOTIFIER_MIGRATE=0 skips them). */
   migrate: boolean;
@@ -80,6 +85,14 @@ function webUrl(env: NodeJS.ProcessEnv): string {
   return v;
 }
 
+/** Optional shared secret with the API; when set, at least 24 characters (`openssl rand -hex 32`). */
+function internalToken(env: NodeJS.ProcessEnv): string | null {
+  const v = (env.INTERNAL_API_TOKEN ?? "").trim();
+  if (v === "") return null;
+  if (v.length < 24) throw new Error("INTERNAL_API_TOKEN must be at least 24 characters (generate one with: openssl rand -hex 32)");
+  return v;
+}
+
 /** A Telegram chat id (channels and supergroups are negative). */
 function chatId(env: NodeJS.ProcessEnv, key: string): number | null {
   const v = (env[key] ?? "").trim();
@@ -101,6 +114,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): NotifierConfig
     databaseUrl: resolveDatabaseUrl(databaseUrl, env),
     webUrl: webUrl(env),
     apiUrl: (env.API_INTERNAL_URL || env.NEXT_PUBLIC_API_URL || "http://localhost:4000").trim().replace(/\/+$/, ""),
+    internalApiToken: internalToken(env),
     burnChatId: chatId(env, "NOTIFIER_BURN_CHAT_ID"),
     moatCa: (env.MOAT_CA || env.NEXT_PUBLIC_MOAT_CA || "4qLdhoVDiAkXVXqU4D3rSPp6pMMnJzRJr38do55Hpump").trim(),
     cluster: cluster(env),

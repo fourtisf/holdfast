@@ -304,10 +304,19 @@ export interface LaunchRequest {
   devBuySol?: number;
   /**
    * Wallet that may claim the coin's creator share (15% of its fees). Defaults to the wallet the
-   * deposit comes from; set it when depositing from an exchange or another wallet.
+   * deposit comes from; set it to send the creator share to another wallet. Never deposit from an
+   * exchange: refunds, leftover SOL and dev-buy tokens go back to the wallet that paid.
    */
   creatorWallet?: string;
 }
+
+/**
+ * Sent by the Telegram bot (apps/notifier) with INTERNAL_API_TOKEN: when the token matches the API's,
+ * its requests are rate limited per Telegram user (TELEGRAM_USER_HEADER) instead of per IP, since every
+ * bot user reaches the API from the notifier's address. Without a matching token both are ignored.
+ */
+export const INTERNAL_TOKEN_HEADER = "x-moatpad-internal-token";
+export const TELEGRAM_USER_HEADER = "x-moatpad-telegram-user";
 
 /** GET /launch/quote: what a launch costs before anything is submitted (same model the launcher uses). */
 export interface LaunchQuote {

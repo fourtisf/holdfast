@@ -11,7 +11,11 @@
 		# Prometheus metrics stay private: scrape them inside the compose network (api:4000/metrics).
 		@metrics path /metrics
 		respond @metrics 404
-		reverse_proxy api:4000
+		reverse_proxy api:4000 {
+			# The Telegram bot's per-user rate-limit headers (INTERNAL_API_TOKEN) only count from inside the compose network.
+			header_up -X-Moatpad-Internal-Token
+			header_up -X-Moatpad-Telegram-User
+		}
 	}
 	handle /webhooks/* {
 		reverse_proxy indexer:4100

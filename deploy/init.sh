@@ -42,6 +42,7 @@ else
   set_var DATABASE_URL "postgres://holdfast:$pg_password@postgres:5432/holdfast"
   set_var DEPOSIT_MASTER_SECRET "$(openssl rand -hex 32)"
   set_var ADMIN_TOKEN "$(openssl rand -hex 24)"
+  set_var INTERNAL_API_TOKEN "$(openssl rand -hex 32)"
   set_var REPORT_SALT "$(openssl rand -hex 16)"
   set_var LAUNCHES_PAUSED true
   set_var SOLANA_CLUSTER "$CLUSTER"

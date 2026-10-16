@@ -183,7 +183,7 @@ export function CreateView() {
     }
   };
 
-  /** No wallet (or paying from an exchange): send SOL to a one-time deposit address instead. */
+  /** No wallet connected: send SOL to a one-time deposit address instead (from a wallet the user controls, never an exchange: refunds go back to the sender). */
   const launchWithDeposit = async () => {
     if (!ready()) return;
     setSubmitting(true);

@@ -35,7 +35,7 @@ if (!me) {
 const monitor = new NotifierMonitor(log, { maxPollAgeMs: (config.pollTimeoutSec + 60) * 1000 });
 const ops = await monitor.start(config.opsPort);
 const links = { webUrl: config.webUrl, cluster: config.cluster, botUsername: me.username ?? null, moatCa: config.moatCa };
-const api = new HttpMoatpadApi(config.apiUrl);
+const api = new HttpMoatpadApi(config.apiUrl, { internalToken: config.internalApiToken });
 const launch = new LaunchFlow({ db, api, tg, links, now: Date.now });
 const outbox = new Outbox(db, tg, { metrics: monitor, log });
 const notifier = new Notifier({ db, outbox, links, burnChatId: config.burnChatId, log, metrics: monitor });
@@ -89,6 +89,7 @@ log.info(
     bot: me.username ?? me.id,
     webUrl: config.webUrl,
     apiUrl: config.apiUrl,
+    perUserApiLimits: config.internalApiToken !== null,
     burnChat: config.burnChatId,
     cluster: config.cluster,
     opsPort: ops?.port ?? null,

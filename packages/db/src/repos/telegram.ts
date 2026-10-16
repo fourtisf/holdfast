@@ -54,6 +54,31 @@ export async function chatForLaunch(q: Queryable, launchId: string): Promise<num
   return res.rows[0] ? num(res.rows[0].chat_id) : null;
 }
 
+/**
+ * A basic group upgraded to a supergroup gets a new chat id: move everything the bot keeps for
+ * `fromChatId` (buy bot, subscriptions, launch draft, launch progress, sent-message claims) to
+ * `toChatId`. Where the new chat already has a row with the same key, the new chat's row is kept and
+ * the old one dropped. Idempotent: running it again finishes an interrupted move.
+ */
+export async function moveTelegramChat(q: Queryable, fromChatId: number, toChatId: number): Promise<void> {
+  if (fromChatId === toChatId) return;
+  const ids = [String(fromChatId), String(toChatId)];
+  // One row per chat.
+  for (const table of ["tg_buybots", "tg_drafts"]) {
+    await q.query(`DELETE FROM ${table} WHERE chat_id = $1 AND EXISTS (SELECT 1 FROM ${table} WHERE chat_id = $2)`, ids);
+    await q.query(`UPDATE ${table} SET chat_id = $2 WHERE chat_id = $1`, ids);
+  }
+  // Keyed by chat and something else: keep the new chat's copy of a duplicate.
+  await q.query(
+    "DELETE FROM tg_subscriptions o WHERE o.chat_id = $1 AND EXISTS (SELECT 1 FROM tg_subscriptions n WHERE n.chat_id = $2 AND n.kind = o.kind AND n.target = o.target)",
+    ids,
+  );
+  await q.query("UPDATE tg_subscriptions SET chat_id = $2 WHERE chat_id = $1", ids);
+  await q.query("DELETE FROM tg_sent o WHERE o.chat_id = $1 AND EXISTS (SELECT 1 FROM tg_sent n WHERE n.chat_id = $2 AND n.event_key = o.event_key)", ids);
+  await q.query("UPDATE tg_sent SET chat_id = $2 WHERE chat_id = $1", ids);
+  await q.query("UPDATE tg_launches SET chat_id = $2 WHERE chat_id = $1", ids);
+}
+
 export interface TgBuybot {
   chatId: number;
   mint: string;

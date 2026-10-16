@@ -18,7 +18,7 @@ import {
 
 import type { MoatpadApi } from "./api.js";
 import { isValidAddress } from "./address.js";
-import { botLink, coinUrl, shortAddress } from "./format.js";
+import { botLink, clip, coinUrl, shortAddress } from "./format.js";
 import type { LaunchFlow } from "./launch.js";
 import { burnsMessage, coinCard, helpMessage, MENU, tickerText, trendingMessage, welcomeMessage, type BotLinks, type BotReply } from "./messages.js";
 import { escapeHtml, type BotCommandSpec, type TelegramApi, type TgChat, type TgUser } from "./telegram.js";
@@ -99,7 +99,7 @@ function addressArg(cmd: ParsedCommand, what: "wallet" | "coin"): { address: str
   const usage = `Usage: /${cmd.name} &lt;${what} address&gt;`;
   if (cmd.args.length < 1) return { reply: usage };
   const address = cmd.args[0]!;
-  if (!isValidAddress(address)) return { reply: `${code(address.slice(0, 64))} is not a valid Solana address.\n${usage}` };
+  if (!isValidAddress(address)) return { reply: `${code(clip(address, 64))} is not a valid Solana address.\n${usage}` };
   return { address };
 }
 
@@ -188,13 +188,24 @@ async function burns(ctx: CommandContext): Promise<BotReply> {
   return burnsMessage(ctx.links, await ctx.api.burns());
 }
 
-async function isAdmin(ctx: CommandContext, src: CommandSource): Promise<boolean> {
+/** Whether the sender is an admin of the group (or posts as the group: anonymous admins). */
+export async function isAdmin(ctx: CommandContext, src: CommandSource): Promise<boolean> {
   if (!src.from) return false;
   if (src.from.id === ANONYMOUS_ADMIN) return true;
   if (!ctx.tg) return false;
   const status = await ctx.tg.getChatMemberStatus(src.chat.id, src.from.id).catch(() => "left");
   return status === "creator" || status === "administrator";
 }
+
+/**
+ * Removing a chat's alerts (/stop, /unfollow, /unwatch): anyone in a private chat; only admins in a
+ * group. Channel posts have no sender, and only channel admins can post there.
+ */
+async function mayChangeAlerts(ctx: CommandContext, src: CommandSource): Promise<boolean> {
+  return src.chat.type === "private" || src.chat.type === "channel" || isAdmin(ctx, src);
+}
+
+const ADMINS_ONLY = "Only group admins can change this group's alerts.";
 
 /** /buybot [<coin address> [min SOL] | off] — buy alerts in a group. */
 export async function buybot(ctx: CommandContext, src: CommandSource, args: string[]): Promise<BotReply> {
@@ -226,7 +237,7 @@ export async function buybot(ctx: CommandContext, src: CommandSource, args: stri
     return text((await removeBuybot(ctx.db, src.chat.id)) ? "Buy alerts are off for this group." : "Buy alerts were not on in this group.");
   }
   const mint = args[0]!;
-  if (!isValidAddress(mint)) return text(`${code(mint.slice(0, 64))} is not a coin address.\nUsage: /buybot &lt;coin address&gt; [min SOL]`);
+  if (!isValidAddress(mint)) return text(`${code(clip(mint, 64))} is not a coin address.\nUsage: /buybot &lt;coin address&gt; [min SOL]`);
   const c = await getCoin(ctx.db, mint);
   if (!c) return text(`No Moatpad coin has the address ${code(mint)}. Only coins launched on Moatpad are supported.`);
   let minSol = 0;
@@ -290,17 +301,21 @@ export async function runCommand(ctx: CommandContext, src: CommandSource, cmd: P
     }
     case "unfollow":
     case "uncoin":
+      if (!(await mayChangeAlerts(ctx, src))) return text(ADMINS_ONLY);
       return text(await unfollow(ctx, chatId, cmd, "coin"));
     case "watch": {
       const arg = addressArg(cmd, "wallet");
       return text("reply" in arg ? arg.reply : await watch(ctx, chatId, arg.address));
     }
     case "unwatch":
+      if (!(await mayChangeAlerts(ctx, src))) return text(ADMINS_ONLY);
       return text(await unfollow(ctx, chatId, cmd, "wallet"));
     case "alerts":
     case "list":
       return text(await alerts(ctx, chatId));
     case "stop":
+      // In a group /stop also turns off the buy bot: admins only, like /buybot off.
+      if (!(await mayChangeAlerts(ctx, src))) return text(ADMINS_ONLY);
       return text(await stop(ctx, chatId));
     default:
       return null;

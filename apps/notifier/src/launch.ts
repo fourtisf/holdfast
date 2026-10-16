@@ -6,12 +6,12 @@
  * The questions and the validation of each answer are pure (`ask`, `applyText`, `applyButton`); the
  * flow class adds the side effects (drafts in the database, image upload, creating the launch).
  */
-import { TRIGGER_OPTIONS_BPS, type LaunchQuote, type LaunchRequest, type Socials, type TriggerBps } from "@holdfast/core";
+import { containsBlockedTerm, TRIGGER_OPTIONS_BPS, type LaunchQuote, type LaunchRequest, type Socials, type TriggerBps } from "@holdfast/core";
 import { addTgLaunch, deleteDraft, getDraft, saveDraft, type Queryable } from "@holdfast/db";
 
 import { ApiError, type MoatpadApi } from "./api.js";
-import { isValidAddress } from "./address.js";
-import { shortAddress, type Links } from "./format.js";
+import { isValidAddress, isWalletAddress } from "./address.js";
+import { ellipsize, shortAddress, type Links } from "./format.js";
 import { escapeHtml, type Keyboard, type TelegramApi, type TgMessage } from "./telegram.js";
 
 export interface Reply {
@@ -39,7 +39,9 @@ const TOTAL = ORDER.length - 1;
 /** A draft untouched for this long is forgotten. */
 export const DRAFT_TTL_MS = 6 * 3600_000;
 
-const skip = { text: "Skip ⏭", callback_data: "l:skip" };
+/** Steps that may be skipped. The step is in the button ("l:skip:image"), so a double tap or an old Skip never skips the next question. */
+const SKIPPABLE: readonly Step[] = ["image", "description", "links"];
+const skip = (step: Step) => ({ text: "Skip ⏭", callback_data: `l:skip:${step}` });
 const cancelRow = [{ text: "✖️ Cancel", callback_data: "l:cancel" }];
 
 function header(step: Step): string {
@@ -54,13 +56,13 @@ export function ask(step: Step, d: LaunchDraft, quote?: LaunchQuote | null): Rep
     case "ticker":
       return { html: `${header(step)}\nWhat is the <b>ticker</b>?\n<i>Example: MDOG (letters and numbers, max 10)</i>`, buttons: [cancelRow] };
     case "image":
-      return { html: `${header(step)}\nSend your coin's <b>image</b> as a photo.\n<i>PNG, JPG, GIF or WEBP, max 5 MB. A square image looks best.</i>`, buttons: [[skip], cancelRow] };
+      return { html: `${header(step)}\nSend your coin's <b>image</b> as a photo.\n<i>PNG, JPG, GIF or WEBP, max 5 MB. A square image looks best.</i>`, buttons: [[skip(step)], cancelRow] };
     case "description":
-      return { html: `${header(step)}\nWrite a short <b>description</b> for your coin.\n<i>Max 500 characters.</i>`, buttons: [[skip], cancelRow] };
+      return { html: `${header(step)}\nWrite a short <b>description</b> for your coin.\n<i>Max 500 characters.</i>`, buttons: [[skip(step)], cancelRow] };
     case "links":
       return {
         html: `${header(step)}\nSend your <b>links</b> in one message: X, Telegram and/or website.\n<i>Example: x.com/moatdog t.me/moatdog moatdog.com</i>`,
-        buttons: [[skip], cancelRow],
+        buttons: [[skip(step)], cancelRow],
       };
     case "floor":
       return {
@@ -99,7 +101,7 @@ export function ask(step: Step, d: LaunchDraft, quote?: LaunchQuote | null): Rep
           `${header(step)}\nWho receives the <b>creator fees</b>? 💸`,
           "The creator earns 15% of every trading fee of the coin and claims it on moatpad.fun.",
           "Tap the button to use the wallet you pay from, or send another wallet address.",
-          "<i>Paying from an exchange? Then send your own wallet address here.</i>",
+          "<i>Don't pay from an exchange: refunds and dev-buy tokens go back to the wallet that pays.</i>",
         ].join("\n\n"),
         buttons: [[{ text: "✅ The wallet I pay from", callback_data: "l:payer" }], cancelRow],
       };
@@ -121,7 +123,7 @@ export function summary(d: LaunchDraft, quote: LaunchQuote | null): Reply {
     "",
     `🪙 <b>${escapeHtml(d.name ?? "")}</b> ($${escapeHtml(d.ticker ?? "")})`,
     `🖼 Image: ${d.imageUrl ? "added" : "none"}`,
-    `📝 Description: ${d.description ? escapeHtml(d.description.length > 80 ? `${d.description.slice(0, 80)}…` : d.description) : "none"}`,
+    `📝 Description: ${d.description ? escapeHtml(ellipsize(d.description, 80)) : "none"}`,
     `🔗 Links: ${socialsLine(d.socials)}`,
     `🛡 Floor: ${((d.triggerBps ?? 2500) / 100).toFixed(0)}% below the all-time high`,
     `🛒 Dev buy: ${d.devBuySol ? `${d.devBuySol} SOL` : "none"}`,
@@ -136,27 +138,51 @@ export function summary(d: LaunchDraft, quote: LaunchQuote | null): Reply {
 
 export type Applied = { ok: true; data: LaunchDraft } | { ok: false; error: string };
 
+/*
+ * The API's rules for a launch (apps/api/src/launch/schema.ts, LaunchRequestSchema, and the blocked terms
+ * of moderateLaunchText), checked at each step so a launch is never refused after the last question:
+ * name 1-32 characters, ticker 1-10 A-Z/0-9, description up to 500 characters, links up to 200
+ * characters, dev buy 0-10 SOL, creator a regular (on-curve) wallet. Lengths count UTF-16 units, like
+ * the API. Operators can block more terms on the API (MODERATION_BLOCKLIST_FILE); the API still decides.
+ */
+export const MAX_NAME_LENGTH = 32;
+export const MAX_DESCRIPTION_LENGTH = 500;
+export const MAX_LINK_LENGTH = 200;
+export const MAX_DEV_BUY_SOL = 10;
+
 const X_HOSTS = ["x.com", "twitter.com"];
 const TG_HOSTS = ["t.me", "telegram.me"];
+const BAD_LINKS = "I couldn't read those links. Send them like: x.com/yourcoin t.me/yourcoin yourcoin.com";
 
-/** "x.com/foo t.me/bar foo.com" → socials; null when something is not a link. */
-export function parseLinks(text: string): Socials | null {
+/** "x.com/foo t.me/bar foo.com" → socials, or what is wrong with the message. */
+function readLinks(text: string): { ok: true; socials: Socials } | { ok: false; error: string } {
   const socials: Socials = {};
   for (const raw of text.split(/[\s,]+/).filter(Boolean)) {
     let url: URL;
     try {
       url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
     } catch {
-      return null;
+      return { ok: false, error: BAD_LINKS };
     }
     const host = url.hostname.replace(/^www\./, "").toLowerCase();
-    if (!host.includes(".")) return null;
-    if (X_HOSTS.includes(host)) socials.x = url.toString();
-    else if (TG_HOSTS.includes(host)) socials.telegram = url.toString();
-    else socials.website = url.toString();
+    if (!host.includes(".")) return { ok: false, error: BAD_LINKS };
+    const href = url.toString();
+    if (href.length > MAX_LINK_LENGTH) return { ok: false, error: `One of those links is too long. A link can be up to ${MAX_LINK_LENGTH} characters.` };
+    if (containsBlockedTerm(href)) return { ok: false, error: "One of those links is not allowed on Moatpad. Please send other links, or tap Skip." };
+    if (X_HOSTS.includes(host)) socials.x = href;
+    else if (TG_HOSTS.includes(host)) socials.telegram = href;
+    else socials.website = href;
   }
-  return Object.keys(socials).length ? socials : null;
+  return Object.keys(socials).length ? { ok: true, socials } : { ok: false, error: BAD_LINKS };
 }
+
+/** "x.com/foo t.me/bar foo.com" → socials; null when something is not a link (or a link the API refuses). */
+export function parseLinks(text: string): Socials | null {
+  const r = readLinks(text);
+  return r.ok ? r.socials : null;
+}
+
+const notAllowed = (what: string) => `That ${what} is not allowed on Moatpad. Please choose another one.`;
 
 /** Validates a typed answer for `step`. */
 export function applyText(step: Step, d: LaunchDraft, text: string): Applied {
@@ -164,30 +190,37 @@ export function applyText(step: Step, d: LaunchDraft, text: string): Applied {
   switch (step) {
     case "name":
       if (!t) return { ok: false, error: "Please type a name." };
-      if (t.length > 32) return { ok: false, error: `That name is ${t.length} characters. Please keep it to 32 or less.` };
+      if (t.length > MAX_NAME_LENGTH) return { ok: false, error: `That name is ${t.length} characters. Please keep it to ${MAX_NAME_LENGTH} or less.` };
+      if (containsBlockedTerm(t)) return { ok: false, error: notAllowed("name") };
       return { ok: true, data: { ...d, name: t } };
     case "ticker": {
       const ticker = t.replace(/^\$/, "").toUpperCase();
       if (!/^[A-Z0-9]{1,10}$/.test(ticker)) return { ok: false, error: "A ticker is 1 to 10 letters or numbers, like MDOG." };
+      if (containsBlockedTerm(ticker)) return { ok: false, error: notAllowed("ticker") };
       return { ok: true, data: { ...d, ticker } };
     }
     case "image":
       return { ok: false, error: "Please send the image as a photo, or tap Skip." };
     case "description":
-      if (t.length > 500) return { ok: false, error: `That description is ${t.length} characters. Please keep it to 500 or less.` };
+      if (t.length > MAX_DESCRIPTION_LENGTH) return { ok: false, error: `That description is ${t.length} characters. Please keep it to ${MAX_DESCRIPTION_LENGTH} or less.` };
+      if (containsBlockedTerm(t)) return { ok: false, error: "That description is not allowed on Moatpad. Please write another one." };
       return { ok: true, data: { ...d, description: t || undefined } };
     case "links": {
-      const socials = parseLinks(t);
-      if (!socials) return { ok: false, error: "I couldn't read those links. Send them like: x.com/yourcoin t.me/yourcoin yourcoin.com" };
-      return { ok: true, data: { ...d, socials } };
+      const links = readLinks(t);
+      if (!links.ok) return { ok: false, error: links.error };
+      return { ok: true, data: { ...d, socials: links.socials } };
     }
     case "devbuy": {
-      const n = Number(t.replace(/\s*sol$/i, "").replace(",", "."));
-      if (!Number.isFinite(n) || n < 0 || n > 10) return { ok: false, error: "Type an amount from 0 to 10 SOL, like 0.25." };
+      const amount = t.replace(/\s*sol$/i, "").replace(",", ".").trim();
+      const n = /^(\d+(\.\d*)?|\.\d+)$/.test(amount) ? Number(amount) : NaN;
+      if (!Number.isFinite(n) || n < 0 || n > MAX_DEV_BUY_SOL) return { ok: false, error: `Type an amount from 0 to ${MAX_DEV_BUY_SOL} SOL, like 0.25.` };
       return { ok: true, data: { ...d, devBuySol: Math.round(n * 1e4) / 1e4 } };
     }
     case "creator":
       if (!isValidAddress(t)) return { ok: false, error: "That is not a Solana wallet address. Send the address, or tap the button to use the wallet you pay from." };
+      if (!isWalletAddress(t)) {
+        return { ok: false, error: "That is a program address, not a wallet, so it could never claim the fees. Send your own wallet address (from Phantom, Solflare, ...), or tap the button to use the wallet you pay from." };
+      }
       return { ok: true, data: { ...d, creatorWallet: t } };
     case "floor":
       return { ok: false, error: "Please tap one of the floor buttons." };
@@ -196,9 +229,9 @@ export function applyText(step: Step, d: LaunchDraft, text: string): Applied {
   }
 }
 
-/** Applies a pressed button ("l:floor:2500" → action "floor", value "2500") for `step`. */
+/** Applies a pressed button ("l:floor:2500" → action "floor", value "2500"; "l:skip:image" skips the image only) for `step`. */
 export function applyButton(step: Step, d: LaunchDraft, action: string, value: string | undefined): Applied {
-  if (action === "skip" && (step === "image" || step === "description" || step === "links")) return { ok: true, data: d };
+  if (action === "skip" && SKIPPABLE.includes(step) && value === step) return { ok: true, data: d };
   if (action === "floor" && step === "floor") {
     const bps = Number(value);
     if (!(TRIGGER_OPTIONS_BPS as readonly number[]).includes(bps)) return { ok: false, error: "Please choose 15%, 25% or 35%." };
@@ -206,7 +239,7 @@ export function applyButton(step: Step, d: LaunchDraft, action: string, value: s
   }
   if (action === "dev" && step === "devbuy") {
     const n = Number(value);
-    if (!Number.isFinite(n) || n < 0 || n > 10) return { ok: false, error: "Please choose an amount." };
+    if (!Number.isFinite(n) || n < 0 || n > MAX_DEV_BUY_SOL) return { ok: false, error: "Please choose an amount." };
     return { ok: true, data: { ...d, devBuySol: n } };
   }
   if (action === "payer" && step === "creator") {
@@ -235,6 +268,38 @@ export function toLaunchRequest(d: LaunchDraft): LaunchRequest {
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+/**
+ * At most `max` events per `windowMs` for each key (a Telegram user), in memory. Every bot user reaches
+ * the API from the notifier's IP, so without INTERNAL_API_TOKEN one busy user could use up the API's
+ * per-IP limits (10 launches and 20 uploads a minute) for everybody.
+ */
+export class SlidingWindowLimit {
+  private readonly hits = new Map<number, number[]>();
+
+  constructor(
+    readonly max: number,
+    readonly windowMs: number,
+  ) {}
+
+  /** Records an event for `key` and returns true; false (nothing recorded) when `key` is at the limit. */
+  take(key: number, now: number): boolean {
+    const recent = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs);
+    if (recent.length >= this.max) {
+      this.hits.set(key, recent);
+      return false;
+    }
+    recent.push(now);
+    this.hits.set(key, recent);
+    if (this.hits.size > 10_000) for (const [k, times] of this.hits) if (times.every((t) => now - t >= this.windowMs)) this.hits.delete(k);
+    return true;
+  }
+}
+
+/** Launch submissions per Telegram user (tries that the API refused count too). */
+export const LAUNCHES_PER_USER = { max: 3, windowMs: 10 * 60_000 };
+/** Images sent at the image step per Telegram user. */
+export const UPLOADS_PER_USER = { max: 10, windowMs: 60_000 };
+
 export interface LaunchFlowDeps {
   db: Queryable;
   api: MoatpadApi;
@@ -245,6 +310,9 @@ export interface LaunchFlowDeps {
 
 /** The side-effect half of /launch: drafts, uploads and creating the launch. Every method returns the reply. */
 export class LaunchFlow {
+  private readonly launchLimit = new SlidingWindowLimit(LAUNCHES_PER_USER.max, LAUNCHES_PER_USER.windowMs);
+  private readonly uploadLimit = new SlidingWindowLimit(UPLOADS_PER_USER.max, UPLOADS_PER_USER.windowMs);
+
   constructor(private readonly deps: LaunchFlowDeps) {}
 
   /** Whether `chatId` is in the middle of a launch (a fresh draft exists). */
@@ -276,7 +344,7 @@ export class LaunchFlow {
     const next = nextStep(step);
     await saveDraft(this.deps.db, { chatId, userId, step: next, data: data as Record<string, unknown> });
     if (next !== "confirm") return ask(next, data);
-    const quote = await this.deps.api.quote(data.devBuySol ?? 0).catch(() => null);
+    const quote = await this.deps.api.quote(data.devBuySol ?? 0, userId).catch(() => null);
     return ask("confirm", data, quote);
   }
 
@@ -295,9 +363,10 @@ export class LaunchFlow {
       if (draft.step !== "image") return this.retry("I'm not asking for an image right now.", draft.step, draft.data);
       const size = msg.photo?.length ? msg.photo[msg.photo.length - 1]!.file_size : msg.document?.file_size;
       if (size && size > MAX_IMAGE_BYTES) return this.retry("That image is bigger than 5 MB. Please send a smaller one.", "image", draft.data);
+      if (!this.uploadLimit.take(userId, this.deps.now())) return this.retry("You sent a lot of images in the last minute. Please wait a minute and send it again, or tap Skip.", "image", draft.data);
       try {
         const file = await this.deps.tg.downloadFile(fileId);
-        const imageUrl = await this.deps.api.uploadImage(file.bytes, file.path.split("/").pop() || "image");
+        const imageUrl = await this.deps.api.uploadImage(file.bytes, file.path.split("/").pop() || "image", userId);
         return this.advance(chatId, userId, "image", { ...draft.data, imageUrl });
       } catch (err) {
         const reason = err instanceof ApiError ? err.message : "the upload failed";
@@ -320,21 +389,27 @@ export class LaunchFlow {
     if (!draft) return { html: "This launch has expired. Send /launch to start a new one.", buttons: [[{ text: "🚀 Launch a coin", callback_data: "m:launch" }]] };
     if (action === "go") {
       if (draft.step !== "confirm") return this.retry("Please finish the steps first.", draft.step, draft.data);
-      return this.submit(chatId, draft.data);
+      return this.submit(chatId, userId, draft.data);
     }
     const applied = applyButton(draft.step, draft.data, action, value);
     if (!applied.ok) return this.retry(applied.error, draft.step, draft.data);
     return this.advance(chatId, userId, draft.step, applied.data);
   }
 
-  private async submit(chatId: number, data: LaunchDraft): Promise<Reply> {
+  private async submit(chatId: number, userId: number, data: LaunchDraft): Promise<Reply> {
+    const failed = (reason: string): Reply => ({
+      html: `⚠️ ${escapeHtml(reason)}`,
+      buttons: [[{ text: "🔁 Try again", callback_data: "l:go" }], [{ text: "✏️ Start over", callback_data: "l:restart" }, ...cancelRow]],
+    });
+    if (!this.launchLimit.take(userId, this.deps.now())) {
+      return failed(`You tried to launch ${LAUNCHES_PER_USER.max} times in the last ${LAUNCHES_PER_USER.windowMs / 60_000} minutes. Please wait a few minutes, then tap Try again.`);
+    }
     let res;
     try {
-      res = await this.deps.api.createLaunch(toLaunchRequest(data));
+      res = await this.deps.api.createLaunch(toLaunchRequest(data), userId);
     } catch (err) {
       if (err instanceof ApiError) {
-        const reason = err.status === 503 ? "Launches are paused right now. Please try again a bit later." : err.status === 429 ? "Too many launches at once. Please try again in a minute." : err.message;
-        return { html: `⚠️ ${escapeHtml(reason)}`, buttons: [[{ text: "🔁 Try again", callback_data: "l:go" }], [{ text: "✏️ Start over", callback_data: "l:restart" }, ...cancelRow]] };
+        return failed(err.status === 503 ? "Launches are paused right now. Please try again a bit later." : err.status === 429 ? "Too many launches at once. Please try again in a minute." : err.message);
       }
       throw err;
     }
