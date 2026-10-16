@@ -1,9 +1,11 @@
 <!doctype html>
 <!--
-  "Moatpad Bot · coming soon" teaser (40 s, 120 BPM: scenes on 2 s bar lines). A phone runs the real bot copy from
-  apps/notifier (the /launch questions, the payment and live messages, /buybot and buy alerts, the alerts, the "/" menu)
-  next to the feature captions. Every frame is a pure function of time (window.render(t)); render.mjs renders it as
-  `bot`, with music-bot.wav from music.py.
+  "Moatpad Bot · coming soon" premium teaser (50 s, 60 fps, 120 BPM: scenes on 2 s bar lines). A 3D phone (real
+  thickness, a branded back, glass sheen) runs the bot's real copy from apps/notifier: the /launch questions, the
+  payment and "is LIVE!", /buybot alerts in a group, lock-screen alerts, the "/" menu with /trending and /burns, and
+  the coin page's Telegram card opening the bot. A camera pushes in on the key moments. Every frame is a pure function
+  of time (window.render(t)); render.mjs renders it as `bot` and writes the UI sound cues (window.SFX) to sfx-bot.json,
+  which music.py bot turns into music-bot.wav.
 -->
 <html>
 <head>
@@ -16,48 +18,68 @@
 @font-face { font-family: G; font-weight: 600; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-SemiBold.woff2); }
 @font-face { font-family: GM; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-mono/GeistMono-Regular.woff2); }
 * { box-sizing: border-box; }
-html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #050506; }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #040405; }
 body { font-family: G, "Noto Color Emoji", sans-serif; color: #efebe1; -webkit-font-smoothing: antialiased; }
-#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #050506; }
-.layer { position: absolute; inset: 0; }
-#bg { background: radial-gradient(1000px 760px at 74% 50%, rgba(42,171,238,var(--blue,.10)), transparent 70%), radial-gradient(1100px 700px at 30% 40%, rgba(232,188,91,.09), transparent 70%), linear-gradient(180deg, #0c0d10, #060608 60%, #040405); }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #040405; }
+.layer { position: absolute; inset: 0; pointer-events: none; }
+#bg { background: radial-gradient(1100px 800px at var(--gx, 70%) 46%, rgba(232,188,91,var(--gold, .08)), transparent 70%), radial-gradient(1000px 760px at var(--bx, 76%) 56%, rgba(42,171,238,var(--blue, .06)), transparent 70%), linear-gradient(180deg, #0b0c0f, #060608 60%, #030304); }
+#rays { position: absolute; left: 50%; top: 50%; width: 3000px; height: 3000px; margin: -1500px; background: repeating-conic-gradient(from 0deg, rgba(255,222,160,.075) 0deg 2.2deg, transparent 2.2deg 9deg); -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 0%, rgba(0,0,0,.5) 18%, transparent 42%); mask-image: radial-gradient(circle at 50% 50%, #000 0%, rgba(0,0,0,.5) 18%, transparent 42%); opacity: 0; }
 canvas { position: absolute; inset: 0; }
-#vig { background: radial-gradient(1500px 880px at 50% 48%, transparent 55%, rgba(0,0,0,.72)); pointer-events: none; }
-#flash { background: radial-gradient(circle at 50% 46%, #fffaf0, rgba(232,188,91,.6) 25%, transparent 70%); opacity: 0; }
-#fade { background: #050506; opacity: 0; }
-.scene { position: absolute; inset: 0; opacity: 0; }
-.c { position: absolute; left: 0; right: 0; text-align: center; }
+#world { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; perspective: 2600px; perspective-origin: 960px 540px; }
+#vig { background: radial-gradient(1500px 900px at 50% 48%, transparent 52%, rgba(0,0,0,.78)); }
+#flash { background: radial-gradient(circle at 50% 50%, #fffaf0, rgba(255,214,140,.55) 26%, transparent 70%); opacity: 0; }
+#streak { position: absolute; left: -200px; right: -200px; top: 50%; height: 10px; margin-top: -5px; background: linear-gradient(90deg, transparent, rgba(255,226,170,.0) 10%, rgba(255,232,190,.95) 50%, rgba(255,226,170,0) 90%, transparent); filter: blur(3px); opacity: 0; mix-blend-mode: screen; }
+#fade { background: #040405; opacity: 0; }
+#grain { opacity: .05; mix-blend-mode: overlay; image-rendering: pixelated; }
+.ui { position: absolute; inset: 0; pointer-events: none; }
+.scene { position: absolute; inset: 0; opacity: 0; display: none; }
 .gold { background: linear-gradient(180deg, #fff6d8 0%, #f1c96f 50%, #a87727 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.kicker { font: 500 24px G; letter-spacing: .42em; text-transform: uppercase; color: #e8bc5b; }
-.sub { font: 300 32px/1.4 G; color: #c9c6bd; }
-.sub b { font-weight: 500; color: #efebe1; }
-.pill { display: inline-flex; align-items: center; gap: 14px; padding: 16px 36px; border-radius: 999px; border: 1px solid rgba(232,188,91,.55); background: rgba(232,188,91,.08); font: 600 34px G; }
-.mono { font-family: GM, monospace; }
-/* left column of a feature scene */
-.col { position: absolute; left: 150px; top: 0; width: 920px; }
-.col .k { position: absolute; top: 210px; font: 500 24px G; letter-spacing: .32em; text-transform: uppercase; color: #e8bc5b; white-space: nowrap; }
-.col .k .cmd { font-family: GM; letter-spacing: 0; text-transform: none; color: #7cc8f5; margin-left: 10px; font-size: 28px; }
-.col .h { position: absolute; top: 262px; font: 600 70px/1.06 G; letter-spacing: -.015em; white-space: nowrap; }
-.pt { position: absolute; left: 0; display: flex; align-items: center; gap: 22px; font: 400 31px G; color: #d7d3c9; white-space: nowrap; }
-.pt .ic { width: 58px; height: 58px; border-radius: 16px; display: grid; place-items: center; font-size: 28px; background: rgba(232,188,91,.09); border: 1px solid rgba(232,188,91,.28); }
-.pt b { font-weight: 600; color: #f3efe6; }
-.pt code { font: 400 27px GM; color: #7cc8f5; }
-/* corner bug */
+.sheen { background: linear-gradient(100deg, #a87727 0%, #e8bc5b 28%, #fff7dc 44%, #ffe9a8 50%, #e8bc5b 62%, #a87727 100%); background-size: 260% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kick { position: absolute; display: flex; align-items: center; gap: 18px; font: 500 23px G; letter-spacing: .34em; text-transform: uppercase; color: #e8bc5b; white-space: nowrap; }
+.kick .ln { width: 0; height: 2px; background: linear-gradient(90deg, #e8bc5b, rgba(232,188,91,0)); }
+.kick .cmd { font: 400 27px GM; letter-spacing: 0; text-transform: none; color: #7cc8f5; }
+.head { position: absolute; font: 600 84px/1.04 G; letter-spacing: -.02em; white-space: nowrap; }
+.head .l { display: block; overflow: hidden; padding: 0 .04em .08em; margin-bottom: -.08em; }
+.head .w { display: inline-block; will-change: transform; }
+.bul { position: absolute; display: flex; align-items: center; gap: 20px; font: 400 30px G; color: #d7d3c9; white-space: nowrap; }
+.bul .ic { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; font-size: 27px; background: rgba(232,188,91,.08); border: 1px solid rgba(232,188,91,.28); }
+.bul b { font-weight: 600; color: #f3efe6; }
+.tile { position: absolute; width: 250px; height: 150px; border-radius: 22px; padding: 22px 24px; background: linear-gradient(180deg, rgba(26,27,32,.9), rgba(12,13,16,.92)); border: 1px solid #2a2c33; box-shadow: 0 30px 70px rgba(0,0,0,.45); }
+.tile .n { font: 600 56px/1 G; height: 56px; }
+.tile .n.e { font-size: 46px; line-height: 56px; }
+.tile .d { font: 400 22px/1.3 G; color: #b9b6ad; margin-top: 10px; }
 #bug { position: absolute; left: 56px; top: 46px; display: flex; align-items: center; gap: 14px; font: 600 20px G; letter-spacing: .14em; color: #cfccc3; opacity: 0; }
 #bug img { width: 40px; }
 #bug .soon { padding: 6px 14px; border-radius: 999px; background: rgba(232,188,91,.12); border: 1px solid rgba(232,188,91,.5); color: #f1c96f; letter-spacing: .2em; font-size: 16px; }
 
-/* ---- the phone ---------------------------------------------------------------------------------------------- */
-#phoneWrap { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; perspective: 2200px; pointer-events: none; }
-#phone { position: absolute; left: 0; top: 0; width: 520px; height: 1000px; border-radius: 74px; padding: 12px; background: linear-gradient(145deg, #3a3832, #0d0d0f 30%, #141416 70%, #4a4436); box-shadow: 0 60px 140px rgba(0,0,0,.7), 0 0 0 1px rgba(255,236,190,.12), inset 0 0 0 2px #000; transform-origin: 50% 50%; }
-#screen { position: relative; width: 496px; height: 976px; border-radius: 62px; overflow: hidden; background: #0e1621; }
-#island { position: absolute; left: 50%; top: 14px; width: 130px; height: 36px; margin-left: -65px; border-radius: 20px; background: #000; z-index: 60; }
+/* ---- 3D phone ---------------------------------------------------------------------------------------------- */
+.phone { position: absolute; left: 0; top: 0; width: 520px; height: 1000px; transform-style: preserve-3d; transform-origin: 50% 50%; }
+.phone .edge { position: absolute; inset: 0; border-radius: 76px; background: linear-gradient(160deg, #6d6656 0%, #26252a 22%, #141417 50%, #2b2a2e 78%, #7a705a 100%); }
+.phone .back { position: absolute; inset: 0; border-radius: 76px; background: radial-gradient(520px 700px at 30% 20%, #2a2a2f, #121215 60%, #0b0b0d); border: 2px solid #4b4538; backface-visibility: hidden; display: grid; place-items: center; overflow: hidden; }
+.phone .back img { width: 170px; opacity: .9; filter: drop-shadow(0 4px 10px rgba(0,0,0,.6)); }
+.phone .back .cam { position: absolute; left: 40px; top: 40px; width: 170px; height: 170px; border-radius: 46px; background: linear-gradient(145deg, #222226, #0d0d0f); box-shadow: inset 0 0 0 2px #3a3832; }
+.phone .back .cam::before, .phone .back .cam::after { content: ""; position: absolute; width: 62px; height: 62px; border-radius: 50%; background: radial-gradient(circle at 40% 40%, #2c3a4a, #050608 60%); box-shadow: 0 0 0 5px #19191c, 0 0 0 7px #3a3832; }
+.phone .back .cam::before { left: 18px; top: 18px; }
+.phone .back .cam::after { left: 90px; top: 90px; }
+.phone .back .word { position: absolute; bottom: 120px; font: 400 22px Cin; letter-spacing: .4em; color: #8f826a; }
+.phone .front { position: absolute; inset: 0; border-radius: 76px; padding: 12px; background: linear-gradient(145deg, #4a4538, #0d0d0f 28%, #141416 72%, #5a5240); box-shadow: inset 0 0 0 2px #000, 0 0 0 1px rgba(255,236,190,.14); backface-visibility: hidden; }
+.screen { position: relative; width: 496px; height: 976px; border-radius: 64px; overflow: hidden; background: #000; }
+.island { position: absolute; left: 50%; top: 14px; width: 130px; height: 36px; margin-left: -65px; border-radius: 20px; background: #000; z-index: 60; }
 .sbar { position: absolute; left: 0; right: 0; top: 0; height: 58px; z-index: 50; display: flex; align-items: center; justify-content: space-between; padding: 8px 38px 0 46px; font: 600 19px G; color: #fff; }
 .sbar .icons { display: flex; gap: 8px; align-items: center; }
-.scr { position: absolute; inset: 0; background: #0e1621; }
+.glass { position: absolute; inset: 0; border-radius: 64px; z-index: 70; background: linear-gradient(112deg, transparent 38%, rgba(255,255,255,.07) 46%, rgba(255,255,255,.015) 52%, transparent 60%); background-size: 300% 100%; pointer-events: none; }
+.off { position: absolute; inset: 0; z-index: 65; background: #000; }
+.shadow { position: absolute; width: 560px; height: 90px; margin-left: -280px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0,0,0,.75), transparent); filter: blur(8px); }
+.scr { position: absolute; inset: 0; background: #0e1621; display: none; }
+/* boot */
+.boot { background: radial-gradient(360px 360px at 50% 40%, rgba(232,188,91,.20), transparent 70%), #050506; }
+.boot img { position: absolute; left: 50%; top: 300px; width: 200px; margin-left: -100px; }
+.boot .bn { position: absolute; left: 0; right: 0; top: 540px; text-align: center; font: 400 38px Cin; letter-spacing: .08em; }
+.boot .bs { position: absolute; left: 0; right: 0; top: 600px; text-align: center; font: 500 18px G; letter-spacing: .36em; color: #6ab3f3; }
+/* Telegram chat */
 .tgbg { position: absolute; inset: 0; background: radial-gradient(420px 380px at 20% 30%, rgba(38,72,102,.35), transparent 70%), radial-gradient(420px 420px at 85% 75%, rgba(60,52,32,.35), transparent 70%), #0e1621; }
 .hdr { position: absolute; left: 0; right: 0; top: 0; height: 132px; padding-top: 58px; background: rgba(23,33,43,.97); display: flex; align-items: center; gap: 14px; padding-left: 16px; padding-right: 20px; border-bottom: 1px solid #0b121a; z-index: 5; }
-.hdr .back { font: 300 46px G; color: #6ab3f3; margin-top: -6px; width: 22px; }
+.hdr .back2 { font: 300 46px G; color: #6ab3f3; margin-top: -6px; width: 22px; }
 .hdr .av { width: 52px; height: 52px; border-radius: 50%; flex: none; overflow: hidden; display: grid; place-items: center; }
 .hdr .av img { width: 100%; height: 100%; object-fit: cover; }
 .hdr .nm { font: 600 22px G; color: #f5f5f5; }
@@ -72,8 +94,6 @@ canvas { position: absolute; inset: 0; }
 .inp .field span.ph { color: #6d7f8f; }
 .inp .caret { display: inline-block; width: 2px; height: 22px; background: #6ab3f3; vertical-align: -4px; margin-left: 2px; }
 .inp .ico { width: 40px; height: 40px; display: grid; place-items: center; color: #6d7f8f; font-size: 24px; }
-.inp .send { width: 46px; height: 46px; border-radius: 50%; background: #2f6ea5; display: grid; place-items: center; }
-/* messages */
 .msg { position: absolute; left: 12px; right: 12px; top: 0; }
 .msg.out { text-align: right; }
 .bub { display: inline-block; text-align: left; max-width: 380px; padding: 10px 14px 8px; border-radius: 18px; font: 400 20px/1.36 G, "Noto Color Emoji"; color: #f5f5f5; word-break: break-word; position: relative; }
@@ -82,32 +102,38 @@ canvas { position: absolute; inset: 0; }
 .out .bub { background: #2b5278; border-bottom-right-radius: 6px; }
 .grp .in { padding-left: 46px; }
 .grp .in .gav { position: absolute; left: 0; bottom: 0; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font: 600 17px G; color: #fff; overflow: hidden; }
-.grp .in .gav img { width: 100%; height: 100%; }
 .bub .who { font: 600 18px G; margin-bottom: 2px; }
 .bub b { font-weight: 600; }
 .bub i { font-style: italic; color: #9fb0c0; }
 .bub code { font: 400 17px/1.3 GM; color: #8fc7ff; word-break: break-all; }
-.bub a, .bub .lnk { color: #6ab3f3; text-decoration: none; }
+.bub .lnk { color: #6ab3f3; }
 .out .bub .cmd { color: #b9dcff; }
 .bub .tm { float: right; margin: 8px 0 -4px 12px; font: 400 14px G; color: #6d8195; }
 .out .bub .tm { color: #7ea3c7; }
-.bub .photo { display: block; width: 300px; height: 300px; border-radius: 12px; margin: -4px -8px 4px; object-fit: cover; }
+.bub .photo { display: block; width: 300px; height: 300px; border-radius: 12px; margin: -4px -8px 4px; object-fit: cover; background: #0b1a22; }
 .kb { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .kb .row { display: flex; gap: 6px; }
 .btn { flex: 1; position: relative; overflow: hidden; border-radius: 12px; background: rgba(32,48,64,.92); padding: 11px 8px; text-align: center; font: 500 17px G, "Noto Color Emoji"; color: #fff; white-space: nowrap; border: 1px solid transparent; }
 .btn .rip { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px; border-radius: 50%; background: rgba(255,255,255,.35); transform: scale(0); opacity: 0; }
-.in.kbonly .kb { width: 380px; }
 /* lock screen */
-#scrLock { background: #07080a; }
-#scrLock .wall { position: absolute; inset: 0; background: radial-gradient(380px 420px at 50% 26%, rgba(232,188,91,.22), transparent 70%), radial-gradient(500px 500px at 50% 110%, rgba(42,171,238,.22), transparent 70%), linear-gradient(180deg, #121318, #07080a); }
-#scrLock .lt { position: absolute; left: 0; right: 0; top: 96px; text-align: center; font: 300 118px G; color: #f4f0e6; letter-spacing: -.02em; }
-#scrLock .ld { position: absolute; left: 0; right: 0; top: 80px; text-align: center; font: 500 21px G; color: #c9c6bd; }
-.nt { position: absolute; left: 14px; right: 14px; border-radius: 26px; background: rgba(38,40,46,.78); border: 1px solid rgba(255,255,255,.06); padding: 16px 18px; display: flex; gap: 14px; box-shadow: 0 16px 40px rgba(0,0,0,.4); }
+.lock { background: #07080a; }
+.lock .wall { position: absolute; inset: 0; background: radial-gradient(380px 420px at 50% 26%, rgba(232,188,91,.22), transparent 70%), radial-gradient(500px 500px at 50% 110%, rgba(42,171,238,.22), transparent 70%), linear-gradient(180deg, #121318, #07080a); }
+.lock .lt { position: absolute; left: 0; right: 0; top: 96px; text-align: center; font: 300 118px G; color: #f4f0e6; letter-spacing: -.02em; }
+.lock .ld { position: absolute; left: 0; right: 0; top: 80px; text-align: center; font: 500 21px G; color: #c9c6bd; }
+.nt { position: absolute; left: 14px; right: 14px; border-radius: 26px; background: rgba(38,40,46,.82); border: 1px solid rgba(255,255,255,.06); padding: 16px 18px; display: flex; gap: 14px; box-shadow: 0 16px 40px rgba(0,0,0,.4); }
 .nt .ap { width: 48px; height: 48px; flex: none; border-radius: 13px; overflow: hidden; }
 .nt .tx { flex: 1; min-width: 0; }
 .nt .tt { display: flex; justify-content: space-between; font: 600 18px G; color: #f5f5f5; }
 .nt .tt span { font-weight: 400; color: #9aa0ab; font-size: 16px; }
 .nt .bd { font: 400 18px/1.32 G, "Noto Color Emoji"; color: #e4e4e4; margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* floating notification cards (world) */
+.fcard { position: absolute; left: 0; top: 0; width: 500px; border-radius: 28px; background: linear-gradient(180deg, rgba(44,46,54,.92), rgba(24,25,30,.94)); border: 1px solid rgba(255,255,255,.08); padding: 20px 22px; display: flex; gap: 16px; box-shadow: 0 40px 90px rgba(0,0,0,.55); }
+.fcard .ap { width: 56px; height: 56px; flex: none; border-radius: 15px; overflow: hidden; }
+.fcard .tt { display: flex; justify-content: space-between; font: 600 20px G; color: #f5f5f5; }
+.fcard .tt span { font-weight: 400; color: #9aa0ab; font-size: 17px; }
+.fcard .bd { font: 400 21px/1.34 G, "Noto Color Emoji"; color: #ececec; margin-top: 4px; }
+.fcard .tag { position: absolute; left: 22px; top: -42px; font: 500 20px GM; color: #7cc8f5; white-space: nowrap; }
+.solchip { position: absolute; left: 0; top: 0; padding: 12px 22px; border-radius: 999px; font: 600 30px G, "Noto Color Emoji"; white-space: nowrap; }
 /* "/" menu */
 .menu { position: absolute; left: 0; right: 0; bottom: 84px; background: rgba(23,33,43,.99); border-top: 1px solid #0b121a; border-radius: 18px 18px 0 0; overflow: hidden; z-index: 4; }
 .mi { height: 62px; display: flex; align-items: center; gap: 14px; padding: 0 18px; position: relative; }
@@ -115,157 +141,103 @@ canvas { position: absolute; inset: 0; }
 .mi .mc { font: 600 20px G; color: #f5f5f5; }
 .mi .md { font: 400 18px G; color: #7d8e9e; margin-left: 4px; }
 .mi .hl { position: absolute; inset: 0; background: rgba(106,179,243,.14); opacity: 0; }
-/* website (scene 6) */
-#browser { position: absolute; left: 90px; top: 300px; width: 900px; height: 640px; border-radius: 18px; overflow: hidden; background: #0b0c0f; border: 1px solid #2a2c33; box-shadow: 0 50px 120px rgba(0,0,0,.6); }
+/* pay card + browser */
+.paycard { position: absolute; left: 0; top: 0; width: 380px; border-radius: 26px; background: linear-gradient(180deg, rgba(26,27,32,.96), rgba(12,13,16,.97)); border: 1px solid #2c2e35; padding: 26px; box-shadow: 0 40px 100px rgba(0,0,0,.6); }
+#browser { position: absolute; left: 80px; top: 300px; width: 920px; height: 650px; border-radius: 18px; overflow: hidden; background: #0b0c0f; border: 1px solid #2a2c33; box-shadow: 0 50px 120px rgba(0,0,0,.6); }
 #browser .chrome { height: 46px; background: #16171b; display: flex; align-items: center; gap: 10px; padding: 0 18px; border-bottom: 1px solid #23252b; }
 #browser .dot { width: 13px; height: 13px; border-radius: 50%; }
 #browser .url { margin-left: 18px; flex: 1; height: 28px; border-radius: 8px; background: #0d0e11; font: 400 16px GM; color: #9aa0ab; display: flex; align-items: center; padding: 0 14px; }
-#browser .page { position: absolute; left: 0; top: 46px; right: 0; bottom: 0; background: url(tour/coin.jpg) no-repeat; background-size: 900px auto; background-position: 0 -56px; }
-#tgcard { position: absolute; left: 536px; top: 300px; width: 340px; border-radius: 16px; background: #15161a; border: 1px solid #2c2e35; padding: 16px 16px 14px; box-shadow: 0 30px 80px rgba(0,0,0,.65), 0 0 0 2px rgba(106,179,243,0); }
-#tgcard .t { display: flex; align-items: center; gap: 8px; font: 600 17px G; color: #efebe1; margin-bottom: 12px; }
+#browser .page { position: absolute; left: 0; top: 46px; right: 0; bottom: 0; background: url(tour/coin.jpg) no-repeat; background-size: 920px auto; background-position: 0 -57px; }
+#tgcard { position: absolute; left: 552px; top: 306px; width: 344px; border-radius: 16px; background: #15161a; border: 1px solid #2c2e35; padding: 16px 16px 14px; }
+#tgcard .t { display: flex; align-items: center; gap: 8px; font: 600 17px G; color: #efebe1; margin-bottom: 10px; }
 #tgcard .t span { font-weight: 400; color: #8e939f; font-size: 15px; margin-left: auto; }
-#tgcard .ln { display: block; border-radius: 10px; background: #1d1f24; border: 1px solid #2a2c33; padding: 11px 12px; font: 600 16px G, "Noto Color Emoji"; color: #efebe1; margin-top: 8px; position: relative; overflow: hidden; }
-#tgcard .ln span { display: block; margin-top: 3px; font: 400 14px G; color: #8e939f; }
+#tgcard .lk { display: block; border-radius: 10px; background: #1d1f24; border: 1px solid #2a2c33; padding: 11px 12px; font: 600 16px G, "Noto Color Emoji"; color: #efebe1; margin-top: 8px; position: relative; overflow: hidden; }
+#tgcard .lk span { display: block; margin-top: 3px; font: 400 14px G; color: #8e939f; }
 #cursor { position: absolute; width: 30px; height: 40px; opacity: 0; }
 #beams { position: absolute; inset: 0; }
-.blab { position: absolute; font: 500 23px G; color: #cfe8fb; white-space: nowrap; padding: 10px 18px; border-radius: 999px; background: rgba(42,171,238,.10); border: 1px solid rgba(106,179,243,.35); }
-/* logo lockup */
-.lock { position: absolute; width: 220px; height: 220px; }
-.lock img.mk { width: 220px; height: 220px; }
-.lock .tg { position: absolute; width: 92px; height: 92px; }
-.soonbig { display: inline-block; padding: 20px 56px; border-radius: 999px; border: 2px solid rgba(232,188,91,.75); background: rgba(232,188,91,.10); font: 600 46px G; letter-spacing: .34em; padding-right: calc(56px - .34em); position: relative; overflow: hidden; }
+.blab { position: absolute; font: 500 23px G; color: #cfe8fb; white-space: nowrap; padding: 10px 18px; border-radius: 999px; background: rgba(12,26,38,.88); border: 1px solid rgba(106,179,243,.4); }
+.soonbig { display: inline-block; position: relative; overflow: hidden; padding: 20px 56px; padding-right: calc(56px - .34em); border-radius: 999px; border: 2px solid rgba(232,188,91,.75); background: rgba(232,188,91,.10); font: 600 46px G; letter-spacing: .34em; }
 .social { display: inline-flex; align-items: center; gap: 12px; font: 400 30px G; color: #cfccc3; }
-.feat { display: inline-flex; gap: 0; font: 500 30px G; color: #d7d3c9; }
+.feat { display: inline-flex; font: 500 30px G; color: #d7d3c9; }
 .feat span + span::before { content: "·"; color: #e8bc5b; margin: 0 22px; }
+.c { position: absolute; left: 0; right: 0; text-align: center; }
 </style>
 </head>
 <body>
 <div id="stage">
   <svg width="0" height="0" style="position:absolute"><defs><linearGradient id="tgg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#37bbfe"/><stop offset="1" stop-color="#1e96d4"/></linearGradient></defs></svg>
-  <div class="layer" id="bg"></div>
-  <canvas id="dust" width="1920" height="1080"></canvas>
-
-  <!-- 0-4: cold open -->
-  <div class="scene" id="s0">
-    <div class="lock" id="s0lock" style="left:850px;top:120px">
-      <img class="mk" src="../moatpad-mark.svg">
-      <svg class="tg" id="s0tg" viewBox="0 0 100 100" style="left:150px;top:146px"><circle cx="50" cy="50" r="47" fill="url(#tgg)" stroke="#0a0b0e" stroke-width="5"/><path transform="translate(22 24) scale(2.3)" fill="#fff" d="M21.5 4.3 18.4 19.6c-.23 1.03-.85 1.28-1.72.8l-4.75-3.5-2.3 2.2c-.25.25-.47.47-.95.47l.34-4.83 8.8-7.95c.38-.34-.08-.53-.6-.19L6.33 13.45l-4.68-1.46c-1.02-.32-1.04-1.02.21-1.5L20.2 3.4c.85-.31 1.6.2 1.3.9Z"/></svg>
-    </div>
-    <div class="c kicker" id="s0k" style="top:404px">Coming soon to Telegram</div>
-    <div class="c" id="s0t" style="top:446px"><span class="gold" style="font:400 176px Cin;letter-spacing:.05em">MOATPAD BOT</span></div>
-    <div class="c sub" id="s0s" style="top:690px">Launch coins, run your group's buy bot and get your payouts,<br><b>right inside Telegram.</b></div>
-  </div>
-
-  <!-- 4-10: /launch, the questions -->
-  <div class="scene" id="s1"><div class="col">
-    <div class="k">01 · Launch<span class="cmd">/launch</span></div>
-    <div class="h">Launch a coin<br>in a chat.</div>
-    <div class="pt" id="p10" style="top:490px"><span class="ic">💬</span><span><b>8 simple questions</b>, one at a time</span></div>
-    <div class="pt" id="p11" style="top:572px"><span class="ic">🖼</span><span>Name, ticker, photo, links</span></div>
-    <div class="pt" id="p12" style="top:654px"><span class="ic">👆</span><span><b>Tap buttons</b> for the floor and dev buy</span></div>
-    <div class="pt" id="p13" style="top:736px"><span class="ic">✖️</span><span>Skip, start over or cancel any time</span></div>
-  </div></div>
-
-  <!-- 10-16: pay and go live -->
-  <div class="scene" id="s2"><div class="col">
-    <div class="k">02 · Go live</div>
-    <div class="h">One payment.<br>Live in seconds.</div>
-    <div class="pt" id="p20" style="top:490px"><span class="ic">🔐</span><span><b>No keys, no custody</b>: you pay from your wallet</span></div>
-    <div class="pt" id="p21" style="top:572px"><span class="ic">🪙</span><span>That wallet becomes the creator</span></div>
-    <div class="pt" id="p22" style="top:654px"><span class="ic">↩️</span><span>Anything extra is refunded</span></div>
-    <div id="pay" style="position:absolute;left:0;top:752px;width:880px;height:200px;border-radius:22px;background:linear-gradient(180deg,rgba(24,25,30,.95),rgba(13,14,17,.97));border:1px solid #2a2c33;box-shadow:0 30px 80px rgba(0,0,0,.5);display:flex;align-items:center;gap:30px;padding:0 30px">
-      <canvas id="qr" width="148" height="148" style="position:static;border-radius:12px;background:#fff;padding:0"></canvas>
-      <div style="flex:1">
-        <div style="font:500 17px GM;color:#8e939f">moatpad.fun/pay/…</div>
-        <div style="font:600 34px G;margin-top:6px">Send <span class="gold">0.115 SOL</span></div>
-        <div style="font:400 21px G;color:#b9b6ad;margin-top:6px">Scan with Phantom or Solflare, or open your wallet.</div>
-        <div style="margin-top:14px;height:10px;border-radius:5px;background:#24262d;overflow:hidden"><div id="payBar" style="height:100%;width:0;background:linear-gradient(90deg,#2bd98a,#9cf0c6)"></div></div>
-      </div>
-      <div id="payState" style="width:190px;text-align:center;font:600 22px G;color:#9aa0ab">Waiting…</div>
-    </div>
-  </div></div>
-
-  <!-- 16-22: /buybot -->
-  <div class="scene" id="s3"><div class="col">
-    <div class="k">03 · Buy bot<span class="cmd">/buybot</span></div>
-    <div class="h">A buy bot for<br>your community.</div>
-    <div class="pt" id="p30" style="top:490px"><span class="ic">🟢</span><span><b>Every buy</b> posted, one dot per 0.1 SOL</span></div>
-    <div class="pt" id="p31" style="top:572px"><span class="ic">🎚</span><span>Set a minimum: <code>/buybot &lt;CA&gt; 0.5</code></span></div>
-    <div class="pt" id="p32" style="top:654px"><span class="ic">🛡</span><span>Floor defences posted too</span></div>
-    <div class="pt" id="p33" style="top:736px"><span class="ic">👮</span><span>Only group admins can turn it on</span></div>
-  </div></div>
-
-  <!-- 22-26: alerts -->
-  <div class="scene" id="s4"><div class="col">
-    <div class="k">04 · Alerts<span class="cmd">/follow /watch</span></div>
-    <div class="h">Never miss<br>a payout.</div>
-    <div class="pt" id="p40" style="top:490px"><span class="ic">👛</span><span><b>Every payout</b> your wallet earns</span></div>
-    <div class="pt" id="p41" style="top:572px"><span class="ic">🛡</span><span>Floor defences of the coins you follow</span></div>
-    <div class="pt" id="p42" style="top:654px"><span class="ic">🎓</span><span>Graduation to PumpSwap</span></div>
-    <div class="pt" id="p43" style="top:736px"><span class="ic">🔥</span><span>Every <b>$MOATPAD burn</b>, live</span></div>
-  </div></div>
-
-  <!-- 26-32: commands -->
-  <div class="scene" id="s5"><div class="col">
-    <div class="k">05 · Simple</div>
-    <div class="h">Plain English.<br>One tap away.</div>
-    <div id="cmds" style="position:absolute;left:0;top:480px;width:900px"></div>
-  </div></div>
-
-  <!-- 32-36: connected to the website -->
-  <div class="scene" id="s6">
-    <div class="c kicker" id="s6k" style="top:96px">06 · Connected</div>
-    <div class="c" id="s6h" style="top:146px;font:600 66px G;letter-spacing:-.015em">Bot and <span class="gold">moatpad.fun</span>, in sync.</div>
-    <div id="browser">
-      <div class="chrome"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><div class="url">moatpad.fun/coin/Fs9q…STAR</div></div>
-      <div class="page"></div>
-      <div id="tgcard">
-        <div class="t"><svg width="18" height="18" viewBox="0 0 24 24"><path fill="#6ab3f3" d="M21.5 4.3 18.4 19.6c-.23 1.03-.85 1.28-1.72.8l-4.75-3.5-2.3 2.2c-.25.25-.47.47-.95.47l.34-4.83 8.8-7.95c.38-.34-.08-.53-.6-.19L6.33 13.45l-4.68-1.46c-1.02-.32-1.04-1.02.21-1.5L20.2 3.4c.85-.31 1.6.2 1.3.9Z"/></svg>Telegram<span>Moatpad Bot</span></div>
-        <div class="ln" id="lnBuy">🟢 Buy bot for your group<span>Every buy of $STAR</span></div>
-        <div class="ln" id="lnAlerts">🔔 Alerts on Telegram<span>Payouts, buybacks</span><div class="btnrip" style="position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px;border-radius:50%;background:rgba(106,179,243,.45);transform:scale(0);opacity:0"></div></div>
-      </div>
-      <svg id="cursor" viewBox="0 0 30 40"><path d="M2 2 L2 32 L10 25 L15 37 L20 35 L15 23 L26 23 Z" fill="#fff" stroke="#000" stroke-width="2" stroke-linejoin="round"/></svg>
-    </div>
-    <svg id="beams" width="1920" height="1080"></svg>
-    <div class="blab" id="bl1">Coin page → bot</div>
-    <div class="blab" id="bl2">Bot → coin page</div>
-  </div>
-
-  <!-- 36-40: outro -->
-  <div class="scene" id="s7">
-    <div class="lock" id="olock" style="left:860px;top:96px;width:200px;height:200px">
-      <img class="mk" src="../moatpad-mark.svg" style="width:200px;height:200px">
-      <svg class="tg" viewBox="0 0 100 100" style="left:136px;top:132px;width:84px;height:84px"><circle cx="50" cy="50" r="47" fill="url(#tgg)" stroke="#0a0b0e" stroke-width="5"/><path transform="translate(22 24) scale(2.3)" fill="#fff" d="M21.5 4.3 18.4 19.6c-.23 1.03-.85 1.28-1.72.8l-4.75-3.5-2.3 2.2c-.25.25-.47.47-.95.47l.34-4.83 8.8-7.95c.38-.34-.08-.53-.6-.19L6.33 13.45l-4.68-1.46c-1.02-.32-1.04-1.02.21-1.5L20.2 3.4c.85-.31 1.6.2 1.3.9Z"/></svg>
-    </div>
-    <div class="c" id="o1" style="top:330px"><span class="gold" style="font:400 128px Cin;letter-spacing:.05em">MOATPAD BOT</span></div>
-    <div class="c" id="o2" style="top:500px"><span class="soonbig"><span class="gold">COMING SOON</span><span id="shine" style="position:absolute;top:-20%;bottom:-20%;width:120px;background:linear-gradient(90deg,transparent,rgba(255,246,216,.45),transparent);transform:skewX(-20deg)"></span></span></div>
-    <div class="c" id="o3" style="top:650px"><span class="feat"><span>Launch</span><span>Buy bot</span><span>Alerts</span><span>Burns</span></span></div>
-    <div class="c" id="o4" style="top:740px"><span class="pill"><span class="gold">moatpad.fun</span></span></div>
-    <div class="c" id="o5" style="top:870px">
-      <span class="social"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="#cfccc3" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>@moatpad</span>
-      <span class="social" style="margin-left:70px"><svg width="30" height="30" viewBox="0 0 24 24"><path fill="#cfccc3" d="M21.5 4.3 18.4 19.6c-.23 1.03-.85 1.28-1.72.8l-4.75-3.5-2.3 2.2c-.25.25-.47.47-.95.47l.34-4.83 8.8-7.95c.38-.34-.08-.53-.6-.19L6.33 13.45l-4.68-1.46c-1.02-.32-1.04-1.02.21-1.5L20.2 3.4c.85-.31 1.6.2 1.3.9Z"/></svg>t.me/MOATPAD</span>
-    </div>
-  </div>
-
-  <!-- the phone, shared by scenes 1-6 -->
-  <div id="phoneWrap"><div id="phone"><div id="screen">
-    <div id="island"></div>
-    <div class="sbar"><span id="clock">12:04</span><span class="icons">
-      <svg width="22" height="14" viewBox="0 0 22 14"><rect x="0" y="9" width="4" height="5" rx="1" fill="#fff"/><rect x="6" y="6" width="4" height="8" rx="1" fill="#fff"/><rect x="12" y="3" width="4" height="11" rx="1" fill="#fff"/><rect x="18" y="0" width="4" height="14" rx="1" fill="#fff"/></svg>
-      <svg width="20" height="14" viewBox="0 0 20 14"><path d="M10 13.5 L13 10 A4.5 4.5 0 0 0 7 10 Z M10 2 A12 12 0 0 1 19 5.8 L17 8 A9 9 0 0 0 3 8 L1 5.8 A12 12 0 0 1 10 2 Z" fill="#fff"/></svg>
-      <svg width="30" height="14" viewBox="0 0 30 14"><rect x=".5" y=".5" width="25" height="13" rx="4" fill="none" stroke="#fff" stroke-opacity=".5"/><rect x="2.5" y="2.5" width="19" height="9" rx="2.5" fill="#fff"/><rect x="27" y="4.5" width="2" height="5" rx="1" fill="#fff" fill-opacity=".5"/></svg>
-    </span></div>
-    <div class="scr" id="scrChat"></div>
-    <div class="scr" id="scrGroup"></div>
-    <div class="scr" id="scrLock"><div class="wall"></div><div class="ld">Friday</div><div class="lt">12:07</div><div id="notes"></div></div>
-    <div class="scr" id="scrMenu"></div>
-    <div class="scr" id="scrSync"></div>
-  </div></div></div>
-
+  <div class="layer" id="bg"><div id="rays"></div></div>
+  <canvas id="bokehFar" width="1920" height="1080"></canvas>
+  <div id="world"></div>
+  <canvas id="bokehNear" width="1920" height="1080"></canvas>
   <canvas id="fx" width="1920" height="1080"></canvas>
-  <div id="bug"><img src="../moatpad-mark.svg"><span>MOATPAD BOT</span><span class="soon">COMING SOON</span></div>
+
+  <div class="ui">
+    <!-- 0-6 hero -->
+    <div class="scene" id="s0">
+      <div class="kick" id="s0k" style="left:150px;top:350px"><span class="ln"></span>Coming soon</div>
+      <div class="head" id="s0h" style="left:150px;top:400px;font-size:96px"></div>
+    </div>
+    <!-- 6-8 title -->
+    <div class="scene" id="s1">
+      <div class="c" id="s1k" style="top:330px;font:500 26px G;letter-spacing:.6em;color:#e8bc5b;padding-left:.6em">INTRODUCING</div>
+      <div class="c" id="s1t" style="top:392px;white-space:nowrap"><span class="sheen" id="s1ts" style="font:400 190px Cin;letter-spacing:.05em">MOATPAD BOT</span></div>
+      <div class="c" id="s1s" style="top:660px;font:300 36px G;color:#c9c6bd">Your launchpad, <b style="font-weight:500;color:#efebe1">right inside Telegram.</b></div>
+    </div>
+    <!-- 8-18 launch -->
+    <div class="scene" id="s2">
+      <div class="kick" id="s2k" style="left:150px;top:200px"><span class="ln"></span>01 · Launch <span class="cmd">/launch</span></div>
+      <div class="head" id="s2h" style="left:150px;top:250px"></div>
+      <div class="tile" id="t20" style="left:150px;top:520px"><div class="n gold">8</div><div class="d">simple questions,<br>one at a time</div></div>
+      <div class="tile" id="t21" style="left:420px;top:520px"><div class="n gold">1</div><div class="d">payment, from<br>your own wallet</div></div>
+      <div class="tile" id="t22" style="left:690px;top:520px"><div class="n e">🔑</div><div class="d">your keys stay<br>yours</div></div>
+      <div class="bul" id="b20" style="left:150px;top:720px"><span class="ic">👆</span><span><b>Tap buttons</b> for the floor and dev buy</span></div>
+      <div class="bul" id="b21" style="left:150px;top:800px"><span class="ic">✖️</span><span>Skip, start over or cancel any time</span></div>
+      <div class="head" id="s2live" style="left:110px;top:390px;font-size:82px;opacity:0"><span class="l"><span class="w">Live on</span></span><span class="l"><span class="w">pump.fun</span></span><span class="l"><span class="w"><span class="sheen" id="s2ls">in seconds.</span></span></span></div>
+    </div>
+    <!-- 18-24 buy bot -->
+    <div class="scene" id="s3">
+      <div class="kick" id="s3k" style="left:930px;top:250px"><span class="ln"></span>02 · Buy bot <span class="cmd">/buybot</span></div>
+      <div class="head" id="s3h" style="left:930px;top:300px"></div>
+      <div class="bul" id="b30" style="left:930px;top:560px"><span class="ic">🟢</span><span><b>Every buy</b>, posted live</span></div>
+      <div class="bul" id="b31" style="left:930px;top:640px"><span class="ic">🛡</span><span>Floor defences posted too</span></div>
+      <div class="bul" id="b32" style="left:930px;top:720px"><span class="ic">🎚</span><span>Set a minimum buy size</span></div>
+      <div class="bul" id="b33" style="left:930px;top:800px"><span class="ic">👮</span><span>Only group admins can turn it on</span></div>
+    </div>
+    <!-- 24-30 alerts -->
+    <div class="scene" id="s4">
+      <div class="kick" id="s4k" style="left:0;right:0;justify-content:center;top:70px"><span class="ln"></span>03 · Alerts <span class="cmd">/follow /watch</span></div>
+      <div class="head" id="s4h" style="left:0;right:0;text-align:center;top:112px;font-size:72px"></div>
+    </div>
+    <!-- 30-36 commands -->
+    <div class="scene" id="s5">
+      <div class="kick" id="s5k" style="left:0;right:0;justify-content:center;top:850px"><span class="ln"></span>04 · Simple</div>
+      <div class="head" id="s5h" style="left:0;right:0;text-align:center;top:892px;font-size:70px"></div>
+    </div>
+    <!-- 36-42 connected -->
+    <div class="scene" id="s6">
+      <div class="kick" id="s6k" style="left:0;right:0;justify-content:center;top:96px"><span class="ln"></span>05 · Connected</div>
+      <div class="head" id="s6h" style="left:0;right:0;text-align:center;top:140px;font-size:70px"></div>
+    </div>
+    <!-- 42-50 outro -->
+    <div class="scene" id="s7">
+      <div class="c" id="o0" style="top:150px"><img src="../moatpad-mark.svg" style="width:170px"></div>
+      <div class="c" id="o1" style="top:350px"><span class="sheen" id="o1s" style="font:400 150px Cin;letter-spacing:.05em">MOATPAD BOT</span></div>
+      <div class="c" id="o2" style="top:545px"><span class="soonbig"><span class="sheen" id="o2s">COMING SOON</span><span id="shine" style="position:absolute;top:-20%;bottom:-20%;width:120px;background:linear-gradient(90deg,transparent,rgba(255,246,216,.4),transparent);transform:skewX(-20deg)"></span></span></div>
+      <div class="c" id="o3" style="top:690px"><span class="feat"><span>Launch</span><span>Buy bot</span><span>Alerts</span><span>Burns</span></span></div>
+      <div class="c" id="o4" style="top:780px"><span style="display:inline-flex;padding:16px 36px;border-radius:999px;border:1px solid rgba(232,188,91,.55);background:rgba(232,188,91,.08);font:600 34px G"><span class="gold">moatpad.fun</span></span></div>
+      <div class="c" id="o5" style="top:905px">
+        <span class="social"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="#cfccc3" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>@moatpad</span>
+        <span class="social" style="margin-left:70px"><svg width="30" height="30" viewBox="0 0 24 24"><path fill="#cfccc3" d="M21.5 4.3 18.4 19.6c-.23 1.03-.85 1.28-1.72.8l-4.75-3.5-2.3 2.2c-.25.25-.47.47-.95.47l.34-4.83 8.8-7.95c.38-.34-.08-.53-.6-.19L6.33 13.45l-4.68-1.46c-1.02-.32-1.04-1.02.21-1.5L20.2 3.4c.85-.31 1.6.2 1.3.9Z"/></svg>t.me/MOATPAD</span>
+      </div>
+    </div>
+    <div id="bug"><img src="../moatpad-mark.svg"><span>MOATPAD BOT</span><span class="soon">COMING SOON</span></div>
+  </div>
+
+  <canvas id="grain" width="640" height="360" style="width:1920px;height:1080px"></canvas>
   <div class="layer" id="vig"></div>
   <div class="layer" id="flash"></div>
+  <div class="layer"><div id="streak"></div></div>
   <div class="layer" id="fade"></div>
 </div>
 <script>
@@ -274,49 +246,123 @@ const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const prog = (t, a, d) => clamp((t - a) / d);
 const lerp = (a, b, p) => a + (b - a) * p;
 const out3 = (x) => 1 - Math.pow(1 - x, 3);
+const out5 = (x) => 1 - Math.pow(1 - x, 5);
 const inOut3 = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const inOut5 = (x) => (x < 0.5 ? 16 * x ** 5 : 1 - Math.pow(-2 * x + 2, 5) / 2);
 const outBack = (x) => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2);
-window.DURATION = 40;
+window.DURATION = 50;
+window.FPS = 60;
 
-let seed = 23;
+let seed = 29;
 const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-
+const PLANE = "M21.5 4.3 18.4 19.6c-.23 1.03-.85 1.28-1.72.8l-4.75-3.5-2.3 2.2c-.25.25-.47.47-.95.47l.34-4.83 8.8-7.95c.38-.34-.08-.53-.6-.19L6.33 13.45l-4.68-1.46c-1.02-.32-1.04-1.02.21-1.5L20.2 3.4c.85-.31 1.6.2 1.3.9Z";
 const MINT = "7Ft3Xq9KmW2bLdR8vNcPaZ4hJyE6sTuG1wQ5ipX9MDog";
 const BOT_AV = `<svg viewBox="0 0 100 100" width="100%" height="100%"><rect width="100" height="100" fill="#0d0e11"/><image href="../moatpad-mark.svg" x="6" y="6" width="88" height="88"/></svg>`;
-const TG_ICON = `<svg viewBox="0 0 100 100" width="100%" height="100%"><rect width="100" height="100" fill="url(#tgg)"/><path transform="translate(20 22) scale(2.4)" fill="#fff" d="M21.5 4.3 18.4 19.6c-.23 1.03-.85 1.28-1.72.8l-4.75-3.5-2.3 2.2c-.25.25-.47.47-.95.47l.34-4.83 8.8-7.95c.38-.34-.08-.53-.6-.19L6.33 13.45l-4.68-1.46c-1.02-.32-1.04-1.02.21-1.5L20.2 3.4c.85-.31 1.6.2 1.3.9Z"/></svg>`;
+const TG_ICON = `<svg viewBox="0 0 100 100" width="100%" height="100%"><rect width="100" height="100" fill="url(#tgg)"/><path transform="translate(20 22) scale(2.4)" fill="#fff" d="${PLANE}"/></svg>`;
 const COIN_IMG = "../3d/renders/token-gold-emerald.png";
+const world = $("world");
 
-// ---- background dust ------------------------------------------------------------------------------------------
-const DUST = Array.from({ length: 70 }, () => ({ x: rnd() * 1920, y: rnd() * 1080, r: 1.5 + rnd() * 4, v: 6 + rnd() * 16, ph: rnd() * 6.28, blue: rnd() < 0.45 }));
-const dctx = $("dust").getContext("2d");
-function dust(t) {
-  dctx.clearRect(0, 0, 1920, 1080);
-  for (const d of DUST) {
-    const y = (d.y - t * d.v + 1200) % 1200 - 60;
-    const x = d.x + Math.sin(t * 0.3 + d.ph) * 30;
-    const a = 0.12 + 0.12 * Math.sin(t * 0.8 + d.ph);
-    const g = dctx.createRadialGradient(x, y, 0, x, y, d.r * 5);
-    g.addColorStop(0, d.blue ? `rgba(120,200,255,${a})` : `rgba(242,206,130,${a})`);
-    g.addColorStop(1, "rgba(0,0,0,0)");
-    dctx.fillStyle = g;
-    dctx.beginPath();
-    dctx.arc(x, y, d.r * 5, 0, 6.283);
-    dctx.fill();
-  }
+// ---- kinetic headlines: "line one|line *gold* two" -----------------------------------------------------------------
+function kinetic(el, text) {
+  el.innerHTML = text.split("|").map((line) => `<span class="l">${line.split(" ").map((w) => (w.startsWith("*") ? `<span class="w"><span class="sheen">${w.replace(/\*/g, "")}</span></span>` : `<span class="w">${w}</span>`)).join(" ")}</span>`).join("");
+  return [...el.querySelectorAll(".w")];
+}
+const HEADS = {
+  s0h: kinetic($("s0h"), "Something new|is coming to *Telegram.*"),
+  s2h: kinetic($("s2h"), "Launch a coin|in a *chat.*"),
+  s3h: kinetic($("s3h"), "Your group's|*buy* *bot.*"),
+  s4h: kinetic($("s4h"), "Never miss a *payout.*"),
+  s5h: kinetic($("s5h"), "Every command. *Plain* *English.*"),
+  s6h: kinetic($("s6h"), "In sync with *moatpad.fun.*"),
+};
+function reveal(id, t, at, stagger = 0.07) {
+  HEADS[id].forEach((w, i) => {
+    const p = out5(prog(t, at + i * stagger, 0.7));
+    w.style.transform = `translateY(${(1 - p) * 110}%) rotate(${(1 - p) * 4}deg)`;
+    w.style.opacity = p > 0 ? 1 : 0;
+  });
+}
+function kick(el, t, at) {
+  const p = out3(prog(t, at, 0.6));
+  el.style.opacity = clamp(p * 1.4);
+  el.querySelector(".ln").style.width = `${70 * p}px`;
+  el.style.transform = `translateX(${(1 - p) * -20}px)`;
+}
+function show(el, t, at, dur = 0.55, dy = 30) {
+  const p = out3(prog(t, at, dur));
+  el.style.opacity = p;
+  el.style.transform = `translateY(${(1 - p) * dy}px)`;
+  el.style.filter = p < 1 ? `blur(${(1 - p) * 8}px)` : "none";
+  return p;
+}
+function scene(id, t, a, b, fadeIn = 0.3, fadeOut = 0.35) {
+  const el = $(id);
+  const o = Math.min(prog(t, a, fadeIn), 1 - prog(t, b - fadeOut, fadeOut));
+  el.style.opacity = o;
+  el.style.display = o > 0 ? "block" : "none";
+  return o > 0;
+}
+function sheen(el, t, speed = 0.35, off = 0) {
+  el.style.backgroundPosition = `${100 - (((t * speed + off) % 1.6) / 1.6) * 160}% 0`;
 }
 
-// ---- chats ----------------------------------------------------------------------------------------------------
-// A message: { at, side: "in" | "out", html, buttons: [[label, ...], ...], wide, tap: { r, c, at }, photo, who, color, av }
+// ---- 3D phones ----------------------------------------------------------------------------------------------------
+const SBAR_ICONS = `<svg width="22" height="14" viewBox="0 0 22 14"><rect x="0" y="9" width="4" height="5" rx="1" fill="#fff"/><rect x="6" y="6" width="4" height="8" rx="1" fill="#fff"/><rect x="12" y="3" width="4" height="11" rx="1" fill="#fff"/><rect x="18" y="0" width="4" height="14" rx="1" fill="#fff"/></svg><svg width="20" height="14" viewBox="0 0 20 14"><path d="M10 13.5 L13 10 A4.5 4.5 0 0 0 7 10 Z M10 2 A12 12 0 0 1 19 5.8 L17 8 A9 9 0 0 0 3 8 L1 5.8 A12 12 0 0 1 10 2 Z" fill="#fff"/></svg><svg width="30" height="14" viewBox="0 0 30 14"><rect x=".5" y=".5" width="25" height="13" rx="4" fill="none" stroke="#fff" stroke-opacity=".5"/><rect x="2.5" y="2.5" width="19" height="9" rx="2.5" fill="#fff"/><rect x="27" y="4.5" width="2" height="5" rx="1" fill="#fff" fill-opacity=".5"/></svg>`;
+function makePhone() {
+  const shadow = document.createElement("div");
+  shadow.className = "shadow";
+  world.appendChild(shadow);
+  const el = document.createElement("div");
+  el.className = "phone";
+  let html = "";
+  for (let i = 1; i <= 9; i++) html += `<div class="edge" style="transform:translateZ(${-i * 2.1}px)"></div>`;
+  html += `<div class="back" style="transform:translateZ(-20px) rotateY(180deg)"><div class="cam"></div><img src="../moatpad-mark.svg"><div class="word">MOATPAD</div></div>`;
+  html += `<div class="front"><div class="screen"><div class="island"></div><div class="sbar"><span class="clock">12:04</span><span class="icons">${SBAR_ICONS}</span></div><div class="scrs"></div><div class="off"></div><div class="glass"></div></div></div>`;
+  el.innerHTML = html;
+  world.appendChild(el);
+  return { el, shadow, scrs: el.querySelector(".scrs"), clock: el.querySelector(".clock"), glass: el.querySelector(".glass"), off: el.querySelector(".off") };
+}
+function addScreen(phone, cls = "") {
+  const s = document.createElement("div");
+  s.className = `scr ${cls}`;
+  phone.scrs.appendChild(s);
+  return s;
+}
+// keyframes: { at, x, y, s, rx, ry, rz, o, ease } (x, y = centre in world px; ease shapes the move to the next key)
+function place(phone, keys, t) {
+  let i = 0;
+  while (i < keys.length - 1 && keys[i + 1].at <= t) i++;
+  const a = keys[i], b = keys[Math.min(i + 1, keys.length - 1)];
+  const p = b === a ? 1 : (a.ease || inOut3)(clamp((t - a.at) / (b.at - a.at)));
+  const v = (k, d = 0) => lerp(a[k] ?? d, b[k] ?? d, p);
+  const o = v("o", 1);
+  const x = v("x"), y = v("y") + Math.sin(t * 0.9 + phone.ph) * 5, s = v("s", 1);
+  const ry = v("ry") + Math.sin(t * 0.45 + phone.ph) * 1.4, rx = v("rx") + Math.sin(t * 0.6 + phone.ph) * 0.8, rz = v("rz");
+  phone.el.style.display = phone.shadow.style.display = o > 0.001 ? "block" : "none";
+  phone.el.style.opacity = o;
+  phone.el.style.transform = `translate3d(${x - 260}px, ${y - 500}px, 0) scale(${s}) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg)`;
+  phone.glass.style.backgroundPosition = `${50 + ((((ry % 360) + 540) % 360) - 180) * 1.6}% 0`;
+  phone.shadow.style.left = `${x}px`;
+  phone.shadow.style.top = `${y + 470 * s}px`;
+  phone.shadow.style.transform = `scale(${s * (0.9 + 0.1 * Math.cos((ry * Math.PI) / 180))}, ${s})`;
+  phone.shadow.style.opacity = o * 0.9;
+  return { x, y, s, ry };
+}
+
+// ---- Telegram chats (the bot's copy from apps/notifier) -------------------------------------------------------------
+const SFX = { in: [], out: [], taps: [], notes: [], chips: [] };
 function tm(s) { return `<span class="tm">${s}</span>`; }
 function chatScreen(el, { title, status, avatar, group }) {
   el.innerHTML = `<div class="tgbg"></div>
     <div class="view"><div class="msgs ${group ? "grp" : ""}"></div></div>
-    <div class="hdr"><span class="back">‹</span><span class="av">${avatar}</span><span><div class="nm">${title}</div><div class="st">${status}</div></span></div>
+    <div class="hdr"><span class="back2">‹</span><span class="av">${avatar}</span><span><div class="nm">${title}</div><div class="st">${status}</div></span></div>
     <div class="inp"><span class="ico">📎</span><div class="field"><span class="ph">Message</span></div><span class="ico">🎙</span></div>`;
-  return { msgs: el.querySelector(".msgs"), view: el.querySelector(".view"), st: el.querySelector(".st"), field: el.querySelector(".field"), status };
+  return { el, msgs: el.querySelector(".msgs"), view: el.querySelector(".view"), st: el.querySelector(".st"), field: el.querySelector(".field"), status };
 }
 function buildChat(screen, list) {
   const items = list.map((m) => {
+    if (m.at > 0) (m.side === "in" ? SFX.in : SFX.out).push(m.at);
+    if (m.tap) SFX.taps.push(m.tap.at);
     const d = document.createElement("div");
     d.className = `msg ${m.side}`;
     const kb = m.buttons ? `<div class="kb">${m.buttons.map((row) => `<div class="row">${row.map((b) => `<div class="btn">${b}<div class="rip"></div></div>`).join("")}</div>`).join("")}</div>` : "";
@@ -335,7 +381,7 @@ function renderChat(chat, t) {
   const viewH = screen.view.clientHeight;
   let y = PAD;
   for (const it of items) {
-    const p = out3(prog(t, it.m.at, 0.28));
+    const p = out3(prog(t, it.m.at, 0.26));
     it.top = y;
     it.p = p;
     y += (it.h + GAP) * p;
@@ -362,142 +408,169 @@ function renderChat(chat, t) {
       b.style.transform = press ? "scale(.97)" : "none";
     }
   }
-  // typing… in the header before a reply, and the input field while "I" type
-  const typingSoon = items.some((it) => it.m.side === "in" && !it.m.who && it.m.at > t && it.m.at - t < 0.5);
-  const memberTyping = items.find((it) => it.m.side === "in" && it.m.who && it.m.at > t && it.m.at - t < 0.5);
-  screen.st.textContent = typingSoon ? (screen.group ? "Moatpad Bot is typing…" : "typing…") : memberTyping ? `${memberTyping.m.who} is typing…` : screen.status;
-  screen.st.className = `st${typingSoon || memberTyping ? " typing" : ""}`;
+  const typingSoon = items.some((it) => it.m.side === "in" && !it.m.who && it.m.at > t && it.m.at - t < 0.45);
+  const botTyping = items.some((it) => it.m.side === "in" && it.m.who === "Moatpad Bot" && it.m.at > t && it.m.at - t < 0.45);
+  const member = items.find((it) => it.m.side === "in" && it.m.who && it.m.who !== "Moatpad Bot" && it.m.at > t && it.m.at - t < 0.45);
+  screen.st.textContent = typingSoon ? "typing…" : botTyping ? "Moatpad Bot is typing…" : member ? `${member.m.who} is typing…` : screen.status;
+  screen.st.className = `st${typingSoon || botTyping || member ? " typing" : ""}`;
   let typed = null;
   for (const it of items) {
     const m = it.m;
     if (m.side !== "out" || !m.typed) continue;
-    const dur = Math.min(0.55, 0.12 + m.typed.length * 0.025);
-    if (t >= m.at - dur - 0.08 && t < m.at) typed = m.typed.slice(0, Math.ceil(m.typed.length * clamp((t - (m.at - dur - 0.08)) / dur)));
+    const dur = Math.min(0.5, 0.12 + m.typed.length * 0.022);
+    if (t >= m.at - dur - 0.06 && t < m.at) typed = m.typed.slice(0, Math.ceil(m.typed.length * clamp((t - (m.at - dur - 0.06)) / dur)));
   }
+  if (chat.slash && t >= chat.slash[0] && t < chat.slash[1]) typed = "/";
   if (typed !== screen.lastTyped) {
     screen.lastTyped = typed;
     screen.field.innerHTML = typed === null ? `<span class="ph">Message</span>` : `<span class="${typed.length > 24 ? "long" : ""}">${typed}<span class="caret"></span></span>`;
   }
 }
 
-const cancel = "✖️ Cancel";
-const skip = "Skip ⏭";
+const cancel = "✖️ Cancel", skip = "Skip ⏭";
 const S = (n) => `<b>Step ${n} of 8</b><br>`;
-// scenes 1-2: the /launch conversation (the bot's copy from apps/notifier/src/launch.ts)
-const privateChat = chatScreen($("scrChat"), { title: "Moatpad Bot", status: "bot", avatar: BOT_AV });
-const LAUNCH = buildChat(privateChat, [
-  { at: 4.75, side: "out", typed: "/launch", html: `<span class="cmd">/launch</span>` },
-  { at: 5.1, side: "in", html: `🚀 <b>Let's launch your coin!</b><br><br>${S(1)}What is your coin's <b>name</b>?<br><i>Example: Moat Dog (max 32 characters)</i>`, buttons: [[cancel]] },
-  { at: 5.8, side: "out", typed: "Moat Dog", html: "Moat Dog" },
-  { at: 6.1, side: "in", html: `${S(2)}What is the <b>ticker</b>?<br><i>Example: MDOG (letters and numbers, max 10)</i>`, buttons: [[cancel]] },
-  { at: 6.7, side: "out", typed: "MDOG", html: "MDOG" },
-  { at: 7.0, side: "in", html: `${S(3)}Send your coin's <b>image</b> as a photo.`, buttons: [[skip], [cancel]] },
-  { at: 7.55, side: "out", photo: COIN_IMG },
-  { at: 7.9, side: "in", html: `${S(4)}Write a short <b>description</b> for your coin.`, buttons: [[skip], [cancel]], tap: { r: 0, c: 0, at: 8.3 } },
-  { at: 8.5, side: "in", html: `${S(5)}Send your <b>links</b> in one message: X, Telegram and/or website.`, buttons: [[skip], [cancel]], tap: { r: 0, c: 0, at: 8.9 } },
-  { at: 9.1, side: "in", html: `${S(6)}Choose your coin's <b>floor</b> 🛡<br>When the price falls this far below its all-time high, the coin's vault buys back automatically.`, buttons: [["15% · Tight", "25% · Balanced ⭐", "35% · Loose"], [cancel]], tap: { r: 0, c: 1, at: 9.6 } },
-  { at: 9.85, side: "in", html: `${S(7)}Do you want a <b>dev buy</b>?<br>You buy your own coin in the launch transaction, so no sniper gets in before you.`, buttons: [["No dev buy", "0.1 SOL"], ["0.5 SOL", "1 SOL"], [cancel]], tap: { r: 0, c: 1, at: 10.35 } },
-  { at: 10.6, side: "in", html: `${S(8)}Who receives the <b>creator fees</b>? 💸<br>The creator earns 15% of every trading fee of the coin and claims it on moatpad.fun.`, buttons: [["✅ The wallet I pay from"], [cancel]], tap: { r: 0, c: 0, at: 11.05 } },
-  { at: 11.3, side: "in", html: `<b>Ready to launch? Check your coin:</b><br><br>🪙 <b>Moat Dog</b> ($MDOG)<br>🖼 Image: added<br>🛡 Floor: 25% below the all-time high<br>🛒 Dev buy: 0.1 SOL<br>💸 Creator fees go to: the wallet you pay from<br><br>💰 <b>Total to pay: 0.115 SOL</b><br><i>Launch cost + dev buy. Anything left over is refunded.</i>`, buttons: [["🚀 Launch my coin"], ["✏️ Start over", cancel]], tap: { r: 0, c: 0, at: 12.05 } },
-  { at: 12.35, side: "in", html: `💳 <b>Last step: send the SOL</b><br><br>Send exactly <b>0.115 SOL</b> to this address:<br><code>9pQw2xVb7KcRt4mZy3EhNs8aLfD6uJ1oGe5iTkWqBnHd</code><br><br>• Send it from your own wallet (Phantom, Solflare, ...). That wallet becomes the creator.<br>• Anything above the amount is refunded.`, buttons: [["💳 Pay with QR / wallet on moatpad.fun"]], tap: { r: 0, c: 0, at: 12.95 } },
-  { at: 13.75, side: "in", html: `✅ <b>Payment received</b> (0.115 SOL)<br>Creating $MDOG on pump.fun... this takes a few seconds.`, time: "12:05" },
-  { at: 14.6, side: "in", html: `🚀 <b>$MDOG is LIVE!</b><br><br>CA: <code>${MINT}</code><br><br>Share it with your community and turn on buy alerts in your group. 🎉`, buttons: [["🪙 Open $MDOG on Moatpad"], ["➕ Add buy bot to your group"], ["🐦 Share on X"]], time: "12:05" },
+
+// main phone and its screens
+const P1 = makePhone();
+P1.ph = 0;
+const boot = addScreen(P1, "boot");
+boot.innerHTML = `<img src="../moatpad-mark.svg"><div class="bn gold">Moatpad Bot</div><div class="bs">ON TELEGRAM</div>`;
+
+const launchChat = chatScreen(addScreen(P1), { title: "Moatpad Bot", status: "bot", avatar: BOT_AV });
+const LAUNCH = buildChat(launchChat, [
+  { at: 8.75, side: "out", typed: "/launch", html: `<span class="cmd">/launch</span>` },
+  { at: 9.1, side: "in", html: `🚀 <b>Let's launch your coin!</b><br><br>${S(1)}What is your coin's <b>name</b>?<br><i>Example: Moat Dog (max 32 characters)</i>`, buttons: [[cancel]] },
+  { at: 9.75, side: "out", typed: "Moat Dog", html: "Moat Dog" },
+  { at: 10.05, side: "in", html: `${S(2)}What is the <b>ticker</b>?<br><i>Example: MDOG (letters and numbers, max 10)</i>`, buttons: [[cancel]] },
+  { at: 10.6, side: "out", typed: "MDOG", html: "MDOG" },
+  { at: 10.9, side: "in", html: `${S(3)}Send your coin's <b>image</b> as a photo.`, buttons: [[skip], [cancel]] },
+  { at: 11.4, side: "out", photo: COIN_IMG },
+  { at: 11.75, side: "in", html: `${S(4)}Write a short <b>description</b> for your coin.`, buttons: [[skip], [cancel]], tap: { r: 0, c: 0, at: 12.15 } },
+  { at: 12.35, side: "in", html: `${S(5)}Send your <b>links</b> in one message: X, Telegram and/or website.`, buttons: [[skip], [cancel]], tap: { r: 0, c: 0, at: 12.7 } },
+  { at: 12.9, side: "in", html: `${S(6)}Choose your coin's <b>floor</b> 🛡<br>When the price falls this far below its all-time high, the coin's vault buys back automatically.`, buttons: [["15% · Tight", "25% · Balanced ⭐", "35% · Loose"], [cancel]], tap: { r: 0, c: 1, at: 13.35 } },
+  { at: 13.55, side: "in", html: `${S(7)}Do you want a <b>dev buy</b>?<br>You buy your own coin in the launch transaction, so no sniper gets in before you.`, buttons: [["No dev buy", "0.1 SOL"], ["0.5 SOL", "1 SOL"], [cancel]], tap: { r: 0, c: 1, at: 13.95 } },
+  { at: 14.15, side: "in", html: `${S(8)}Who receives the <b>creator fees</b>? 💸<br>The creator earns 15% of every trading fee of the coin and claims it on moatpad.fun.`, buttons: [["✅ The wallet I pay from"], [cancel]], tap: { r: 0, c: 0, at: 14.5 } },
+  { at: 14.7, side: "in", html: `<b>Ready to launch? Check your coin:</b><br><br>🪙 <b>Moat Dog</b> ($MDOG)<br>🖼 Image: added<br>🛡 Floor: 25% below the all-time high<br>🛒 Dev buy: 0.1 SOL<br>💸 Creator fees go to: the wallet you pay from<br><br>💰 <b>Total to pay: 0.115 SOL</b><br><i>Launch cost + dev buy. Anything left over is refunded.</i>`, buttons: [["🚀 Launch my coin"], ["✏️ Start over", cancel]], tap: { r: 0, c: 0, at: 15.25 } },
+  { at: 15.45, side: "in", html: `💳 <b>Last step: send the SOL</b><br><br>Send exactly <b>0.115 SOL</b> to this address:<br><code>9pQw2xVb7KcRt4mZy3EhNs8aLfD6uJ1oGe5iTkWqBnHd</code><br><br>• Send it from your own wallet (Phantom, Solflare, ...). That wallet becomes the creator.<br>• Anything above the amount is refunded.`, buttons: [["💳 Pay with QR / wallet on moatpad.fun"]], tap: { r: 0, c: 0, at: 15.9 } },
+  { at: 16.45, side: "in", html: `✅ <b>Payment received</b> (0.115 SOL)<br>Creating $MDOG on pump.fun... this takes a few seconds.`, time: "12:05" },
+  { at: 17.0, side: "in", html: `🚀 <b>$MDOG is LIVE!</b><br><br>CA: <code>${MINT}</code><br><br>Share it with your community and turn on buy alerts in your group. 🎉`, buttons: [["🪙 Open $MDOG on Moatpad"], ["➕ Add buy bot to your group"], ["🐦 Share on X"]], time: "12:05" },
 ]);
 
-// scene 3: a community group with the buy bot (apps/notifier/src/commands.ts, messages.ts)
-const groupChat = chatScreen($("scrGroup"), { title: "Moat Dog Community", status: "1,284 members", avatar: `<img src="${COIN_IMG}" style="background:#123">`, group: true });
-groupChat.group = true;
+const groupChat = chatScreen(addScreen(P1), { title: "Moat Dog Community", status: "1,284 members", avatar: `<img src="${COIN_IMG}" style="background:#123">`, group: true });
 const BOTWHO = { who: "Moatpad Bot", color: "#e8bc5b", av: BOT_AV, avbg: "#0d0e11" };
 const BUYBOT = buildChat(groupChat, [
   { at: 0, side: "in", who: "Alex", color: "#6ab3f3", av: "A", avbg: "#3a6d99", html: "just aped $MDOG 🚀", time: "12:06" },
   { at: 0, side: "in", who: "Rina", color: "#e88ac0", av: "R", avbg: "#8d3f6a", html: "need a buy bot in here 👀", time: "12:06" },
-  { at: 16.75, side: "out", typed: "/buybot 7Ft3Xq9KmW2b…5ipX9MDog", html: `<span class="cmd">/buybot</span> ${MINT}`, time: "12:06" },
-  { at: 17.15, side: "in", ...BOTWHO, html: `✅ <b>Buy bot on for $MDOG</b><br>Every buy will be posted here.<br>Floor defences (vault buybacks) are posted too. Send /buybot off to stop.`, buttons: [["🪙 $MDOG on Moatpad"]], time: "12:06" },
-  { at: 18.0, side: "in", ...BOTWHO, html: `<b>$MDOG Buy!</b><br>${"🟢".repeat(5)}<br><br>💰 Spent: <b>0.5 SOL</b><br>🪙 Got: 12,195,121 MDOG<br>👤 Buyer: <span class="lnk">8xQf…k2Pd</span> · <span class="lnk">Txn</span><br>📊 Market cap: 41.2 SOL<br>🛡 Floor vault: 0.18 SOL`, buttons: [["🟢 Buy $MDOG", "🚀 Launch yours"]], time: "12:07" },
-  { at: 19.0, side: "in", who: "Sam", color: "#7fd18b", av: "S", avbg: "#3d7a46", html: "LFG 🔥🔥", time: "12:07" },
-  { at: 19.5, side: "in", ...BOTWHO, html: `<b>$MDOG Buy!</b><br>${"🟢".repeat(24)}<br><br>💰 Spent: <b>2.4 SOL</b><br>🪙 Got: 47,524,752 MDOG<br>👤 Buyer: <span class="lnk">Hn4T…9wLa</span> · <span class="lnk">Txn</span><br>📊 Market cap: 52.6 SOL<br>🛡 Floor vault: 0.19 SOL`, buttons: [["🟢 Buy $MDOG", "🚀 Launch yours"]], time: "12:07" },
-  { at: 20.7, side: "in", who: "Rina", color: "#e88ac0", av: "R", avbg: "#8d3f6a", html: "this bot is clean 😍", time: "12:07" },
+  { at: 18.8, side: "out", typed: "/buybot 7Ft3Xq9KmW2b…5ipX9MDog", html: `<span class="cmd">/buybot</span> ${MINT}`, time: "12:06" },
+  { at: 19.15, side: "in", ...BOTWHO, html: `✅ <b>Buy bot on for $MDOG</b><br>Every buy will be posted here.<br>Floor defences (vault buybacks) are posted too. Send /buybot off to stop.`, buttons: [["🪙 $MDOG on Moatpad"]], time: "12:06" },
+  { at: 19.95, side: "in", ...BOTWHO, html: `<b>$MDOG Buy!</b><br>${"🟢".repeat(5)}<br><br>💰 Spent: <b>0.5 SOL</b><br>🪙 Got: 12,195,121 MDOG<br>👤 Buyer: <span class="lnk">8xQf…k2Pd</span> · <span class="lnk">Txn</span><br>📊 Market cap: 41.2 SOL<br>🛡 Floor vault: 0.18 SOL`, buttons: [["🟢 Buy $MDOG", "🚀 Launch yours"]], time: "12:07" },
+  { at: 20.85, side: "in", who: "Sam", color: "#7fd18b", av: "S", avbg: "#3d7a46", html: "LFG 🔥🔥", time: "12:07" },
+  { at: 21.35, side: "in", ...BOTWHO, html: `<b>$MDOG Buy!</b><br>${"🟢".repeat(24)}<br><br>💰 Spent: <b>2.4 SOL</b><br>🪙 Got: 47,524,752 MDOG<br>👤 Buyer: <span class="lnk">Hn4T…9wLa</span> · <span class="lnk">Txn</span><br>📊 Market cap: 52.6 SOL<br>🛡 Floor vault: 0.19 SOL`, buttons: [["🟢 Buy $MDOG", "🚀 Launch yours"]], time: "12:07" },
+  { at: 22.6, side: "in", ...BOTWHO, html: `🛡 Floor defended: the $MDOG vault bought back 0.12 SOL at price 0.00000003512 SOL<br>Floor: 0.00000003418 SOL per token<br><span class="lnk">$MDOG</span> · <span class="lnk">tx</span>`, time: "12:07" },
+  { at: 23.3, side: "in", who: "Rina", color: "#e88ac0", av: "R", avbg: "#8d3f6a", html: "this bot is clean 😍", time: "12:07" },
 ]);
 
-// scene 5: the "/" menu, then /trending and /burns
-const menuChat = chatScreen($("scrMenu"), { title: "Moatpad Bot", status: "bot", avatar: BOT_AV });
-const COMMANDS = [
-  ["launch", "Launch a new coin"], ["coin", "Look up a coin by its address"], ["trending", "Top coins right now"], ["burns", "$MOATPAD buy & burn"],
-  ["buybot", "Buy alerts for your group"], ["follow", "Alerts for a coin"], ["watch", "Payout alerts for your wallet"], ["alerts", "What this chat follows"],
-  ["cancel", "Stop what you are doing"], ["help", "How it works"],
-];
-const MENU = buildChat(menuChat, [
-  { at: 0, side: "in", html: `🚀 <b>$MDOG is LIVE!</b><br><br>Share it with your community and turn on buy alerts in your group. 🎉`, time: "12:05" },
-  { at: 29.15, side: "out", html: `<span class="cmd">/trending</span>`, time: "12:08" },
-  { at: 29.5, side: "in", html: `📈 <b>Trending on Moatpad</b><br><br>1. <span class="lnk"><b>$STAR</b></span> · MC 264.7 SOL · +839.0%<br>&nbsp;&nbsp;&nbsp;&nbsp;🛡 vault 0.59 SOL · 👥 44<br>2. <span class="lnk"><b>$MDOG</b></span> · MC 52.6 SOL · +87.9%<br>&nbsp;&nbsp;&nbsp;&nbsp;🛡 vault 0.19 SOL · 👥 214<br>3. <span class="lnk"><b>$HOUND</b></span> · MC 88.1 SOL · +37.5%<br>&nbsp;&nbsp;&nbsp;&nbsp;🛡 vault 0.31 SOL · 👥 97<br><br><i>Look one up with /coin &lt;address&gt;</i>`, buttons: [["See all on moatpad.fun"]], time: "12:08" },
-  { at: 30.45, side: "out", typed: "/burns", html: `<span class="cmd">/burns</span>`, time: "12:08" },
-  { at: 30.8, side: "in", html: `🔥 <b>$MOATPAD buy &amp; burn</b><br><br>Burned: <b>18.6M $MOATPAD</b><br>Spent: 0.58 SOL in 37 burns<br><br><b>Latest burns</b><br>• 1.6M $MOATPAD by the $MDOG vault · <span class="lnk">tx</span><br>• 900K $MOATPAD by the $STAR vault · <span class="lnk">tx</span><br><br>10% of every fee on every Moatpad coin buys and burns $MOATPAD.`, buttons: [["🟢 Buy $MOATPAD"]], time: "12:08" },
-]);
-const menuEl = document.createElement("div");
-menuEl.className = "menu";
-menuEl.innerHTML = COMMANDS.map(([c, d]) => `<div class="mi"><span class="ma">${BOT_AV}</span><span class="mc">/${c}</span><span class="md">${d.replace("&", "&amp;")}</span><div class="hl"></div></div>`).join("");
-$("scrMenu").appendChild(menuEl);
-const menuItems = [...menuEl.querySelectorAll(".mi")];
-
-// scene 6: the coin page's "Alerts on Telegram" opens the bot
-const syncChat = chatScreen($("scrSync"), { title: "Moatpad Bot", status: "bot", avatar: BOT_AV });
-const SYNC = buildChat(syncChat, [
-  { at: 0, side: "in", html: `📈 <b>Trending on Moatpad</b><br><br>1. <span class="lnk"><b>$STAR</b></span> · MC 264.7 SOL · +839.0%`, time: "12:08" },
-  { at: 33.55, side: "out", html: `<span class="cmd">/start</span>`, time: "12:09" },
-  { at: 33.9, side: "in", html: `🔔 Alerts on for $STAR (Starfish Steve).<br>You will get every payout round, every floor defence and the graduation to PumpSwap.<br><span class="lnk">Coin page</span>`, buttons: [["🟢 Buy $STAR on Moatpad"]], tap: { r: 0, c: 0, at: 34.55 }, time: "12:09" },
-]);
-
-// scene 4: lock-screen notifications
+const lockScr = addScreen(P1, "lock");
+lockScr.innerHTML = `<div class="wall"></div><div class="ld">Friday</div><div class="lt">12:07</div><div class="notes"></div>`;
 const NOTES = [
-  { at: 22.4, body: "🛡 Floor defended: the $MDOG vault bought back 0.12 SOL at price 0.00000003512 SOL" },
-  { at: 22.95, body: "💰 You earned 0.031 SOL from $MDOG round #128" },
-  { at: 23.5, body: "🔥 $MOATPAD burned! The $MDOG vault bought and burned 1.6M $MOATPAD (0.05 SOL)." },
-  { at: 24.05, body: "🎓 $MDOG graduated to PumpSwap" },
-  { at: 24.6, body: "💰 You earned 0.044 SOL from $MDOG round #129" },
+  { at: 24.6, body: "🛡 Floor defended: the $MDOG vault bought back 0.12 SOL at price 0.00000003512 SOL", tag: "/follow · floor defences", to: [250, 320, 14] },
+  { at: 25.15, body: "💰 You earned 0.031 SOL from $MDOG round #128", tag: "/watch · every payout", to: [1170, 300, -14] },
+  { at: 25.7, body: "🔥 $MOATPAD burned! The $MDOG vault bought and burned 1.6M $MOATPAD (0.05 SOL).", tag: "$MOATPAD burn feed", to: [240, 650, 12] },
+  { at: 26.25, body: "🎓 $MDOG graduated to PumpSwap", tag: "/follow · graduation", to: [1180, 670, -12] },
+  { at: 26.8, body: "💰 You earned 0.044 SOL from $MDOG round #129" },
 ];
+NOTES.forEach((n) => SFX.notes.push(n.at));
 const noteEls = NOTES.map((n) => {
   const d = document.createElement("div");
   d.className = "nt";
   d.innerHTML = `<span class="ap">${TG_ICON}</span><div class="tx"><div class="tt">Moatpad Bot<span>now</span></div><div class="bd">${n.body}</div></div>`;
-  $("notes").appendChild(d);
+  lockScr.querySelector(".notes").appendChild(d);
   return d;
 });
-function notes(t) {
-  // newest on top, older ones pushed down
-  const H = 104;
-  NOTES.forEach((n, i) => {
-    const el = noteEls[i];
-    const p = out3(prog(t, n.at, 0.4));
-    const later = NOTES.filter((o, j) => j > i && t >= o.at).map((o) => out3(prog(t, o.at, 0.4))).reduce((a, b) => a + b, 0);
-    el.style.display = p > 0 ? "flex" : "none";
-    el.style.opacity = p * clamp(1 - (later - 3.6));
-    el.style.transform = `translateY(${250 + later * H - (1 - p) * 60}px) scale(${0.9 + 0.1 * p})`;
-  });
-}
-
-// ---- commands grid (scene 5) ------------------------------------------------------------------------------------
-const cmdsEl = $("cmds");
-const SHOWN = [["launch", "Launch a new coin"], ["buybot", "Buy alerts for your group"], ["coin", "Look up any coin"], ["trending", "Top coins right now"], ["follow", "Alerts for a coin"], ["watch", "Payouts for your wallet"], ["burns", "$MOATPAD buy &amp; burn"], ["help", "How it works"]];
-const cmdEls = SHOWN.map(([c, d], i) => {
-  const el = document.createElement("div");
-  el.style.cssText = `position:absolute;left:${(i % 2) * 450}px;top:${Math.floor(i / 2) * 92}px;width:430px;height:76px;border-radius:16px;background:rgba(22,23,28,.92);border:1px solid #2a2c33;display:flex;align-items:center;gap:16px;padding:0 20px;white-space:nowrap`;
-  el.innerHTML = `<span style="font:500 26px GM;color:#7cc8f5">/${c}</span><span style="font:400 21px G;color:#b9b6ad">${d}</span>`;
-  cmdsEl.appendChild(el);
-  return el;
+const fcards = NOTES.filter((n) => n.to).map((n) => {
+  const d = document.createElement("div");
+  d.className = "fcard";
+  d.innerHTML = `<div class="tag">${n.tag}</div><span class="ap">${TG_ICON}</span><div><div class="tt">Moatpad Bot<span>now</span></div><div class="bd">${n.body}</div></div>`;
+  world.appendChild(d);
+  return { n, d };
 });
 
-// ---- QR (scene 2): a deterministic pattern with finder squares ---------------------------------------------------
+const menuChat = chatScreen(addScreen(P1), { title: "Moatpad Bot", status: "bot", avatar: BOT_AV });
+const MENU = buildChat(menuChat, [
+  { at: 0, side: "in", html: `🚀 <b>$MDOG is LIVE!</b><br><br>Share it with your community and turn on buy alerts in your group. 🎉`, time: "12:05" },
+]);
+MENU.slash = [30.6, 99];
+const COMMANDS = [["launch", "Launch a new coin"], ["coin", "Look up a coin by its address"], ["trending", "Top coins right now"], ["burns", "$MOATPAD buy &amp; burn"], ["buybot", "Buy alerts for your group"], ["follow", "Alerts for a coin"], ["watch", "Payout alerts for your wallet"], ["alerts", "What this chat follows"], ["cancel", "Stop what you are doing"], ["help", "How it works"]];
+const menuEl = document.createElement("div");
+menuEl.className = "menu";
+menuEl.innerHTML = COMMANDS.map(([c, d]) => `<div class="mi"><span class="ma">${BOT_AV}</span><span class="mc">/${c}</span><span class="md">${d}</span><div class="hl"></div></div>`).join("");
+menuChat.el.appendChild(menuEl);
+const menuItems = [...menuEl.querySelectorAll(".mi")];
+
+const syncChat = chatScreen(addScreen(P1), { title: "Moatpad Bot", status: "bot", avatar: BOT_AV });
+const SYNC = buildChat(syncChat, [
+  { at: 0, side: "in", html: `📈 <b>Trending on Moatpad</b><br><br>1. <span class="lnk"><b>$STAR</b></span> · MC 264.7 SOL · +839.0%`, time: "12:08" },
+  { at: 37.55, side: "out", html: `<span class="cmd">/start</span>`, time: "12:09" },
+  { at: 37.9, side: "in", html: `🔔 Alerts on for $STAR (Starfish Steve).<br>You will get every payout round, every floor defence and the graduation to PumpSwap.<br><span class="lnk">Coin page</span>`, buttons: [["🟢 Buy $STAR on Moatpad"]], tap: { r: 0, c: 0, at: 38.55 }, time: "12:09" },
+]);
+const outroBoot = addScreen(P1, "boot");
+outroBoot.innerHTML = boot.innerHTML;
+
+// wall phones (scene 5): /trending and /burns
+const P2 = makePhone();
+P2.ph = 1.7;
+const trendChat = chatScreen(addScreen(P2), { title: "Moatpad Bot", status: "bot", avatar: BOT_AV });
+trendChat.el.style.display = "block";
+const TREND = buildChat(trendChat, [
+  { at: 30.9, side: "out", typed: "/trending", html: `<span class="cmd">/trending</span>`, time: "12:08" },
+  { at: 31.25, side: "in", html: `📈 <b>Trending on Moatpad</b><br><br>1. <span class="lnk"><b>$STAR</b></span> · MC 264.7 SOL · +839.0%<br>&nbsp;&nbsp;&nbsp;&nbsp;🛡 vault 0.59 SOL · 👥 44<br>2. <span class="lnk"><b>$MDOG</b></span> · MC 52.6 SOL · +87.9%<br>&nbsp;&nbsp;&nbsp;&nbsp;🛡 vault 0.19 SOL · 👥 214<br>3. <span class="lnk"><b>$HOUND</b></span> · MC 88.1 SOL · +37.5%<br>&nbsp;&nbsp;&nbsp;&nbsp;🛡 vault 0.31 SOL · 👥 97<br><br><i>Look one up with /coin &lt;address&gt;</i>`, buttons: [["See all on moatpad.fun"]], time: "12:08" },
+]);
+const P3 = makePhone();
+P3.ph = 3.1;
+const burnChat = chatScreen(addScreen(P3), { title: "Moatpad Bot", status: "bot", avatar: BOT_AV });
+burnChat.el.style.display = "block";
+const BURNS = buildChat(burnChat, [
+  { at: 31.5, side: "out", typed: "/burns", html: `<span class="cmd">/burns</span>`, time: "12:08" },
+  { at: 31.85, side: "in", html: `🔥 <b>$MOATPAD buy &amp; burn</b><br><br>Burned: <b>18.6M $MOATPAD</b><br>Spent: 0.58 SOL in 37 burns<br><br><b>Latest burns</b><br>• 1.6M $MOATPAD by the $MDOG vault · <span class="lnk">tx</span><br>• 900K $MOATPAD by the $STAR vault · <span class="lnk">tx</span><br><br>10% of every fee on every Moatpad coin buys and burns $MOATPAD.`, buttons: [["🟢 Buy $MOATPAD"]], time: "12:08" },
+]);
+for (const p of [P2, P3]) p.off.style.opacity = 0;
+
+// pay card (scene 2), browser (scene 6), floating SOL chips (scene 3): all in the 3D world
+const pay = document.createElement("div");
+pay.className = "paycard";
+pay.innerHTML = `<div style="font:500 16px GM;color:#8e939f">moatpad.fun/pay/…</div><div style="display:flex;gap:20px;align-items:center;margin-top:14px"><canvas id="qr" width="130" height="130" style="position:static;border-radius:12px;background:#fff"></canvas><div><div style="font:500 20px G;color:#b9b6ad">Send</div><div style="font:600 40px G" class="gold">0.115 SOL</div><div id="payState" style="font:600 20px G;color:#9aa0ab;margin-top:8px">Waiting…</div></div></div><div style="margin-top:18px;height:10px;border-radius:5px;background:#24262d;overflow:hidden"><div id="payBar" style="height:100%;width:0;background:linear-gradient(90deg,#2bd98a,#9cf0c6)"></div></div>`;
+world.appendChild(pay);
+const browserWrap = document.createElement("div");
+browserWrap.innerHTML = `<div id="browser"><div class="chrome"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><div class="url">moatpad.fun/coin/Fs9q…STAR</div></div><div class="page"></div>
+  <div id="tgcard"><div class="t"><svg width="18" height="18" viewBox="0 0 24 24"><path fill="#6ab3f3" d="${PLANE}"/></svg>Telegram<span>Moatpad Bot</span></div>
+    <div class="lk">🟢 Buy bot for your group<span>Every buy of $STAR</span></div>
+    <div class="lk" id="lnAlerts">🔔 Alerts on Telegram<span>Payouts, buybacks</span><div class="btnrip" style="position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px;border-radius:50%;background:rgba(106,179,243,.45);transform:scale(0);opacity:0"></div></div></div>
+  <svg id="cursor" viewBox="0 0 30 40"><path d="M2 2 L2 32 L10 25 L15 37 L20 35 L15 23 L26 23 Z" fill="#fff" stroke="#000" stroke-width="2" stroke-linejoin="round"/></svg></div>
+  <svg id="beams" width="1920" height="1080"></svg><div class="blab" id="bl1">Coin page → bot</div><div class="blab" id="bl2">Bot → coin page</div>`;
+browserWrap.style.cssText = "position:absolute;inset:0;display:none";
+world.appendChild(browserWrap);
+const CHIPS = [
+  { at: 19.95, html: "🟢 +0.5 SOL buy", c: "#2bd98a", bg: "rgba(8,34,24,.94)", glow: "rgba(43,217,138,.35)", bd: "rgba(43,217,138,.7)", dx: -40, dy: -400 },
+  { at: 21.35, html: "🟢 +2.4 SOL buy", c: "#2bd98a", bg: "rgba(8,34,24,.94)", glow: "rgba(43,217,138,.35)", bd: "rgba(43,217,138,.7)", dx: 60, dy: -360 },
+  { at: 22.6, html: "🛡 Floor defended", c: "#8fc7ff", bg: "rgba(8,22,38,.94)", glow: "rgba(106,179,243,.35)", bd: "rgba(106,179,243,.7)", dx: 0, dy: -330 },
+];
+const chipEls = CHIPS.map((c) => {
+  SFX.chips.push(c.at);
+  const d = document.createElement("div");
+  d.className = "solchip";
+  d.innerHTML = c.html;
+  d.style.cssText += `color:${c.c};background:${c.bg};border:1px solid ${c.bd};box-shadow:0 0 50px ${c.glow}, 0 20px 50px rgba(0,0,0,.5)`;
+  world.appendChild(d);
+  return d;
+});
+window.SFX = SFX;
+
+// QR: a deterministic pattern with finder squares
 (() => {
   const q = $("qr").getContext("2d");
-  const N = 29, s = 148 / (N + 2);
-  q.fillStyle = "#fff";
-  q.fillRect(0, 0, 148, 148);
-  q.fillStyle = "#0a0b0e";
-  const finder = (x, y) => {
-    q.fillRect((x + 1) * s, (y + 1) * s, 7 * s, 7 * s);
-    q.fillStyle = "#fff"; q.fillRect((x + 2) * s, (y + 2) * s, 5 * s, 5 * s);
-    q.fillStyle = "#0a0b0e"; q.fillRect((x + 3) * s, (y + 3) * s, 3 * s, 3 * s);
-  };
+  const N = 29, s = 130 / (N + 2);
+  q.fillStyle = "#fff"; q.fillRect(0, 0, 130, 130); q.fillStyle = "#0a0b0e";
+  const finder = (x, y) => { q.fillRect((x + 1) * s, (y + 1) * s, 7 * s, 7 * s); q.fillStyle = "#fff"; q.fillRect((x + 2) * s, (y + 2) * s, 5 * s, 5 * s); q.fillStyle = "#0a0b0e"; q.fillRect((x + 3) * s, (y + 3) * s, 3 * s, 3 * s); };
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const inF = (x < 8 && y < 8) || (x > N - 9 && y < 8) || (x < 8 && y > N - 9);
     if (!inF && rnd() < 0.5) q.fillRect((x + 1) * s, (y + 1) * s, s + 0.4, s + 0.4);
@@ -505,9 +578,112 @@ const cmdEls = SHOWN.map(([c, d], i) => {
   finder(0, 0); finder(N - 7, 0); finder(0, N - 7);
 })();
 
-// ---- effects canvas: confetti on "LIVE", sparks on the title -------------------------------------------------------
-const fctx = $("fx").getContext("2d");
-const CONF = Array.from({ length: 140 }, () => ({ a: rnd() * 6.283, v: 380 + rnd() * 900, spin: rnd() * 10 - 5, w: 8 + rnd() * 10, h: 5 + rnd() * 7, c: ["#f1c96f", "#2bd98a", "#6ab3f3", "#ffffff", "#e9a68a"][Math.floor(rnd() * 5)], d: rnd() * 0.12 }));
+// ---- placements (world coordinates) ----------------------------------------------------------------------------------
+const P1K = [
+  { at: 0, x: 1450, y: 1560, s: 0.9, ry: 48, rx: 12 },
+  { at: 0.7, x: 1450, y: 1560, s: 0.9, ry: 48, rx: 12, ease: out5 },
+  { at: 3.6, x: 1450, y: 560, s: 0.9, ry: -16, rx: 2 },
+  { at: 5.35, x: 1450, y: 560, s: 0.9, ry: -24, rx: 2, ease: (x) => x * x * x },
+  { at: 6.0, x: 1100, y: 560, s: 2.6, ry: 0, rx: 0, o: 0 },
+  { at: 7.6, x: 2400, y: 560, s: 0.95, ry: -50, o: 0 },
+  { at: 7.62, x: 2400, y: 560, s: 0.95, ry: -50, ease: out5 },
+  { at: 8.4, x: 1430, y: 540, s: 0.95, ry: -14, rx: 2 },
+  { at: 17.6, x: 1430, y: 540, s: 0.95, ry: -14, rx: 2, ease: inOut5 },
+  { at: 18.5, x: 470, y: 575, s: 0.92, ry: 374, rx: 2 },
+  { at: 23.7, x: 470, y: 575, s: 0.92, ry: 374, rx: 2 },
+  { at: 24.3, x: 960, y: 640, s: 0.8, ry: 360, rx: 0 },
+  { at: 29.7, x: 960, y: 640, s: 0.8, ry: 360, rx: 0 },
+  { at: 30.3, x: 960, y: 450, s: 0.72, ry: 360, rx: 0 },
+  { at: 35.7, x: 960, y: 450, s: 0.72, ry: 360 },
+  { at: 36.4, x: 1540, y: 610, s: 0.72, ry: 346, rx: 2 },
+  { at: 41.6, x: 1540, y: 610, s: 0.72, ry: 346, rx: 2 },
+  { at: 42.4, x: 960, y: 560, s: 0.78, ry: 384, rx: 0 },
+  { at: 43.7, x: 960, y: 560, s: 0.78, ry: 346, rx: 0, ease: (x) => x * x },
+  { at: 44.4, x: 960, y: 300, s: 0.3, ry: 320, rx: 20, o: 0 },
+];
+const P2K = [{ at: 0, x: -400, y: 450, s: 0.72, ry: 40, o: 0 }, { at: 29.9, x: -400, y: 450, s: 0.72, ry: 40, o: 1, ease: out5 }, { at: 30.7, x: 420, y: 450, s: 0.72, ry: 20 }, { at: 35.6, x: 420, y: 450, s: 0.72, ry: 20 }, { at: 36.3, x: -500, y: 450, s: 0.72, ry: 40, o: 0 }];
+const P3K = [{ at: 0, x: 2320, y: 450, s: 0.72, ry: -40, o: 0 }, { at: 30.0, x: 2320, y: 450, s: 0.72, ry: -40, o: 1, ease: out5 }, { at: 30.8, x: 1500, y: 450, s: 0.72, ry: -20 }, { at: 35.6, x: 1500, y: 450, s: 0.72, ry: -20 }, { at: 36.3, x: 2420, y: 450, s: 0.72, ry: -40, o: 0 }];
+// camera: focus point (world px) shown at the frame centre, and zoom
+const CAM = [
+  { at: 0, x: 960, y: 540, s: 1 },
+  { at: 5.3, x: 990, y: 540, s: 1.06, ease: (x) => x * x },
+  { at: 6.0, x: 960, y: 540, s: 1 },
+  { at: 16.9, x: 960, y: 540, s: 1, ease: inOut5 },
+  { at: 17.45, x: 1250, y: 640, s: 1.55 },
+  { at: 17.85, x: 1260, y: 640, s: 1.58, ease: inOut5 },
+  { at: 18.45, x: 960, y: 540, s: 1 },
+  { at: 29.95, x: 960, y: 450, s: 1.28, ease: out5 },
+  { at: 30.9, x: 950, y: 520, s: 1 },
+  { at: 35.8, x: 975, y: 520, s: 1, ease: inOut3 },
+  { at: 36.4, x: 960, y: 540, s: 1 },
+  { at: 42, x: 960, y: 540, s: 1 },
+  { at: 45.4, x: 960, y: 540, s: 1.05 },
+];
+function camera(t) {
+  let i = 0;
+  while (i < CAM.length - 1 && CAM[i + 1].at <= t) i++;
+  const a = CAM[i], b = CAM[Math.min(i + 1, CAM.length - 1)];
+  const p = b === a ? 1 : (a.ease || inOut3)(clamp((t - a.at) / (b.at - a.at)));
+  const x = lerp(a.x, b.x, p), y = lerp(a.y, b.y, p), s = lerp(a.s, b.s, p);
+  world.style.transform = `translate(960px, 540px) scale(${s}) translate(${-x}px, ${-y}px)`;
+  return { x, y, s };
+}
+// which screen the main phone shows; "cut" screens switch while the phone faces away or off screen, the rest slide
+const P1SCR = [[0, 8, boot, "cut"], [8, 18, launchChat.el, "cut"], [18, 24, groupChat.el, "cut"], [24, 30, lockScr, "slide"], [30, 36, menuChat.el, "slide"], [36, 42, syncChat.el, "slide"], [42, 99, outroBoot, "cut"]];
+function p1screens(t) {
+  P1SCR.forEach(([a, b, el, mode], i) => {
+    const next = P1SCR[i + 1];
+    const pin = mode === "cut" ? (t >= a ? 1 : 0) : out3(prog(t, a - 0.2, 0.45));
+    const pout = !next ? 0 : next[3] === "cut" ? (t >= b ? 1 : 0) : out3(prog(t, b - 0.2, 0.45));
+    const vis = pin > 0 && pout < 1;
+    el.style.display = vis ? "block" : "none";
+    if (!vis) return;
+    el.style.transform = `translateX(${(1 - pin) * 496 - pout * 160}px)`;
+    el.style.zIndex = String(i + 1);
+  });
+  P1.clock.textContent = t < 16.45 ? "12:04" : t < 18 ? "12:05" : t < 20 ? "12:06" : t < 30 ? "12:07" : t < 36 ? "12:08" : "12:09";
+  P1.clock.style.opacity = (t >= 24 && t < 30) || t < 8 || t >= 42 ? 0 : 1;
+  // the screen powers on at 2.0 s
+  P1.off.style.opacity = t < 6 ? 1 - clamp(prog(t, 2.0, 0.5)) : 0;
+}
+
+// ---- background: light rays, bokeh, grain ----------------------------------------------------------------------------
+const FAR = Array.from({ length: 46 }, () => ({ x: rnd() * 2400 - 240, y: rnd() * 1300 - 110, r: 14 + rnd() * 26, v: 4 + rnd() * 8, ph: rnd() * 6.28, blue: rnd() < 0.4 }));
+const NEAR = Array.from({ length: 14 }, () => ({ x: rnd() * 2400 - 240, y: rnd() * 1300 - 110, r: 30 + rnd() * 50, v: 10 + rnd() * 14, ph: rnd() * 6.28, blue: rnd() < 0.35 }));
+const fctxFar = $("bokehFar").getContext("2d"), fctxNear = $("bokehNear").getContext("2d");
+function bokeh(ctx, list, t, cam, depth, alpha) {
+  ctx.clearRect(0, 0, 1920, 1080);
+  for (const d of list) {
+    const x = d.x + Math.sin(t * 0.25 + d.ph) * 40 - (cam.x - 960) * depth;
+    const y = ((d.y - t * d.v - (cam.y - 540) * depth) % 1300 + 1300) % 1300 - 110;
+    const a = alpha * (0.5 + 0.5 * Math.sin(t * 0.7 + d.ph));
+    const r = d.r * (1 + (cam.s - 1) * depth * 2);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, d.blue ? `rgba(120,200,255,${a})` : `rgba(242,206,130,${a})`);
+    g.addColorStop(0.55, d.blue ? `rgba(120,200,255,${a * 0.5})` : `rgba(242,206,130,${a * 0.5})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 6.283);
+    ctx.fill();
+  }
+}
+const gctx = $("grain").getContext("2d");
+const gimg = gctx.createImageData(640, 360);
+function grain(frame) {
+  let s = (frame * 7919 + 13) % 2147483647 || 1;
+  const d = gimg.data;
+  for (let i = 0; i < d.length; i += 4) {
+    s = (s * 16807) % 2147483647;
+    d[i] = d[i + 1] = d[i + 2] = s & 255;
+    d[i + 3] = 255;
+  }
+  gctx.putImageData(gimg, 0, 0);
+}
+
+// ---- effects: confetti, sparks -----------------------------------------------------------------------------------------
+const fx = $("fx").getContext("2d");
+const CONF = Array.from({ length: 160 }, () => ({ a: rnd() * 6.283, v: 380 + rnd() * 1000, spin: rnd() * 10 - 5, w: 8 + rnd() * 10, h: 5 + rnd() * 7, c: ["#f1c96f", "#2bd98a", "#6ab3f3", "#ffffff", "#e9a68a", "#ffe9a8"][Math.floor(rnd() * 6)], d: rnd() * 0.12 }));
 function confetti(t, at, cx, cy) {
   const k = t - at;
   if (k < 0 || k > 2.6) return;
@@ -517,245 +693,250 @@ function confetti(t, at, cx, cy) {
     const drag = (1 - Math.exp(-s * 2.2)) / 2.2;
     const x = cx + Math.cos(p.a) * p.v * drag;
     const y = cy + Math.sin(p.a) * p.v * drag * 0.8 + 260 * s * s;
-    fctx.save();
-    fctx.translate(x, y);
-    fctx.rotate(p.spin * s);
-    fctx.globalAlpha = clamp(1 - (s - 1.6));
-    fctx.fillStyle = p.c;
-    fctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(s * 6 + p.a)));
-    fctx.restore();
+    fx.save();
+    fx.translate(x, y);
+    fx.rotate(p.spin * s);
+    fx.globalAlpha = clamp(1 - (s - 1.6));
+    fx.fillStyle = p.c;
+    fx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(s * 6 + p.a)));
+    fx.restore();
   }
 }
-
-// ---- helpers ----------------------------------------------------------------------------------------------------
-function show(el, t, at, dur = 0.55, dy = 30) {
-  const p = out3(prog(t, at, dur));
-  el.style.opacity = p;
-  el.style.transform = `translateY(${(1 - p) * dy}px)`;
-  el.style.filter = p < 1 ? `blur(${(1 - p) * 8}px)` : "none";
-  return p;
-}
-function scene(id, t, a, b, fadeIn = 0.35, fadeOut = 0.35) {
-  const el = $(id);
-  const o = Math.min(prog(t, a, fadeIn), 1 - prog(t, b - fadeOut, fadeOut));
-  el.style.opacity = o;
-  el.style.display = o > 0 ? "block" : "none";
-  return o > 0;
-}
-function col(t, ids, at) {
-  const sc = $(ids[0]).closest(".scene");
-  show(sc.querySelector(".k"), t, at, 0.5);
-  show(sc.querySelector(".h"), t, at + 0.15, 0.6, 40);
-  ids.forEach((id, i) => show($(id), t, at + 0.55 + i * 0.32, 0.5, 24));
-}
-
-// which screen the phone shows: [from, to, id]
-const SCREENS = [[0, 16, "scrChat"], [16, 22, "scrGroup"], [22, 26, "scrLock"], [26, 32, "scrMenu"], [32, 99, "scrSync"]];
-function screens(t) {
-  for (const [a, b, id] of SCREENS) {
-    const el = $(id);
-    const pin = a === 0 ? 1 : out3(prog(t, a - 0.2, 0.45));
-    const pout = b >= 99 ? 0 : out3(prog(t, b - 0.2, 0.45));
-    const vis = pin > 0 && pout < 1;
-    el.style.display = vis ? "block" : "none";
-    if (!vis) continue;
-    el.style.transform = `translateX(${(1 - pin) * 496 - pout * 160}px)`;
-    el.style.filter = pout > 0 ? `brightness(${1 - 0.5 * pout})` : "none";
-    el.style.zIndex = String(a);
+const SPARKS = Array.from({ length: 120 }, () => ({ a: rnd() * 6.283, v: 300 + rnd() * 1300, r: 1 + rnd() * 2.5, life: 0.8 + rnd() * 1.2 }));
+function sparks(t, at, cx, cy) {
+  const k = t - at;
+  if (k < 0 || k > 2.2) return;
+  fx.globalCompositeOperation = "lighter";
+  for (const p of SPARKS) {
+    if (k > p.life) continue;
+    const drag = (1 - Math.exp(-k * 3)) / 3;
+    const x = cx + Math.cos(p.a) * p.v * drag, y = cy + Math.sin(p.a) * p.v * drag * 0.6;
+    fx.fillStyle = `rgba(255,226,160,${(1 - k / p.life) * 0.9})`;
+    fx.beginPath();
+    fx.arc(x, y, p.r * 2, 0, 6.283);
+    fx.fill();
   }
-  $("clock").textContent = t < 13.7 ? "12:04" : t < 16 ? "12:05" : t < 22 ? (t < 18 ? "12:06" : "12:07") : t < 26 ? "12:07" : t < 32 ? "12:08" : "12:09";
-  $("clock").style.opacity = t >= 22 && t < 26 ? 0 : 1;
+  fx.globalCompositeOperation = "source-over";
 }
 
-// phone placement per scene, eased between them
-const PLACES = [
-  { at: 0, x: 1210, y: 1180, s: 1, ry: -24, rx: 14 },
-  { at: 4.0, x: 1210, y: 1180, s: 1, ry: -24, rx: 14 },
-  { at: 4.7, x: 1210, y: 40, s: 1, ry: -10, rx: 2 },
-  { at: 31.8, x: 1210, y: 40, s: 1, ry: -10, rx: 2 },
-  { at: 32.5, x: 1400, y: 290, s: 0.74, ry: -14, rx: 2 },
-  { at: 35.7, x: 1400, y: 290, s: 0.74, ry: -14, rx: 2 },
-  { at: 36.4, x: 1400, y: 1250, s: 0.74, ry: -20, rx: 12 },
-];
-function phone(t) {
-  let i = 0;
-  while (i < PLACES.length - 1 && PLACES[i + 1].at <= t) i++;
-  const a = PLACES[i], b = PLACES[Math.min(i + 1, PLACES.length - 1)];
-  const p = b === a ? 1 : inOut3(clamp((t - a.at) / (b.at - a.at)));
-  const v = (k) => lerp(a[k], b[k], p);
-  const fl = Math.sin(t * 0.9) * 6;
-  const el = $("phone");
-  el.style.left = `${v("x")}px`;
-  el.style.top = `${v("y") + fl}px`;
-  el.style.transformOrigin = "0 0";
-  el.style.transform = `scale(${v("s")}) rotateY(${v("ry") + Math.sin(t * 0.5) * 1.5}deg) rotateX(${v("rx")}deg)`;
-  $("phoneWrap").style.display = t < 3.9 || t > 36.5 ? "none" : "block";
+// ---- scene pieces in the world ---------------------------------------------------------------------------------------
+function payCard(t) {
+  const p = out5(prog(t, 15.95, 0.55)), q = prog(t, 16.95, 0.35);
+  pay.style.display = p > 0 && q < 1 ? "block" : "none";
+  pay.style.opacity = p * (1 - q);
+  pay.style.transform = `translate3d(${lerp(1300, 790, p)}px, ${lerp(620, 690, p)}px, ${lerp(-200, 60, p)}px) rotateY(${lerp(-40, -12, p)}deg) scale(${1 - 0.1 * q})`;
+  $("payBar").style.width = `${out3(prog(t, 16.15, 0.3)) * 100}%`;
+  $("payState").innerHTML = t < 16.45 ? "Waiting…" : `<span style="color:#2bd98a">✓ Received</span>`;
+  pay.style.borderColor = t >= 16.45 ? "rgba(43,217,138,.6)" : "#2c2e35";
 }
-
-// ---- scene 6: website ↔ bot ----------------------------------------------------------------------------------------
+function chips(t) {
+  CHIPS.forEach((c, i) => {
+    const el = chipEls[i];
+    const k = prog(t, c.at, 1.9);
+    el.style.display = k > 0 && k < 1 ? "block" : "none";
+    if (k <= 0 || k >= 1) return;
+    const p = out3(k);
+    el.style.opacity = clamp(k * 6) * (1 - clamp((k - 0.7) / 0.3));
+    el.style.transform = `translate3d(${330 + c.dx * p}px, ${700 + c.dy * p}px, ${lerp(40, 260, p)}px) scale(${0.6 + 0.5 * out5(clamp(k * 3))})`;
+  });
+}
+function notesAndCards(t) {
+  const H = 104;
+  NOTES.forEach((n, i) => {
+    const el = noteEls[i];
+    const p = out3(prog(t, n.at, 0.4));
+    const later = NOTES.filter((o, j) => j > i && t >= o.at).map((o) => out3(prog(t, o.at, 0.4))).reduce((a, b) => a + b, 0);
+    el.style.display = p > 0 ? "flex" : "none";
+    el.style.opacity = p * clamp(1 - (later - 3.6));
+    el.style.transform = `translateY(${250 + later * H - (1 - p) * 60}px) scale(${0.9 + 0.1 * p})`;
+  });
+  fcards.forEach(({ n, d }) => {
+    const p = out5(prog(t, n.at + 0.15, 0.9));
+    const gone = prog(t, 29.6, 0.4);
+    d.style.display = p > 0 && gone < 1 ? "flex" : "none";
+    const [tx, ty, ry] = n.to;
+    const float = Math.sin(t * 1.1 + tx) * 8;
+    d.style.opacity = clamp(p * 2) * (1 - gone);
+    d.style.transform = `translate3d(${lerp(710, tx, p)}px, ${lerp(520, ty, p) + float}px, ${lerp(-300, 0, p)}px) rotateY(${lerp(0, ry, p)}deg) scale(${lerp(0.6, 1, p)})`;
+    d.querySelector(".tag").style.opacity = clamp((p - 0.6) * 3);
+  });
+}
 function curve(x1, y1, x2, y2, k) {
   const mx = (x1 + x2) / 2, my = Math.min(y1, y2) - k;
   return { d: `M${x1} ${y1} Q${mx} ${my} ${x2} ${y2}`, at: (u) => [(1 - u) * (1 - u) * x1 + 2 * (1 - u) * u * mx + u * u * x2, (1 - u) * (1 - u) * y1 + 2 * (1 - u) * u * my + u * u * y2] };
 }
-function sync(t) {
-  show($("s6k"), t, 32.2, 0.5);
-  show($("s6h"), t, 32.35, 0.6, 30);
-  const bp = out3(prog(t, 32.3, 0.7));
-  $("browser").style.opacity = bp;
-  $("browser").style.transform = `translateY(${(1 - bp) * 60}px) perspective(2200px) rotateY(${lerp(14, 6, bp)}deg)`;
-  // the Telegram card lifts off the coin page
-  const cp = outBack(clamp(prog(t, 32.7, 0.55)));
+function sync(t, p1) {
+  const bp = out5(prog(t, 36.2, 0.8)), bo = prog(t, 41.6, 0.4);
+  browserWrap.style.display = bp > 0 && bo < 1 ? "block" : "none";
+  if (bp <= 0 || bo >= 1) return;
+  const br = $("browser");
+  br.style.opacity = bp * (1 - bo);
+  br.style.transform = `translateY(${(1 - bp) * 80}px) perspective(2200px) rotateY(${lerp(18, 7, bp)}deg)`;
+  const cp = outBack(clamp(prog(t, 36.8, 0.55)));
   const card = $("tgcard");
-  card.style.opacity = clamp(prog(t, 32.7, 0.25));
+  card.style.opacity = clamp(prog(t, 36.8, 0.25));
   card.style.transform = `scale(${lerp(0.85, 1.05, clamp(cp, 0, 1.1))}) translateY(${-10 * cp}px)`;
-  card.style.boxShadow = `0 30px 80px rgba(0,0,0,.65), 0 0 0 2px rgba(106,179,243,${0.6 * clamp(prog(t, 32.9, 0.4))}), 0 0 50px rgba(42,171,238,${0.35 * clamp(prog(t, 32.9, 0.4))})`;
-  // the cursor clicks "Alerts on Telegram"
+  const glowC = clamp(prog(t, 37.0, 0.4));
+  card.style.boxShadow = `0 30px 80px rgba(0,0,0,.65), 0 0 0 2px rgba(106,179,243,${0.6 * glowC}), 0 0 50px rgba(42,171,238,${0.35 * glowC})`;
   const cur = $("cursor");
-  const mp = inOut3(prog(t, 32.85, 0.45));
-  cur.style.opacity = clamp(prog(t, 32.8, 0.15)) * (1 - prog(t, 34.2, 0.3));
-  cur.style.left = `${lerp(420, 760, mp)}px`;
+  const mp = inOut3(prog(t, 36.9, 0.45));
+  cur.style.opacity = clamp(prog(t, 36.85, 0.15)) * (1 - prog(t, 38.2, 0.3));
+  cur.style.left = `${lerp(420, 770, mp)}px`;
   cur.style.top = `${lerp(560, 452, mp)}px`;
-  cur.style.transform = t > 33.3 && t < 33.45 ? "scale(.85)" : "none";
-  const rp = prog(t, 33.35, 0.5);
+  cur.style.transform = t > 37.3 && t < 37.45 ? "scale(.85)" : "none";
+  const rp = prog(t, 37.35, 0.5);
   const rip = $("lnAlerts").querySelector(".btnrip");
-  rip.style.opacity = t >= 33.35 ? 1 - rp : 0;
-  rip.style.transform = `scale(${t >= 33.35 ? 6 * out3(rp) : 0})`;
-  // beams: website → phone, then phone → website
-  const ph = $("phone").getBoundingClientRect();
-  const c1 = curve(90 + 536 + 340, 300 + 300 + 150, ph.left + 30, ph.top + 330, 140);
-  const c2 = curve(ph.left + 30, ph.top + 560, 90 + 880, 300 + 150, -60);
-  const u1 = prog(t, 33.4, 0.5), u2 = prog(t, 34.6, 0.55);
-  let svg = "";
+  rip.style.opacity = t >= 37.35 ? 1 - rp : 0;
+  rip.style.transform = `scale(${t >= 37.35 ? 6 * out3(rp) : 0})`;
+  // beams in world coordinates: card -> phone, phone -> the site's trade box
+  const phL = p1.x - 260 * p1.s, phT = p1.y - 500 * p1.s;
+  const c1 = curve(80 + 552 + 344, 300 + 306 + 150, phL + 20, phT + 330 * p1.s, 140);
+  const c2 = curve(phL + 20, phT + 560 * p1.s, 80 + 880, 300 + 150, -60);
+  const u1 = prog(t, 37.4, 0.5), u2 = prog(t, 38.6, 0.55);
   const beam = (c, u, on, col) => {
     if (on <= 0) return "";
-    let s = `<path d="${c.d}" fill="none" stroke="${col}" stroke-opacity="${0.35 * on}" stroke-width="3" stroke-dasharray="8 10" stroke-dashoffset="${-t * 60}"/>`;
-    for (let k = 0; k < 6; k++) {
-      const uu = u - k * 0.06;
+    let s = `<path d="${c.d}" fill="none" stroke="${col}" stroke-opacity="${0.4 * on}" stroke-width="3" stroke-dasharray="8 10" stroke-dashoffset="${-t * 60}"/>`;
+    for (let k = 0; k < 7; k++) {
+      const uu = u - k * 0.05;
       if (uu <= 0 || uu >= 1) continue;
       const [x, y] = c.at(uu);
-      s += `<circle cx="${x}" cy="${y}" r="${9 - k}" fill="${col}" opacity="${(1 - k / 6) * on}"/>`;
+      s += `<circle cx="${x}" cy="${y}" r="${10 - k}" fill="${col}" opacity="${(1 - k / 7) * on}"/>`;
     }
     return s;
   };
-  svg += beam(c1, u1, clamp(prog(t, 33.35, 0.2)) * (1 - prog(t, 35.6, 0.3)), "#6ab3f3");
-  svg += beam(c2, u2, clamp(prog(t, 34.55, 0.2)) * (1 - prog(t, 35.6, 0.3)), "#2bd98a");
-  $("beams").innerHTML = svg;
-  show($("bl1"), t, 33.6, 0.4, 16);
-  $("bl1").style.left = "1050px";
-  $("bl1").style.top = "560px";
-  show($("bl2"), t, 34.8, 0.4, 16);
-  $("bl2").style.left = "1050px";
-  $("bl2").style.top = "380px";
-  // the trade box on the site lights up when the bot sends you there
-  const glow = clamp(prog(t, 35.1, 0.3)) * (1 - prog(t, 35.7, 0.3));
-  $("browser").style.boxShadow = `0 50px 120px rgba(0,0,0,.6), 0 0 0 ${2 * glow}px rgba(43,217,138,${glow}), 0 0 60px rgba(43,217,138,${0.4 * glow})`;
+  $("beams").innerHTML = beam(c1, u1, clamp(prog(t, 37.35, 0.2)) * (1 - bo), "#6ab3f3") + beam(c2, u2, clamp(prog(t, 38.55, 0.2)) * (1 - bo), "#2bd98a");
+  show($("bl1"), t, 37.6, 0.4, 16);
+  $("bl1").style.left = "1040px"; $("bl1").style.top = "560px";
+  show($("bl2"), t, 38.8, 0.4, 16);
+  $("bl2").style.left = "1040px"; $("bl2").style.top = "380px";
+  const glow = clamp(prog(t, 39.1, 0.3)) * (1 - prog(t, 39.8, 0.4));
+  br.style.boxShadow = `0 50px 120px rgba(0,0,0,.6), 0 0 0 ${2 * glow}px rgba(43,217,138,${glow}), 0 0 60px rgba(43,217,138,${0.4 * glow})`;
 }
 
-// ---- render -------------------------------------------------------------------------------------------------------
+// ---- render ---------------------------------------------------------------------------------------------------------
 window.render = (t) => {
-  $("bg").style.setProperty("--blue", (0.06 + 0.1 * prog(t, 3.6, 1.2) * (1 - prog(t, 35.6, 0.8))).toFixed(3));
-  dust(t);
-  fctx.clearRect(0, 0, 1920, 1080);
+  const cam = camera(t);
+  const bg = $("bg").style;
+  bg.setProperty("--gold", (0.06 + 0.08 * Math.max(prog(t, 0.5, 2) * (1 - prog(t, 8, 1)), prog(t, 42, 1))).toFixed(3));
+  bg.setProperty("--blue", (0.04 + 0.08 * prog(t, 7.5, 1.5) * (1 - prog(t, 41.5, 1))).toFixed(3));
+  bg.setProperty("--gx", `${t < 18 ? 70 : t < 24 ? 26 : 50}%`);
+  const rays = $("rays");
+  rays.style.opacity = Math.max(0.9 * prog(t, 0.4, 1.6) * (1 - prog(t, 5.6, 0.4)), 1.1 * prog(t, 6.0, 0.15) * (1 - prog(t, 7.7, 0.4)), 0.8 * prog(t, 43.9, 0.6) * (1 - prog(t, 49, 1)));
+  rays.style.transform = `translate(${t < 6 ? 490 : 0}px, ${t < 6 ? 20 : t >= 42 ? -60 : 0}px) rotate(${t * 4}deg)`;
+  bokeh(fctxFar, FAR, t, cam, 0.15, 0.10);
+  bokeh(fctxNear, NEAR, t, cam, 0.5, 0.06);
+  grain(Math.round(t * 60));
+  fx.clearRect(0, 0, 1920, 1080);
 
-  if (scene("s0", t, 0, 4.0, 0.01)) {
-    const mp = outBack(clamp(prog(t, 0.5, 0.8)));
-    const lockEl = $("s0lock");
-    lockEl.style.opacity = clamp(prog(t, 0.5, 0.3));
-    lockEl.style.transform = `scale(${clamp(mp, 0, 1.2) * (1 + 0.01 * Math.sin(t * 2))})`;
-    // the Telegram plane flies in on an arc and docks on the mark
-    const fp = inOut3(prog(t, 1.0, 0.95));
-    const tg = $("s0tg");
-    const ax = lerp(-760, 150, fp), ay = lerp(260, 146, fp) - Math.sin(Math.PI * fp) * 300;
-    tg.style.opacity = clamp(prog(t, 1.0, 0.15));
-    tg.style.transform = `translate(${ax - 150}px, ${ay - 146}px) rotate(${lerp(-40, 0, fp)}deg) scale(${lerp(0.6, 1, fp) * (1 + 0.25 * Math.max(0, 1 - prog(t, 1.95, 0.3)) * (t > 1.95 ? 1 : 0))})`;
-    show($("s0k"), t, 2.0, 0.5);
-    const p = out3(prog(t, 2.0, 0.8));
-    const ttl = $("s0t");
-    ttl.style.opacity = p;
-    ttl.style.transform = `scale(${lerp(1.18, 1, p)})`;
-    ttl.style.filter = `blur(${(1 - p) * 12}px) drop-shadow(0 0 ${24 + 14 * Math.sin(t * 6)}px rgba(232,188,91,${0.35 * p}))`;
-    show($("s0s"), t, 2.6, 0.5);
+  const p1 = place(P1, P1K, t);
+  place(P2, P2K, t);
+  place(P3, P3K, t);
+  p1screens(t);
+  if (t > 7.5 && t < 18.2) renderChat(LAUNCH, t);
+  if (t > 17.5 && t < 24.3) renderChat(BUYBOT, t);
+  notesAndCards(t);
+  if (t > 29.5 && t < 36.4) {
+    renderChat(MENU, t);
+    renderChat(TREND, t);
+    renderChat(BURNS, t);
+    const open = out3(prog(t, 30.75, 0.4));
+    menuEl.style.transform = `translateY(${(1 - open) * 640}px)`;
+    const walk = clamp((t - 31.4) / 2.6) * 9;
+    menuItems.forEach((mi, i) => (mi.querySelector(".hl").style.opacity = t > 31.3 ? clamp(1 - Math.abs(i - walk) * 1.4) : 0));
   }
-  if (scene("s1", t, 4.0, 10.0)) col(t, ["p10", "p11", "p12", "p13"], 4.3);
-  if (scene("s2", t, 10.0, 16.0)) {
-    col(t, ["p20", "p21", "p22"], 10.25);
-    const pp = show($("pay"), t, 12.95, 0.5, 40);
-    const fill = out3(prog(t, 13.25, 0.5));
-    $("payBar").style.width = `${fill * 100}%`;
-    $("payState").innerHTML = t < 13.75 ? "Waiting…" : `<span style="color:#2bd98a">✓ Received</span>`;
-    $("pay").style.borderColor = t >= 13.75 ? "rgba(43,217,138,.55)" : "#2a2c33";
-  }
-  if (scene("s3", t, 16.0, 22.0)) col(t, ["p30", "p31", "p32", "p33"], 16.25);
-  if (scene("s4", t, 22.0, 26.0)) col(t, ["p40", "p41", "p42", "p43"], 22.2);
-  if (scene("s5", t, 26.0, 32.0)) {
-    const sc = $("s5");
-    show(sc.querySelector(".k"), t, 26.2, 0.5);
-    show(sc.querySelector(".h"), t, 26.35, 0.6, 40);
-    cmdEls.forEach((el, i) => show(el, t, 26.9 + i * 0.16, 0.45, 20));
-  }
-  if (scene("s6", t, 32.0, 36.0)) sync(t);
-  if (scene("s7", t, 36.0, 41, 0.3)) {
-    const lp = outBack(clamp(prog(t, 36.2, 0.7)));
-    $("olock").style.opacity = clamp(prog(t, 36.2, 0.3));
-    $("olock").style.transform = `scale(${clamp(lp, 0, 1.2)})`;
-    show($("o1"), t, 36.45, 0.6);
-    const sp = outBack(clamp(prog(t, 36.9, 0.55)));
-    $("o2").style.opacity = clamp(prog(t, 36.9, 0.3));
-    $("o2").style.transform = `scale(${clamp(sp, 0, 1.2)})`;
-    $("shine").style.left = `${lerp(-160, 760, ((t - 37.3) % 1.6) / 1.1)}px`;
-    show($("o3"), t, 37.4, 0.5);
-    show($("o4"), t, 37.7, 0.5);
-    show($("o5"), t, 38.0, 0.5);
-  }
+  if (t > 35.6 && t < 42.3) renderChat(SYNC, t);
+  payCard(t);
+  chips(t);
+  sync(t, p1);
 
-  // the phone
-  phone(t);
-  if (t >= 3.9 && t <= 36.5) {
-    screens(t);
-    if (t < 16.3) renderChat(LAUNCH, t);
-    if (t > 15.6 && t < 22.3) renderChat(BUYBOT, t);
-    if (t > 21.6 && t < 26.3) notes(t);
-    if (t > 25.6 && t < 32.3) {
-      renderChat(MENU, t);
-      // the "/" menu slides up, the highlight walks down to /trending, the tap sends it
-      const open = out3(prog(t, 27.0, 0.4)) * (1 - out3(prog(t, 28.95, 0.3)));
-      menuEl.style.display = open > 0 ? "block" : "none";
-      menuEl.style.transform = `translateY(${(1 - open) * 640}px)`;
-      const typedSlash = t >= 26.75 && t < 29.15;
-      if (typedSlash !== menuChat.slash) {
-        menuChat.slash = typedSlash;
-        menuChat.field.innerHTML = typedSlash ? `<span>/<span class="caret"></span></span>` : `<span class="ph">Message</span>`;
-        menuChat.lastTyped = undefined;
-      }
-      const target = 2;
-      const walk = clamp((t - 27.6) / 0.9) * target;
-      menuItems.forEach((mi, i) => {
-        const hl = mi.querySelector(".hl");
-        hl.style.opacity = t > 27.5 ? clamp(1 - Math.abs(i - walk) * 1.6) * (t > 28.6 && i === target ? 1.6 : 1) : 0;
-      });
+  if (scene("s0", t, 0, 5.8, 0.01, 0.4)) {
+    kick($("s0k"), t, 2.0);
+    reveal("s0h", t, 2.3, 0.09);
+  }
+  if (scene("s1", t, 6.0, 8.0, 0.05, 0.4)) {
+    const p = out5(prog(t, 6.0, 0.9));
+    const tt = $("s1t");
+    tt.style.opacity = clamp(p * 1.5);
+    tt.style.transform = `scale(${lerp(1.2, 1, p)})`;
+    tt.style.filter = `blur(${(1 - p) * 16}px) drop-shadow(0 0 ${30 + 20 * Math.sin(t * 7)}px rgba(232,188,91,${0.35 * p}))`;
+    $("s1ts").style.letterSpacing = `${lerp(0.1, 0.05, out3(prog(t, 6.0, 1.4)))}em`;
+    sheen($("s1ts"), t, 0.6);
+    show($("s1k"), t, 6.25, 0.5);
+    show($("s1s"), t, 6.55, 0.5);
+  }
+  if (scene("s2", t, 8.0, 18.0)) {
+    kick($("s2k"), t, 8.3);
+    reveal("s2h", t, 8.45);
+    [$("t20"), $("t21"), $("t22")].forEach((el, i) => {
+      const p = out5(prog(t, 9.1 + i * 0.18, 0.7));
+      el.style.opacity = p;
+      el.style.transform = `translateY(${(1 - p) * 50}px) rotateX(${(1 - p) * 30}deg)`;
+    });
+    show($("b20"), t, 9.9, 0.5, 24);
+    show($("b21"), t, 10.2, 0.5, 24);
+    // the left column steps aside while the camera pushes in on "is LIVE!"
+    const leave = out3(prog(t, 16.75, 0.35));
+    for (const id of ["s2k", "s2h", "t20", "t21", "t22", "b20", "b21"]) {
+      const el = $(id);
+      if (leave <= 0) { if (id === "s2h") el.style.opacity = 1; continue; }
+      el.style.opacity = Math.min(parseFloat(el.style.opacity || 1), 1 - leave);
+      el.style.filter = `blur(${leave * 10}px)`;
     }
-    if (t > 31.6) renderChat(SYNC, t);
+    const lp = out5(prog(t, 17.05, 0.6));
+    $("s2live").style.opacity = lp * (1 - prog(t, 17.75, 0.3));
+    $("s2live").querySelectorAll(".l > .w").forEach((w, i) => (w.style.transform = `translateY(${(1 - out5(prog(t, 17.05 + i * 0.08, 0.6))) * 110}%)`));
+    sheen($("s2ls"), t, 0.8);
   }
-  // confetti when $MDOG goes live
-  confetti(t, 14.6, 1460, 520);
+  if (scene("s3", t, 18.2, 24.0)) {
+    kick($("s3k"), t, 18.4);
+    reveal("s3h", t, 18.55);
+    ["b30", "b31", "b32", "b33"].forEach((id, i) => show($(id), t, 19.2 + i * 0.3, 0.5, 24));
+  }
+  if (scene("s4", t, 24.0, 30.0)) { kick($("s4k"), t, 24.25); reveal("s4h", t, 24.35); }
+  if (scene("s5", t, 30.0, 36.0)) { kick($("s5k"), t, 31.0); reveal("s5h", t, 31.1); }
+  if (scene("s6", t, 36.0, 42.0)) { kick($("s6k"), t, 36.2); reveal("s6h", t, 36.3); }
+  if (scene("s7", t, 43.75, 51, 0.25)) {
+    const lp = outBack(clamp(prog(t, 43.8, 0.7)));
+    $("o0").style.opacity = clamp(prog(t, 43.8, 0.3));
+    $("o0").style.transform = `scale(${clamp(lp, 0, 1.2)})`;
+    const p = out5(prog(t, 44.0, 0.9));
+    $("o1").style.opacity = clamp(p * 1.4);
+    $("o1").style.transform = `scale(${lerp(1.2, 1, p)})`;
+    $("o1").style.filter = `blur(${(1 - p) * 12}px)`;
+    sheen($("o1s"), t, 0.5);
+    const sp = outBack(clamp(prog(t, 44.75, 0.55)));
+    $("o2").style.opacity = clamp(prog(t, 44.75, 0.3));
+    $("o2").style.transform = `scale(${clamp(sp, 0, 1.2)})`;
+    sheen($("o2s"), t, 0.5, 0.4);
+    $("shine").style.left = `${lerp(-160, 760, ((t - 45.15) % 1.6) / 1.1)}px`;
+    show($("o3"), t, 45.25, 0.5);
+    show($("o4"), t, 45.55, 0.5);
+    show($("o5"), t, 45.85, 0.5);
+  }
 
-  // corner bug
-  $("bug").style.opacity = clamp(prog(t, 4.4, 0.5)) * (1 - prog(t, 35.6, 0.4));
+  confetti(t, 17.0, 1240, 600);
+  sparks(t, 6.0, 960, 520);
+  sparks(t, 44.0, 960, 440);
+  $("bug").style.opacity = clamp(prog(t, 8.4, 0.5)) * (1 - prog(t, 41.6, 0.4)) * (1 - clamp(prog(t, 16.8, 0.2)) * (1 - prog(t, 17.9, 0.3)));
 
-  // flashes on the big hits
-  const flash = (1 - prog(t, 2.0, 0.6)) * (t >= 2.0 ? 0.55 : 0) + (1 - prog(t, 14.6, 0.5)) * (t >= 14.6 ? 0.25 : 0) + (1 - prog(t, 36.0, 0.6)) * (t >= 36 ? 0.5 : 0);
-  $("flash").style.opacity = flash;
-  $("fade").style.opacity = Math.max(1 - prog(t, 0, 0.3), inOut3(prog(t, 39.0, 1.0)));
+  // hits: flash + anamorphic streak
+  const hit = (at, k, d = 0.6) => (t >= at ? (1 - prog(t, at, d)) * k : 0);
+  $("flash").style.opacity = Math.max(hit(6.0, 0.85, 0.7), hit(17.0, 0.3), hit(44.0, 0.45), hit(2.0, 0.12, 0.5));
+  $("streak").style.opacity = Math.max(hit(6.0, 1, 0.9), hit(17.0, 0.6, 0.7), hit(44.0, 0.8, 0.9), hit(2.0, 0.5, 0.6));
+  $("streak").style.top = t < 4 ? "52%" : t < 10 ? "48%" : t < 30 ? "62%" : "41%";
+  $("fade").style.opacity = Math.max(1 - prog(t, 0, 0.4), inOut3(prog(t, 48.8, 1.2)));
 };
 window.ready = document.fonts.ready
   .then(() => Promise.all([...document.images].map((i) => (i.complete ? 1 : new Promise((r) => (i.onload = i.onerror = r))))))
   .then(() => {
-    // measure the bubbles once everything is laid out
-    for (const id of ["scrChat", "scrGroup", "scrMenu", "scrSync"]) $(id).style.display = "block";
-    for (const c of [LAUNCH, BUYBOT, MENU, SYNC]) {
+    // measure every bubble once laid out
+    const scrs = [...document.querySelectorAll(".scr")];
+    scrs.forEach((s) => (s.style.display = "block"));
+    for (const c of [LAUNCH, BUYBOT, MENU, SYNC, TREND, BURNS]) {
       c.items.forEach((it) => (it.el.style.display = "block"));
       c.measure();
     }
+    scrs.forEach((s) => { if (s !== trendChat.el && s !== burnChat.el) s.style.display = "none"; });
     window.render(0);
   });
 </script>

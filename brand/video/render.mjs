@@ -6,18 +6,21 @@
 //   node .render.mjs tour --stills 1,6,14     # PNGs next to the HTML, for a quick look
 import { chromium } from "playwright";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const [video = "review", out = `moatpad-${video}.mp4`, flag, list] = process.argv.slice(2);
-const FPS = 30;
 const page = await (await chromium.launch()).newPage({ viewport: { width: 1920, height: 1080 } });
 // demo-intro / demo-outro are the two ends of the launch demo (demo.html?part=…, see build-demo.sh)
 const html = video.startsWith("demo-") ? "demo.html" : ({ tour: "tour.html", live: "live.html", burn: "burn.html", bot: "bot.html" }[video] ?? "ad.html");
 await page.goto(`${pathToFileURL(resolve(`../../brand/video/${html}`)).href}?v=${video}&part=${video.replace(/^demo-/, "")}`);
 await page.evaluate(() => window.ready);
 const duration = await page.evaluate(() => window.DURATION);
+// a page may ask for its own frame rate, and list the moments its soundtrack should mark (music.py reads sfx-<video>.json)
+const FPS = (await page.evaluate(() => window.FPS)) || 30;
+const sfx = await page.evaluate(() => window.SFX ?? null);
+if (sfx) writeFileSync(resolve(`../../brand/video/sfx-${video}.json`), JSON.stringify(sfx));
 
 if (out === "--stills" || flag === "--stills") {
   for (const s of (list ?? flag).split(",").map(Number)) {
@@ -28,7 +31,7 @@ if (out === "--stills" || flag === "--stills") {
 }
 
 // live.html has film grain, which costs bits without adding detail: a higher CRF keeps it near 20 MB.
-const CRF = video === "live" ? "25" : "17";
+const CRF = video === "live" ? "25" : video === "bot" ? "19" : "17";
 const music = resolve(`../../brand/video/music-${video}.wav`);
 const audio = existsSync(music) ? ["-i", music, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-shortest"] : [];
 const ff = spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "png", "-i", "-", ...audio,
