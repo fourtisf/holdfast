@@ -5,7 +5,7 @@
 import { alerterFromEnv, freshness, Metrics, startOpsServer, type Alerter, type OpsServer } from "@holdfast/ops";
 
 import type { DeliveryMetrics, DeliveryResult } from "./outbox.js";
-import { TelegramError } from "./telegram.js";
+import { TelegramError, type TelegramApi } from "./telegram.js";
 
 interface Logger {
   warn(obj: object, msg?: string): void;
@@ -13,12 +13,16 @@ interface Logger {
   info(obj: object, msg?: string): void;
 }
 
+/** Polling must stay clean this long after its last failure before the alert is resolved (two pollers on one token alternate). */
+export const POLL_RECOVERY_MS = 5 * 60_000;
+
 export class NotifierMonitor implements DeliveryMetrics {
   readonly metrics = new Metrics();
   readonly alerter: Alerter;
   private lastPollAt: number | null = null;
   private pollFailures = 0;
-  private readonly messages = this.metrics.counter("notifier_messages_total", "Telegram messages by kind and delivery result (sent, duplicate, failed, unavailable)");
+  private lastFailureAt: number | null = null;
+  private readonly messages = this.metrics.counter("notifier_messages_total", "Telegram messages by kind and delivery result (sent, duplicate, failed, flooded, topic_closed, unavailable, stopped)");
   private readonly commands = this.metrics.counter("notifier_commands_total", "Bot commands handled, by command");
   private readonly events = this.metrics.counter("notifier_events_total", "holdfast_events notifications handled, by kind");
   private readonly errors = this.metrics.counter("notifier_errors_total", "Errors by source (poll, update, event, milestones)");
@@ -42,8 +46,10 @@ export class NotifierMonitor implements DeliveryMetrics {
   async pollDone(): Promise<void> {
     this.lastPollAt = this.now();
     this.pollAt.setToNow({}, this.lastPollAt);
-    if (this.pollFailures > 0) {
-      this.pollFailures = 0;
+    this.pollFailures = 0;
+    // Resolved only once polling has been clean for a while: one good poll between failures is not a recovery.
+    if (this.lastFailureAt !== null && this.lastPollAt - this.lastFailureAt >= POLL_RECOVERY_MS) {
+      this.lastFailureAt = null;
       await this.alerter.resolve("telegram_poll", "telegram polling recovered");
     }
   }
@@ -51,6 +57,7 @@ export class NotifierMonitor implements DeliveryMetrics {
   async pollFailed(err: unknown): Promise<void> {
     this.error("poll");
     this.pollFailures++;
+    this.lastFailureAt = this.now();
     const message = err instanceof Error ? err.message : String(err);
     if (err instanceof TelegramError && err.code === 401) {
       await this.alerter.fire("telegram_poll", "critical", "TELEGRAM_BOT_TOKEN was rejected: the bot is offline", { error: message });
@@ -61,6 +68,19 @@ export class NotifierMonitor implements DeliveryMetrics {
     } else {
       this.log.warn({ err: message }, "getUpdates failed");
     }
+  }
+
+  /**
+   * Startup check of NOTIFIER_BURN_CHAT_ID: the bot must be able to post there. A wrong id (channels and
+   * supergroups start with -100) or a bot that is not in the chat would otherwise lose every burn quietly.
+   * Returns false (logged at error level, and alerted) when it cannot.
+   */
+  async checkBurnChat(tg: Pick<TelegramApi, "getChatMemberStatus">, chatId: number, botId: number): Promise<boolean> {
+    const status = await tg.getChatMemberStatus(chatId, botId).catch((err: unknown) => `unknown (${err instanceof Error ? err.message : String(err)})`);
+    if (["creator", "administrator", "member"].includes(status)) return true;
+    this.log.error({ burnChatId: chatId, status }, "the bot cannot post in NOTIFIER_BURN_CHAT_ID: check the id (channels and supergroups start with -100) and add the bot there as an admin");
+    await this.alerter.fire("burn_chat", "warning", "the bot cannot post in the $MOATPAD burn chat (NOTIFIER_BURN_CHAT_ID): burns are not announced", { burnChatId: chatId, status });
+    return false;
   }
 
   delivered(kind: string, result: DeliveryResult): void {

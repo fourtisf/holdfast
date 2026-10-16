@@ -11,6 +11,8 @@ import {
   insertLaunch,
   insertTrade,
   listChatSubscriptions,
+  markSent,
+  sentKeys,
   setBuybot,
   updateLastPrice,
   updateLaunchStatus,
@@ -24,7 +26,7 @@ import { Bot } from "../src/bot.js";
 import { BuyThrottle, Notifier } from "../src/events.js";
 import { applyButton, applyText, ask, MAX_LINK_LENGTH, parseLinks, summary, type Step } from "../src/launch.js";
 import { LaunchFlow } from "../src/launch.js";
-import { buyDots } from "../src/messages.js";
+import { buyDots, launchStatusMessage } from "../src/messages.js";
 import { Outbox } from "../src/outbox.js";
 import { TelegramError, type TgUpdate } from "../src/telegram.js";
 import { addr, buttonData, buttonUpdate, FakeTelegram, freshDb, LINKS, MIN, NOW, photoUpdate, resetDb, seedCoin, textUpdate, TOK, wellFormed } from "./helpers.js";
@@ -40,13 +42,15 @@ class RecordingApi implements MoatpadApi {
   /** The Telegram user of every createLaunch / uploadImage call, refused ones included. */
   launchUsers: (number | undefined)[] = [];
   uploadUsers: (number | undefined)[] = [];
-  fail: ApiError | null = null;
+  fail: Error | null = null;
   quotes: QuoteRequest[] = [];
+  /** The operator keeps launches closed (LAUNCHES_PAUSED): quotes say so. */
+  paused = false;
   async quote(req: QuoteRequest) {
     this.quotes.push(req);
     const devBuySol = req.devBuySol;
     const required = Math.round((0.015 + devBuySol * 1.01) * 1e4) / 1e4;
-    return { launchFeeSol: 0.015, devBuySol, devBuyExtraSol: 0, requiredSol: required, requiredLamports: String(required * 1e9), specFeeSol: 0.015, exceedsSpecFee: false };
+    return { launchFeeSol: 0.015, devBuySol, devBuyExtraSol: 0, requiredSol: required, requiredLamports: String(required * 1e9), specFeeSol: 0.015, exceedsSpecFee: false, launchesPaused: this.paused };
   }
   async createLaunch(req: LaunchRequest, userId?: number): Promise<LaunchResponse> {
     this.launchUsers.push(userId);
@@ -77,9 +81,12 @@ class RecordingApi implements MoatpadApi {
   }
 }
 
+/** The steps here follow each other at the same instant: no private reply budget (bot.test.ts tests it). */
+const NO_REPLY_BUDGET = { perMinute: 1_000, burst: 1_000 };
+
 function makeBot(): Bot {
   const launch = new LaunchFlow({ db, api, tg, links: LINKS, now: () => now });
-  return new Bot({ db, tg, commands: { db, links: LINKS, now: () => now, api, launch, tg }, botUsername: "HoldfastBot", pollTimeoutSec: 30 });
+  return new Bot({ db, tg, commands: { db, links: LINKS, now: () => now, api, launch, tg }, botUsername: "HoldfastBot", pollTimeoutSec: 30, privateReplies: NO_REPLY_BUDGET });
 }
 
 beforeAll(async () => {
@@ -142,7 +149,8 @@ describe("/launch wizard", () => {
     expect(summary.text).toContain("Dev buy: 0.5 SOL");
     expect(summary.text).toContain("Links: X, Telegram, Website");
     expect(summary.text).toContain("Total to pay: 0.52 SOL");
-    expect(api.quotes).toEqual([{ devBuySol: 0.5, name: "Moat Dog", ticker: "MDOG" }]);
+    // /launch asks first whether launches are open; the summary quotes this coin.
+    expect(api.quotes).toEqual([{ devBuySol: 0 }, { devBuySol: 0.5, name: "Moat Dog", ticker: "MDOG" }]);
     expect(buttonData(summary)).toEqual(["l:go", "l:restart", "l:cancel"]);
 
     await send(buttonUpdate(0, DM, "l:go"));
@@ -298,16 +306,21 @@ describe("/launch wizard", () => {
     expect(api.uploadUsers).toEqual([7]);
     expect((await getDraft(db, DM.id))?.step).toBe("description");
 
-    // 3 launch tries per 10 minutes, refused ones included.
+    // 3 launch tries per 10 minutes, refused ones included; a try the API never answered, or answered "paused", does not count.
     await send(textUpdate(0, DM, "/cancel"));
     await fill(DM, 7);
     api.fail = new ApiError(503, "Launches are not open yet");
+    await send(buttonUpdate(0, DM, "l:go"));
+    api.fail = new TypeError("fetch failed");
+    await send(buttonUpdate(0, DM, "l:go"));
+    api.fail = new ApiError(400, "name is not allowed");
     for (let i = 0; i < 3; i++) await send(buttonUpdate(0, DM, "l:go"));
+    expect(tg.last(DM.id)!.text).toBe("⚠️ name is not allowed");
     api.fail = null;
     await send(buttonUpdate(0, DM, "l:go"));
     expect(tg.last(DM.id)!.text).toBe("⚠️ You tried to launch 3 times in the last 10 minutes. Please wait a few minutes, then tap Try again.");
     expect(buttonData(tg.last(DM.id))).toEqual(["l:go", "l:restart", "l:cancel"]);
-    expect(api.launchUsers).toEqual([7, 7, 7]);
+    expect(api.launchUsers).toEqual([7, 7, 7, 7, 7]);
     // Somebody else is not held up.
     const OTHER = { id: 43, type: "private" as const };
     await fill(OTHER, 8);
@@ -316,7 +329,122 @@ describe("/launch wizard", () => {
     now += 10 * MIN;
     await send(buttonUpdate(0, DM, "l:go"));
     expect(tg.last(DM.id)!.text).toContain("Last step: send the SOL");
-    expect(api.launchUsers).toEqual([7, 7, 7, 8, 7]);
+    expect(api.launchUsers).toEqual([7, 7, 7, 7, 7, 8, 7]);
+  });
+
+  it("checks the name in UTF-8 bytes like pump.fun, so a paid launch is never refused for its name", () => {
+    // Fit in 32 characters, not in pump.fun's 32 bytes: the launcher would refund them after payment.
+    for (const name of ["Пушистый Кот Монета", "Crème Brûlée Pâtisserie Royale", "🐸 Frog King of the Pond 🐸👑", "月球狗狗币月球狗狗币月"]) {
+      const r = applyText("name", {}, name);
+      expect(r, name).toEqual({
+        ok: false,
+        error: `That name is too long for pump.fun: it takes ${Buffer.byteLength(name)} of the 32 bytes allowed, because accented letters, non-Latin letters and emoji take 2 to 4 each. Please make it shorter.`,
+      });
+    }
+    expect(applyText("name", {}, "Café Moat Dog Coin of the Ponds")).toEqual({ ok: true, data: { name: "Café Moat Dog Coin of the Ponds" } }); // 32 bytes
+    expect(applyText("name", {}, "🐶".repeat(8))).toMatchObject({ ok: true });
+    expect(ask("name", {}).html).toContain("(max 32 characters; accented letters and emoji take 2 to 4 each)");
+  });
+
+  it("tells the truth about the dev buy and the creator's share", () => {
+    const dev = ask("devbuy", {}).html;
+    expect(dev).toContain("You buy your own coin when it launches. Dev-buy tokens go to the wallet that pays and do not earn holder payouts.");
+    expect(dev).not.toContain("sniper");
+    const creator = ask("creator", {}).html;
+    expect(creator).toContain("The creator earns 15% of the coin's creator fees (what each trade pays into its vault)");
+    expect(creator).not.toContain("every trading fee");
+  });
+
+  it("says a GIF, sticker or video cannot be used at the image step, instead of asking for text", async () => {
+    const bot = makeBot();
+    let id = 400;
+    const send = async (u: TgUpdate) => bot.handleUpdate({ ...u, update_id: id++ });
+    for (const t of ["/launch", "Dog", "DOG"]) await send(textUpdate(0, DM, t));
+    // A GIF from Telegram's picker arrives as an MP4 animation document.
+    await send({ update_id: 0, message: { message_id: 1, date: 0, chat: DM, from: { id: 7, is_bot: false, first_name: "Ann" }, document: { file_id: "GIF1", mime_type: "video/mp4" } } });
+    const text = tg.last(DM.id)!.text;
+    expect(text).toMatch(/^⚠️ I can't use that kind of file\. Send a picture as a photo, or a PNG\/JPG\/GIF\/WEBP image as a file, or tap Skip\./);
+    expect(text).not.toContain("Please answer with text");
+    expect((await getDraft(db, DM.id))?.step).toBe("image");
+  });
+
+  it("while launches are paused, says so at /launch instead of after the last question", async () => {
+    const bot = makeBot();
+    let id = 500;
+    const send = async (u: TgUpdate) => bot.handleUpdate({ ...u, update_id: id++ });
+    api.paused = true;
+    await send(textUpdate(0, DM, "/launch"));
+    expect(tg.last(DM.id)!.text).toBe("🚧 Launches open soon on Moatpad. I'll be ready when they do.");
+    expect(await getDraft(db, DM.id)).toBeNull();
+    // A launch already being filled in when they were paused: the summary has no Launch button, and Check again finds them open.
+    api.paused = false;
+    await send(textUpdate(0, DM, "/launch"));
+    for (const t of ["Dog", "DOG"]) await send(textUpdate(0, DM, t));
+    api.paused = true;
+    for (const b of SKIP_TO_CONFIRM) await send(buttonUpdate(0, DM, b));
+    const paused = tg.last(DM.id)!;
+    expect(paused.text).toContain("🚧 Launches open soon on Moatpad.");
+    expect(paused.text).not.toContain("Total to pay");
+    expect(buttonData(paused)).toEqual(["l:recheck", "l:restart", "l:cancel"]);
+    api.paused = false;
+    await send(buttonUpdate(0, DM, "l:recheck"));
+    expect(tg.last(DM.id)!.text).toContain("Total to pay");
+    expect(buttonData(tg.last(DM.id))).toEqual(["l:go", "l:restart", "l:cancel"]);
+  });
+
+  it("answers a launch the API did not answer with Try again, not with silence", async () => {
+    const warnings: string[] = [];
+    const launch = new LaunchFlow({ db, api, tg, links: LINKS, now: () => now, log: { warn: (_o, msg) => void warnings.push(msg ?? "") } });
+    const bot = new Bot({ db, tg, commands: { db, links: LINKS, now: () => now, api, launch, tg }, botUsername: "HoldfastBot", pollTimeoutSec: 30, privateReplies: NO_REPLY_BUDGET });
+    let id = 600;
+    const send = async (u: TgUpdate) => bot.handleUpdate({ ...u, update_id: id++ });
+    for (const t of ["/launch", "Dog", "DOG"]) await send(textUpdate(0, DM, t));
+    for (const b of SKIP_TO_CONFIRM) await send(buttonUpdate(0, DM, b));
+    api.fail = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    await send(buttonUpdate(0, DM, "l:go"));
+    expect(tg.last(DM.id)!.text).toBe("⚠️ Moatpad is not reachable right now. Please tap Try again in a moment.");
+    expect(buttonData(tg.last(DM.id))).toEqual(["l:go", "l:restart", "l:cancel"]);
+    expect(warnings).toEqual(["creating a launch failed: the API did not answer"]);
+    api.fail = null;
+    await send(buttonUpdate(0, DM, "l:go"));
+    expect(tg.last(DM.id)!.text).toContain("Last step: send the SOL");
+  });
+
+  it("a second tap on Launch shows the launch that is waiting for its SOL, not that it expired", async () => {
+    const bot = makeBot();
+    let id = 700;
+    const send = async (u: TgUpdate) => bot.handleUpdate({ ...u, update_id: id++ });
+    for (const t of ["/launch", "Dog", "DOG"]) await send(textUpdate(0, DM, t));
+    for (const b of SKIP_TO_CONFIRM) await send(buttonUpdate(0, DM, b));
+    await send(buttonUpdate(0, DM, "l:go"));
+    const created = api.launches.length;
+    // The API answered with a launch id: the API's row is what a real launch looks like.
+    await insertLaunch(db, { id: "11111111-2222-3333-4444-555555555555", form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr("deposit"), depositIndex: 9n, requiredLamports: 520_000_000n, devBuyLamports: 0n, expiresAt: now + 30 * MIN });
+    await send(buttonUpdate(0, DM, "l:go"));
+    const again = tg.last(DM.id)!;
+    expect(again.text).toContain("Your launch is already created: send the SOL");
+    expect(again.text).toContain("Send exactly <b>0.52 SOL</b> to this address:");
+    expect(again.text).toContain(`<code>${addr("deposit")}</code>`);
+    expect(again.text).toContain("Sent it already? Don't send it again");
+    expect(buttonData(again)).toEqual([`${LINKS.webUrl}/pay/11111111-2222-3333-4444-555555555555`]);
+    expect(api.launches).toHaveLength(created);
+    // Part of it arrived: only the missing part is asked for, never the full amount again.
+    await updateLaunchStatus(db, "11111111-2222-3333-4444-555555555555", "awaiting_deposit", { receivedLamports: 500_000_000n });
+    await send(buttonUpdate(0, DM, "l:go"));
+    const short = tg.last(DM.id)!;
+    expect(short.text).toContain("Only part of your $DOG payment arrived");
+    expect(short.text).toContain("Send the missing <b>0.02 SOL</b> to the same address");
+    expect(short.text).not.toContain("0.52 SOL</b>");
+    expect(buttonData(short)).toEqual([`${LINKS.webUrl}/pay/11111111-2222-3333-4444-555555555555`]);
+    // Paid in full (the launch is starting): nothing more to send.
+    await updateLaunchStatus(db, "11111111-2222-3333-4444-555555555555", "deposit_received", { receivedLamports: 520_000_000n });
+    await send(buttonUpdate(0, DM, "l:go"));
+    expect(tg.last(DM.id)!.text).toBe("✅ <b>Payment received</b> (0.52 SOL)\nYour $DOG launch is starting. I'll message you here the moment your coin is live. 🚀");
+    await updateLaunchStatus(db, "11111111-2222-3333-4444-555555555555", "awaiting_deposit", { receivedLamports: 0n });
+    // Once the address expired, the old button says so.
+    now += 31 * MIN;
+    await send(buttonUpdate(0, DM, "l:go"));
+    expect(tg.last(DM.id)!.text).toBe("This launch has expired. Send /launch to start a new one.");
   });
 });
 
@@ -614,20 +742,301 @@ describe("events for the launchpad bot", () => {
     expect(tg.to(DM.id)).toEqual([expect.stringContaining("Payment received</b> (0.02 SOL)")]);
   });
 
-  it("a failed launch says its SOL was refunded, with the refund", async () => {
+  it("a failed launch says its SOL was refunded, with the refund, and never shows the launcher's internal error", async () => {
     const id = "11111111-2222-3333-4444-888888888888";
     await insertLaunch(db, { id, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr("dep3"), depositIndex: 3n, requiredLamports: 15_000_000n, devBuyLamports: 0n, expiresAt: NOW + 30 * MIN });
     await addTgLaunch(db, id, DM.id);
-    await updateLaunchStatus(db, id, "refunding", { error: "create: Blockhash not found" });
+    await updateLaunchStatus(db, id, "refunding", { error: "launch failed after 6 attempts (atomic: simulation failed: Transaction simulation failed: Error processing Instruction 2: custom program error: 0x1771. Logs: [...] [rejected 5ig])" });
     const n = makeNotifier();
     expect(await n.handle({ kind: "launch", launchId: id })).toBe(0);
     await updateLaunchStatus(db, id, "failed", { refundSig: "RefundSig1" });
     expect(await n.handle({ kind: "launch", launchId: id })).toBe(1);
     const text = tg.last(DM.id)!.text;
-    expect(text).toContain("⚠️ The $DOG launch failed: create: Blockhash not found.");
+    expect(text).toContain("⚠️ The $DOG launch failed. Something went wrong on our side while creating the coin.");
+    expect(text).not.toContain("simulation");
     expect(text).toContain("Your SOL was refunded to the wallet that paid");
     expect(text).toContain('href="https://solscan.io/tx/RefundSig1?cluster=devnet"');
     expect(text).not.toContain("will be refunded");
+
+    // A form the launcher refused is the user's to fix: its reason is shown.
+    const id2 = "11111111-2222-3333-4444-888888888889";
+    await insertLaunch(db, { id: id2, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr("dep4"), depositIndex: 4n, requiredLamports: 15_000_000n, devBuyLamports: 0n, expiresAt: NOW + 30 * MIN });
+    await addTgLaunch(db, id2, DM.id);
+    await updateLaunchStatus(db, id2, "failed", { error: "invalid launch: name must be 1-32 bytes", refundSig: "RefundSig2" });
+    expect(await n.handle({ kind: "launch", launchId: id2 })).toBe(1);
+    expect(tg.last(DM.id)!.text).toContain("⚠️ The $DOG launch failed: name must be 1-32 bytes.");
+  });
+
+  it("tells the user how much is missing when only part of the payment arrived, and why a launch was refunded", async () => {
+    const id = "11111111-2222-3333-4444-999999999999";
+    await insertLaunch(db, { id, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr("dep5"), depositIndex: 5n, requiredLamports: 23_456_789n, devBuyLamports: 0n, expiresAt: NOW + 10 * MIN + 30_000 });
+    await addTgLaunch(db, id, DM.id);
+    const n = makeNotifier();
+    // The user typed 0.02345 instead of 0.023456789: the launcher records it and keeps waiting.
+    await updateLaunchStatus(db, id, "awaiting_deposit", { receivedLamports: 23_450_000n });
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(1);
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(0);
+    const short = tg.last(DM.id)!;
+    expect(short.text).toContain("⚠️ <b>Only part of your $DOG payment arrived</b>");
+    expect(short.text).toContain("Received 0.02345 of the 0.023456789 SOL needed.");
+    expect(short.text).toContain("Send the missing <b>0.000006789 SOL</b> to the same address within 10 minutes:");
+    expect(short.text).toContain(`<code>${addr("dep5")}</code>`);
+    expect(buttonData(short)).toEqual([`${LINKS.webUrl}/pay/${id}`]);
+    // More arrives, still short: told again with the new amount.
+    await updateLaunchStatus(db, id, "awaiting_deposit", { receivedLamports: 23_455_000n });
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(1);
+    expect(tg.last(DM.id)!.text).toContain("Send the missing <b>0.000001789 SOL</b>");
+    // Nothing more came: refunded at expiry, with the reason.
+    await updateLaunchStatus(db, id, "refunded", { refundSig: "RefundSig3" });
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(1);
+    const refunded = tg.last(DM.id)!.text;
+    expect(refunded).toContain("↩️ <b>Your $DOG launch was refunded.</b>\nReceived 0.023455 of the 0.023456789 SOL needed, and the full amount did not arrive before the address expired.");
+    expect(refunded).not.toContain("Reason:");
+
+    // Paid in full, but after the address expired.
+    const late = "11111111-2222-3333-4444-999999999998";
+    await insertLaunch(db, { id: late, form: { name: "Cat", ticker: "CAT", triggerBps: 2500 }, depositAddress: addr("dep6"), depositIndex: 6n, requiredLamports: 15_000_000n, devBuyLamports: 0n, expiresAt: NOW - MIN });
+    await addTgLaunch(db, late, DM.id);
+    await updateLaunchStatus(db, late, "awaiting_deposit", { receivedLamports: 15_000_000n });
+    expect(await n.handle({ kind: "launch", launchId: late })).toBe(0);
+    await updateLaunchStatus(db, late, "refunded", { refundSig: "RefundSig4" });
+    expect(await n.handle({ kind: "launch", launchId: late })).toBe(1);
+    expect(tg.last(DM.id)!.text).toContain("The address expired before the launch could start, so the payment was refunded.");
+
+    // Nothing by the deadline (expired), then a short payment long after it: the launcher's sweep refunds it
+    // (expired -> refunding -> refunded with what arrived). The reason must not claim it came in time.
+    const lateShort = "11111111-2222-3333-4444-999999999997";
+    await insertLaunch(db, { id: lateShort, form: { name: "Eel", ticker: "EEL", triggerBps: 2500 }, depositAddress: addr("dep7"), depositIndex: 7n, requiredLamports: 20_000_000n, devBuyLamports: 0n, expiresAt: NOW - 60 * MIN });
+    await addTgLaunch(db, lateShort, DM.id);
+    await updateLaunchStatus(db, lateShort, "expired", {});
+    expect(await n.handle({ kind: "launch", launchId: lateShort })).toBe(1);
+    await updateLaunchStatus(db, lateShort, "refunding", { receivedLamports: 5_000_000n, sender: addr("payer"), depositSig: "LateDeposit" });
+    await updateLaunchStatus(db, lateShort, "refunded", { refundSig: "RefundSig5" });
+    expect(await n.handle({ kind: "launch", launchId: lateShort })).toBe(1);
+    const lateRefund = tg.last(DM.id)!.text;
+    expect(lateRefund).toContain("↩️ <b>Your $EEL launch was refunded.</b>\nReceived 0.005 of the 0.02 SOL needed, and the full amount did not arrive before the address expired.");
+    expect(lateRefund).not.toContain("arrived before the address expired");
+  });
+
+  it("the expired message says a late payment is refunded, and not to reuse the address weeks later", () => {
+    const msg = launchStatusMessage(
+      LINKS,
+      { id: "x", status: "expired", ticker: "DOG", mint: null, depositAddress: addr("d"), requiredLamports: 1n, receivedLamports: 0n, expiresAt: NOW, refundSig: null, error: null },
+      NOW,
+    );
+    expect(msg?.html).toContain("If you sent SOL late, it will be refunded automatically.");
+    // The launcher only watches finished launches of the last 30 days for late deposits.
+    expect(msg?.html).toContain("Don't reuse the address: SOL sent to it more than 30 days from now is not refunded automatically.");
+  });
+
+  it("the LIVE message says when the dev buy was skipped or the leftover refund is still pending", async () => {
+    const n = makeNotifier();
+    const live = async (suffix: string, error: string | null) => {
+      const id = `11111111-2222-3333-4444-77777777770${suffix}`;
+      await insertLaunch(db, { id, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr(`live${suffix}`), depositIndex: BigInt(20 + Number(suffix)), requiredLamports: 15_000_000n, devBuyLamports: 1_000_000_000n, expiresAt: NOW + 30 * MIN });
+      await addTgLaunch(db, id, DM.id);
+      await updateLaunchStatus(db, id, "live", { mint: coin.mint, error });
+      expect(await n.handle({ kind: "launch", launchId: id })).toBe(1);
+      return tg.last(DM.id)!.text;
+    };
+    const skipped = await live("1", "dev buy skipped after 6 failed attempts; its SOL was refunded; refund pending: Blockhash not found");
+    expect(skipped).toContain("⚠️ Your dev buy could not be made: its SOL goes back to the wallet that paid, and you hold no tokens from it.");
+    expect(skipped).toContain("↩️ Your leftover SOL is still being refunded to the wallet that paid.");
+    expect(skipped).not.toContain("Blockhash");
+    const clean = await live("2", null);
+    expect(clean).not.toContain("dev buy");
+    expect(clean).not.toContain("still being refunded");
+  });
+
+  const trade = (sig: string, ixIndex: number, wallet: string, side: "buy" | "sell" | "vault", sol: bigint, extra: { ts?: number; slot?: number; price?: number } = {}) =>
+    insertTrade(db, { sig, ixIndex, mint: coin.mint, wallet, side, sol, tokens: 5n * TOK, price: extra.price ?? 5e-8, ts: extra.ts ?? NOW - MIN, slot: extra.slot ?? 1, source: side === "vault" ? "vault" : "curve" });
+
+  it("posts one alert per buying wallet and transaction: split buys are summed, a buy sold back at once is not news", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    await setBuybot(db, { chatId: GROUP_B, mint: coin.mint, minLamports: 1_000_000_000n, createdBy: 9, atMs: NOW - 60 * MIN });
+    const [whale, bumper] = [addr("whale"), addr("bumper")];
+    // 1.2 SOL bought as three 0.4 SOL instructions, and a bump bot buying 0.05 and selling it back in the same transaction.
+    for (let i = 0; i < 3; i++) await trade("Split1", i, whale, "buy", 400_000_000n);
+    await trade("Split1", 3, bumper, "buy", 50_000_000n);
+    await trade("Split1", 4, bumper, "sell", 49_000_000n);
+    const n = makeNotifier();
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Split1" })).toBe(2);
+    for (const chat of [GROUP_A, GROUP_B]) {
+      expect(tg.to(chat)).toHaveLength(1);
+      expect(tg.last(chat)!.text).toContain("💰 Spent: <b>1.2 SOL</b>");
+      expect(tg.last(chat)!.text).toContain("🪙 Got: 15 HOUND");
+    }
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Split1" })).toBe(0);
+    // A bump transaction on its own posts nothing either.
+    await trade("Bump2", 0, bumper, "buy", 50_000_000n);
+    await trade("Bump2", 1, bumper, "sell", 49_000_000n);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Bump2" })).toBe(0);
+  });
+
+  it("shows the buy's own market cap when a later trade of the same second or transaction moved the price", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    const at = NOW - MIN; // block times are whole seconds: both trades below share it
+    await trade("BuyA", 0, addr("a"), "buy", 500_000_000n, { ts: at, slot: 100, price: 5e-8 });
+    await updateLastPrice(db, coin.mint, 5.5e-8, at, 100);
+    await trade("SellB", 0, addr("b"), "sell", 900_000_000n, { ts: at, slot: 101, price: 4e-8 });
+    await updateLastPrice(db, coin.mint, 3e-8, at, 101);
+    // A buy followed by a sell in one transaction.
+    await trade("BuySell", 0, addr("c"), "buy", 500_000_000n, { ts: at, slot: 101, price: 4.5e-8 });
+    await trade("BuySell", 1, addr("d"), "sell", 500_000_000n, { ts: at, slot: 101, price: 4e-8 });
+    const n = makeNotifier();
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "BuyA" })).toBe(1);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "BuySell" })).toBe(1);
+    expect(tg.to(GROUP_A).map((t) => /Market cap: ([\d.]+) SOL/.exec(t)?.[1])).toEqual(["50", "45"]);
+  });
+
+  it("a group in a Telegram flood wait does not hold up the queue: its buy is counted in its next alert, not posted late", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    await setBuybot(db, { chatId: GROUP_B, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    const outbox = new Outbox(db, tg);
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    tg.fail.set(GROUP_A, new TelegramError("sendMessage", 429, "Too Many Requests: retry after 40", 40));
+    await trade("Flood1", 0, addr("x"), "buy", 100_000_000n);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Flood1" })).toBe(1);
+    expect(tg.to(GROUP_B)).toHaveLength(1);
+    tg.fail.clear();
+    // A buy that missed its moment stays claimed: nothing to retry.
+    expect(outbox.pendingFailures()).toEqual([]);
+    expect(await n.retryFailed()).toBe(0);
+    expect(tg.to(GROUP_A)).toEqual([]);
+    await trade("Flood2", 0, addr("y"), "buy", 100_000_000n);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Flood2" })).toBe(2);
+    expect(tg.last(GROUP_A)!.text).toContain("+1 more buy since the last alert");
+    expect(tg.last(GROUP_B)!.text).not.toContain("since the last alert");
+  });
+
+  it("floor defences posted in a buy bot group count against its buy alert budget", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    const n = makeNotifier();
+    await trade("Def1", 0, coin.treasury, "vault", 100_000_000n);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Def1" })).toBe(1);
+    for (let i = 0; i < 15; i++) {
+      await trade(`Many${i}`, 0, addr(`many${i}`), "buy", 100_000_000n);
+      await n.handle({ kind: "trade", mint: coin.mint, sig: `Many${i}` });
+    }
+    // 1 defence + 14 buys: Telegram's ~20 a minute in one group stays out of reach.
+    expect(tg.to(GROUP_A)).toHaveLength(15);
+  });
+
+  it("posts a buy bot's alerts and defences in the forum topic it was set up in", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN, threadId: 77 });
+    await addSubscription(db, { chatId: DM.id, kind: "coin", target: coin.mint, atMs: NOW - 60 * MIN });
+    const n = makeNotifier();
+    await trade("TopicBuy", 0, addr("t"), "buy", 100_000_000n);
+    await trade("TopicDef", 0, coin.treasury, "vault", 100_000_000n);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "TopicBuy" })).toBe(1);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "TopicDef" })).toBe(2);
+    expect(tg.sent.map((m) => [m.chatId, m.threadId])).toEqual([
+      [GROUP_A, 77],
+      [DM.id, undefined],
+      [GROUP_A, 77],
+    ]);
+  });
+
+  it("a group that lets nobody post for now (a night-mode lock) keeps its buy bot and alerts; a bot muted for good loses them", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    await addSubscription(db, { chatId: GROUP_A, kind: "coin", target: coin.mint, atMs: NOW - 60 * MIN });
+    const outbox = new Outbox(db, tg);
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    tg.fail.set(GROUP_A, new TelegramError("sendMessage", 400, "Bad Request: not enough rights to send text messages to the chat"));
+    await trade("Locked1", 0, addr("m"), "buy", 100_000_000n);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Locked1" })).toBe(0);
+    expect(await getBuybot(db, GROUP_A)).toMatchObject({ mint: coin.mint });
+    expect(await listChatSubscriptions(db, GROUP_A)).toHaveLength(1);
+    // Given up (the claim released), and not retried every minute while the lock lasts.
+    expect(await sentKeys(db, GROUP_A, [`buy:Locked1:${addr("m")}`])).toEqual(new Set());
+    expect(outbox.pendingFailures()).toEqual([]);
+    // The lock lifts in the morning: buys are posted again.
+    tg.fail.clear();
+    await trade("Locked2", 0, addr("m2"), "buy", 100_000_000n);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Locked2" })).toBe(1);
+    // Muted for good (Telegram says so with a my_chat_member update): the buy bot and the alerts go.
+    const member = (status: string, extra: Record<string, unknown> = {}) => ({ status, user: { id: 1, is_bot: true, first_name: "Bot" }, ...extra });
+    await makeBot().handleUpdate({
+      update_id: 950,
+      my_chat_member: { chat: { id: GROUP_A, type: "supergroup" }, from: { id: 9, is_bot: false, first_name: "Ann" }, old_chat_member: member("member"), new_chat_member: member("restricted", { can_send_messages: false }) },
+    });
+    expect(await getBuybot(db, GROUP_A)).toBeNull();
+    expect(await listChatSubscriptions(db, GROUP_A)).toEqual([]);
+  });
+
+  it("a buy posted under the older per-instruction key (buy:<sig>:<ixIndex>) before a restart is not posted again", async () => {
+    await setBuybot(db, { chatId: GROUP_A, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    await setBuybot(db, { chatId: GROUP_B, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - 60 * MIN });
+    const whale = addr("whale");
+    await trade("Legacy1", 0, whale, "buy", 400_000_000n);
+    await trade("Legacy1", 1, whale, "buy", 400_000_000n);
+    // The previous version posted one of the two parts in GROUP_A just before the deploy.
+    await markSent(db, GROUP_A, "buy:Legacy1:1");
+    const n = makeNotifier();
+    expect(await n.catchUp(NOW - 15 * MIN)).toBe(1);
+    expect(tg.to(GROUP_A)).toEqual([]);
+    expect(tg.to(GROUP_B)).toHaveLength(1);
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "Legacy1" })).toBe(0);
+  });
+
+  it("retries a delivery that failed on a Telegram or network blip, once Telegram answers again", async () => {
+    const id = "11111111-2222-3333-4444-aaaaaaaaaaaa";
+    await insertLaunch(db, { id, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr("depR"), depositIndex: 30n, requiredLamports: 15_000_000n, devBuyLamports: 0n, expiresAt: NOW + 30 * MIN });
+    await addTgLaunch(db, id, DM.id);
+    await updateLaunchStatus(db, id, "live", { mint: coin.mint });
+    const n = makeNotifier();
+    expect(await n.retryFailed()).toBe(0); // nothing failed: no replay
+    tg.fail.set(DM.id, new TelegramError("sendMessage", 0, "no answer (ECONNREFUSED)"));
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(0);
+    expect(await n.retryFailed()).toBe(0); // still down
+    tg.fail.clear();
+    expect(await n.retryFailed()).toBe(1);
+    expect(tg.last(DM.id)!.text).toContain("$DOG is LIVE!");
+    expect(await n.retryFailed()).toBe(0);
+    expect(tg.to(DM.id)).toHaveLength(1);
+  });
+
+  it("gives up a delivery that kept failing for a day", async () => {
+    const id = "11111111-2222-3333-4444-bbbbbbbbbbbb";
+    await insertLaunch(db, { id, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr("depG"), depositIndex: 31n, requiredLamports: 15_000_000n, devBuyLamports: 0n, expiresAt: NOW + 30 * MIN });
+    await addTgLaunch(db, id, DM.id);
+    await updateLaunchStatus(db, id, "live", { mint: coin.mint });
+    const outbox = new Outbox(db, tg, { now: () => now });
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    tg.fail.set(DM.id, new TelegramError("sendMessage", 502, "Bad Gateway"));
+    expect(await n.handle({ kind: "launch", launchId: id })).toBe(0);
+    for (let i = 0; i < 24; i++) {
+      now += 60 * MIN;
+      expect(await n.retryFailed()).toBe(0);
+    }
+    expect(outbox.pendingFailures()).toHaveLength(1);
+    // Telegram answers again, but the message is a day old now: it is not sent any more.
+    tg.fail.clear();
+    now += MIN;
+    expect(await n.retryFailed()).toBe(0);
+    expect(tg.to(DM.id)).toEqual([]);
+    expect(outbox.pendingFailures()).toEqual([]);
+  });
+
+  it("a burn chat the bot cannot post in is an operator error: logged, its claim released, nothing unsubscribed", async () => {
+    const CHANNEL = -1009999;
+    const errors: string[] = [];
+    const log = { error: (_o: object, msg?: string) => void errors.push(msg ?? ""), warn() {}, info() {}, debug() {} };
+    const outbox = new Outbox(db, tg, { log, operatorChats: [CHANNEL] });
+    const n = new Notifier({ db, outbox, links: LINKS, burnChatId: CHANNEL, now: () => now, log });
+    await addSubscription(db, { chatId: CHANNEL, kind: "coin", target: coin.mint, atMs: NOW - 60 * MIN });
+    await insertHoldBurn(db, { sig: "BurnSig", mint: coin.mint, solSpent: 100_000_000n, holdBurned: 2_500_000_000_000n, ts: NOW - MIN });
+    tg.fail.set(CHANNEL, new TelegramError("sendMessage", 403, "Forbidden: bot is not a member of the channel chat"));
+    expect(await n.handle({ kind: "burn", mint: coin.mint, sig: "BurnSig" })).toBe(0);
+    expect(errors).toEqual([
+      "the bot cannot post in a configured chat (NOTIFIER_BURN_CHAT_ID): add it there as an admin",
+      "a $MOATPAD burn could not be posted to the burn chat",
+    ]);
+    expect(await listChatSubscriptions(db, CHANNEL)).toHaveLength(1);
+    // Fixed (the bot was added as an admin): the next catch-up posts the burn.
+    tg.fail.clear();
+    expect(await n.catchUp(NOW - 15 * MIN)).toBe(1);
+    expect(tg.last(CHANNEL)!.text).toContain("$MOATPAD burned!");
   });
 
   it("posts every $MOATPAD burn to the burn channel", async () => {

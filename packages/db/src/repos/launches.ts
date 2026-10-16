@@ -34,7 +34,7 @@ export interface NewLaunch {
   expiresAt: number;
 }
 
-function mapLaunch(r: Record<string, unknown>): LaunchRow {
+export function mapLaunch(r: Record<string, unknown>): LaunchRow {
   return {
     id: r.id as string,
     status: r.status as LaunchStatusKind,
@@ -86,6 +86,8 @@ export async function getLaunchByDepositAddress(q: Queryable, address: string): 
 
 export interface LaunchPatch {
   receivedLamports?: bigint;
+  /** What the deposit must really hold: the launcher raises a launch the API quoted below its real cost. */
+  requiredLamports?: bigint;
   sender?: string;
   depositSig?: string;
   mint?: string;
@@ -117,6 +119,7 @@ export async function updateLaunchStatus(
     patch.error !== undefined,
     patch.error ?? null,
     patch.incrementAttempts ? 1 : 0,
+    patch.requiredLamports === undefined ? null : dec(patch.requiredLamports),
   ];
   let guard = "";
   if (from) {
@@ -125,7 +128,7 @@ export async function updateLaunchStatus(
   }
   const res = await q.query(
     `UPDATE launches SET status = $2,
-       received_lamports = COALESCE($3::numeric, received_lamports),
+       received_lamports = COALESCE($3::numeric, received_lamports), required_lamports = COALESCE($13::numeric, required_lamports),
        sender = COALESCE($4, sender), deposit_sig = COALESCE($5, deposit_sig), mint = COALESCE($6, mint),
        mint_secret = COALESCE($7, mint_secret), create_sig = COALESCE($8, create_sig), refund_sig = COALESCE($9, refund_sig),
        error = CASE WHEN $10::boolean THEN $11 ELSE error END,
@@ -157,6 +160,42 @@ export async function expireLaunches(q: Queryable, nowMs: number): Promise<Launc
     [ts(nowMs)],
   );
   return res.rows.map(mapLaunch);
+}
+
+export const FINISHED_LAUNCH_STATUSES: readonly LaunchStatusKind[] = ["live", "refunded", "expired", "failed"];
+
+/** A row's place in `listFinishedLaunches`, to go on right after it (updated_at at full precision, as text). */
+export interface LaunchCursor {
+  updatedAt: string;
+  id: string;
+}
+
+/**
+ * Finished launches touched (or expiring) after `sinceMs`, most recently updated first, one page of at
+ * most `limit` after `after`: the launcher watches them for late or leftover deposits. `cursors[i]` is
+ * where `rows[i]` is; `next` is the last one's when the page is full (null: no more pages).
+ */
+export async function listFinishedLaunches(
+  q: Queryable,
+  opts: { sinceMs: number; limit: number; after?: LaunchCursor | null },
+): Promise<{ rows: LaunchRow[]; cursors: LaunchCursor[]; next: LaunchCursor | null }> {
+  const params: unknown[] = [[...FINISHED_LAUNCH_STATUSES], ts(opts.sinceMs), opts.limit];
+  let keyset = "";
+  if (opts.after) {
+    params.push(opts.after.updatedAt, opts.after.id);
+    keyset = " AND (updated_at, id::text) < ($4::timestamptz, $5)";
+  }
+  const res = await q.query(
+    `SELECT *, updated_at::text AS cursor_updated_at FROM launches
+     WHERE status = ANY($1::text[]) AND (updated_at > $2 OR expires_at > $2)${keyset}
+     ORDER BY updated_at DESC, id::text DESC LIMIT $3`,
+    params,
+  );
+  const rows = res.rows.map(mapLaunch);
+  const cursors = res.rows.map((r) => ({ updatedAt: String(r.cursor_updated_at), id: String(r.id) }));
+  const last = cursors[cursors.length - 1];
+  const next = last && cursors.length === opts.limit ? last : null;
+  return { rows, cursors, next };
 }
 
 /** Admin view: launches in the given statuses (all when empty), newest first. */

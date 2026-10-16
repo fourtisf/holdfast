@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PUMP_MAX_NAME_BYTES, utf8Len } from "@holdfast/chain";
 import { TRIGGER_OPTIONS_BPS, type LaunchRequest } from "@holdfast/core";
 import { PublicKey } from "@solana/web3.js";
 import { base58Address } from "../validation.js";
@@ -40,7 +41,12 @@ const emptyToUndefined = (v: unknown) => (typeof v === "string" && v.trim() === 
 
 export const LaunchRequestSchema = z
   .object({
-    name: z.string().trim().min(1, "name is required").max(32, "name must be at most 32 characters"),
+    // pump.fun stores the name in at most 32 UTF-8 bytes: refused here, before a deposit address exists, not by the launcher after payment.
+    name: z
+      .string()
+      .trim()
+      .min(1, "name is required")
+      .refine((v) => utf8Len(v) <= PUMP_MAX_NAME_BYTES, `name must be at most ${PUMP_MAX_NAME_BYTES} bytes (a plain letter takes 1, an accented letter 2, an emoji 4)`),
     ticker: z
       .string()
       .trim()

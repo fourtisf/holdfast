@@ -50,7 +50,9 @@ Telegram channel (default https://t.me/MOATPAD).
 addresses that `init.sh` printed (`keys/*.address`). The Telegram bot (`notifier`: `/launch` from Telegram, the group
 buy bot, alerts and the $MOATPAD burn feed) is opt-in: create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN`,
 `NEXT_PUBLIC_TELEGRAM_BOT=<its username>` and `COMPOSE_PROFILES=telegram` in `.env` (optionally
-`NOTIFIER_BURN_CHAT_ID` for the burn channel, with the bot as an admin there), then `docker compose up -d --build`.
+`NOTIFIER_BURN_CHAT_ID` for the burn channel, with the bot as an admin there), then `docker compose up -d --build`
+(`init.sh` warns when `NEXT_PUBLIC_TELEGRAM_BOT` is set without the `telegram` profile: the site would link to a bot that
+is not running).
 Every bot user reaches the API from the notifier's address, so set `INTERNAL_API_TOKEN` too (`init.sh` does; for an
 older `.env`, add `INTERNAL_API_TOKEN=$(openssl rand -hex 32)` and recreate `api` and `notifier`): the bot's launch
 calls then carry it with the Telegram user's id and the API rate limits them per user, not all together per IP. Without

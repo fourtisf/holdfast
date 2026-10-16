@@ -83,6 +83,21 @@ if [ -n "$launcher" ] && grep -q "^LAUNCHER_ADDRESS=$" "$ENV_FILE"; then
   set_var LAUNCHER_ADDRESS "$launcher"
 fi
 
+# The last value of a variable in .env, without quotes or spaces.
+env_value() {
+  sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1 | tr -d "\"' "
+}
+
+# The website links to NEXT_PUBLIC_TELEGRAM_BOT (baked into the web build), but the bot itself (notifier) only
+# runs with the telegram compose profile: without it every Telegram link on the site opens a bot nobody answers.
+telegram_bot="$(env_value NEXT_PUBLIC_TELEGRAM_BOT)"
+profiles="$(printf '%s' "${COMPOSE_PROFILES:-$(env_value COMPOSE_PROFILES)}" | tr -d ' ')"
+if [ -n "$telegram_bot" ] && ! printf ',%s,' "$profiles" | grep -q ',telegram,'; then
+  echo "warning: NEXT_PUBLIC_TELEGRAM_BOT=$telegram_bot is set, but the telegram compose profile is not, so the bot will not run" >&2
+  echo "         and the website's Telegram links open a bot that does not answer. Add COMPOSE_PROFILES=telegram (and" >&2
+  echo "         TELEGRAM_BOT_TOKEN) to .env, or clear NEXT_PUBLIC_TELEGRAM_BOT and rebuild web." >&2
+fi
+
 cat <<NEXT
 
 Next:

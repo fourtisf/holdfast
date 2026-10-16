@@ -187,15 +187,39 @@ describe("happy path", () => {
     expect((await getCoin(db, mint.toBase58()))!.creator).toBe(creatorWallet);
   });
 
-  it("raises an under-quoted launch to its real cost before creating anything", async () => {
+  it("raises an under-quoted launch to its real cost before creating anything, on the row too", async () => {
     const { row, deposit } = await h.launch(defaultForm(), { requiredLamports: 15_000_000n });
+    const real = h.quote(defaultForm());
+    expect(real).toBeGreaterThan(15_000_000n);
     h.chain.fund(sender(), deposit.publicKey, 15_000_000n);
     await h.tick();
     const r = await h.row(row.id);
     expect(r.status).toBe("awaiting_deposit");
     expect(r.receivedLamports).toBe(15_000_000n);
+    // What the bot and the website show: the quote arrived, the rest of the real cost is missing.
+    expect(r.requiredLamports).toBe(real);
+    await h.flush();
+    expect(h.launchNotes(row.id)).toBe(1);
     expect(h.chain.landed).toHaveLength(0);
     expect(h.logs.some((l) => l.msg?.includes("quoted below its real cost"))).toBe(true);
+    // The rest arrives: it launches.
+    h.chain.fund(sender(), deposit.publicKey, real - 15_000_000n);
+    await h.tick();
+    expect((await h.row(row.id)).status).toBe("live");
+  });
+
+  it("refunds an under-quoted launch paid exactly its quote as short at expiry, not as late", async () => {
+    const { row, deposit } = await h.launch(defaultForm(), { requiredLamports: 15_000_000n, ttlMs: 60_000 });
+    h.chain.fund(sender(), deposit.publicKey, 15_000_000n);
+    await h.tick();
+    h.advance(61_000);
+    await h.tick();
+    const r = await h.row(row.id);
+    expect(r.status).toBe("refunded");
+    expect(r.error).toBeNull();
+    // The bot's refund text compares these: less than needed arrived, so it says the payment was short (with the amounts).
+    expect(r.receivedLamports).toBe(15_000_000n);
+    expect(r.requiredLamports).toBe(h.quote(defaultForm()));
   });
 });
 
@@ -273,6 +297,142 @@ describe("deposits", () => {
     expect(r.receivedLamports).toBe(required);
     expect(h.chain.landed.map((t) => t.kind)).toEqual(["refund"]);
     expect(await h.chain.getBalance(from)).toBe(SOL + required - txFee("refund", h.settings.priority));
+  });
+
+  it("the sweep checks every finished launch of the last 30 days, a page at a time, one balance read per page", async () => {
+    await h.close();
+    h = await Harness.create(db, { batchSize: 2 });
+    const launches = [];
+    for (let i = 0; i < 5; i++) launches.push(await h.launch(defaultForm(), { ttlMs: 60_000 }));
+    h.advance(61_000);
+    await h.tick(3); // two pending launches per tick
+    for (const l of launches) expect((await h.row(l.row.id)).status).toBe("expired");
+    expect(await h.worker.sweep()).toBe(true); // the rest of the sweep the ticks started
+    // Four days later (past the three-day window swept every time), someone pays the address of the oldest expired launch,
+    // which is on the last page of five finished launches read two at a time.
+    h.advance(4 * 24 * 3600_000);
+    const from = sender();
+    h.chain.fund(from, launches[0]!.deposit.publicKey, launches[0]!.required);
+    const reads = { batched: 0, single: 0 };
+    const [getBalances, getBalance] = [h.chain.getBalances.bind(h.chain), h.chain.getBalance.bind(h.chain)];
+    h.chain.getBalances = async (a) => (reads.batched++, getBalances(a));
+    h.chain.getBalance = async (a) => (reads.single++, getBalance(a));
+    await h.worker.sweep();
+    const r = await h.row(launches[0]!.row.id);
+    expect(r.status).toBe("refunded");
+    expect(await h.chain.getBalance(from)).toBe(SOL + launches[0]!.required - txFee("refund", h.settings.priority));
+    expect(reads.batched).toBe(3);
+    // Only the refund reads balances one by one (the deposit's and the sender's), not the sweep of five launches.
+    expect(reads.single).toBeLessThanOrEqual(2);
+    for (const l of launches.slice(1)) expect((await h.row(l.row.id)).status).toBe("expired");
+  });
+
+  it("a tick reads at most sweepPagesPerTick pages of the sweep and goes on from there in the next, so new deposits never wait behind it", async () => {
+    await h.close();
+    h = await Harness.create(db, { batchSize: 2, sweepIntervalMs: 60 * 60_000 });
+    const old = [];
+    for (let i = 0; i < 6; i++) old.push(await h.launch(defaultForm(), { ttlMs: 60_000 }));
+    h.advance(61_000);
+    await h.tick(3);
+    expect(await h.worker.sweep()).toBe(true);
+    // Someone pays the oldest abandoned address; at the same time a new launch is paid.
+    h.advance(60 * 60_000);
+    const late = sender();
+    h.chain.fund(late, old[0]!.deposit.publicKey, old[0]!.required);
+    const fresh = await h.launch();
+    h.chain.fund(sender(), fresh.deposit.publicKey, fresh.required);
+    const pages: number[] = [];
+    const getBalances = h.chain.getBalances.bind(h.chain);
+    h.chain.getBalances = async (a) => (pages.push(a.length), getBalances(a));
+    await h.tick();
+    // The new launch went live in the first tick; the sweep read one page of two of the seven finished launches (with it).
+    expect((await h.row(fresh.row.id)).status).toBe("live");
+    expect(pages).toEqual([1, 2]); // the pending deposit's balance, then one page of the sweep
+    expect((await h.row(old[0]!.row.id)).status).toBe("expired");
+    await h.tick(3);
+    // The oldest is on the last page: refunded by the fourth tick, and the sweep is over until the next interval.
+    expect((await h.row(old[0]!.row.id)).status).toBe("refunded");
+    expect(await h.chain.getBalance(late)).toBe(SOL + old[0]!.required - txFee("refund", h.settings.priority));
+    pages.length = 0;
+    await h.tick();
+    expect(pages).toEqual([]);
+  });
+
+  it("a tick handles at most sweepRefundsPerTick launches with SOL on their address and goes on right after them in the next, so dust cannot hold new launches back", async () => {
+    await h.close();
+    h = await Harness.create(db, { sweepIntervalMs: 60 * 60_000, sweepRefundsPerTick: 2 });
+    const old: Awaited<ReturnType<Harness["launch"]>>[] = [];
+    for (let i = 0; i < 5; i++) old.push(await h.launch(defaultForm(), { ttlMs: 60_000 }));
+    h.advance(61_000);
+    await h.tick();
+    expect(await h.worker.sweep()).toBe(true);
+    // Someone sends a rent-exempt amount to every abandoned address (all on one page); at the same time a new launch is paid.
+    h.advance(60 * 60_000);
+    const dust = 890_880n;
+    for (const l of old) h.chain.fund(sender(), l.deposit.publicKey, dust);
+    const fresh = await h.launch();
+    h.chain.fund(sender(), fresh.deposit.publicKey, fresh.required);
+    let lookups = 0;
+    const findFundingSender = h.chain.findFundingSender.bind(h.chain);
+    h.chain.findFundingSender = async (a) => (lookups++, findFundingSender(a));
+    const refunded = async () => (await Promise.all(old.map((l) => h.row(l.row.id)))).filter((r) => r.status === "refunded").length;
+    await h.tick();
+    expect((await h.row(fresh.row.id)).status).toBe("live");
+    expect(await refunded()).toBe(2);
+    await h.tick();
+    expect(await refunded()).toBe(4);
+    await h.tick();
+    expect(await refunded()).toBe(5);
+    // One funding lookup per dusted address (the new launch's own deposit included), never more than two a tick.
+    expect(lookups).toBe(6);
+    for (const l of old) expect(await h.chain.getBalance(l.deposit.publicKey)).toBe(0n);
+  });
+
+  it("a sweep page whose balances cannot be read is not read launch by launch: it is read again at the next tick", async () => {
+    const { row, deposit, required } = await h.launch(defaultForm(), { ttlMs: 60_000 });
+    h.advance(61_000);
+    await h.tick();
+    expect((await h.row(row.id)).status).toBe("expired");
+    const from = sender();
+    h.chain.fund(from, deposit.publicKey, required);
+    h.advance(h.settings.sweepIntervalMs);
+    // The RPC fails every batched read for a while.
+    const reads = { batched: 0, single: 0 };
+    const [getBalances, getBalance] = [h.chain.getBalances.bind(h.chain), h.chain.getBalance.bind(h.chain)];
+    let down = true;
+    h.chain.getBalances = async (a) => {
+      reads.batched++;
+      if (down) throw new Error("429 Too Many Requests");
+      return getBalances(a);
+    };
+    h.chain.getBalance = async (a) => (reads.single++, getBalance(a));
+    expect(await h.worker.sweep(1)).toBe(false);
+    expect(await h.worker.sweep(1)).toBe(false);
+    expect(reads).toEqual({ batched: 2, single: 0 });
+    expect((await h.row(row.id)).status).toBe("expired");
+    // Back: the same page is read again, and the late deposit is refunded.
+    down = false;
+    expect(await h.worker.sweep(1)).toBe(true);
+    expect((await h.row(row.id)).status).toBe("refunded");
+    expect(await h.chain.getBalance(from)).toBe(SOL + required - txFee("refund", h.settings.priority));
+  });
+
+  it("checks launches finished longer ago than sweepRecentMs only every sweepFullIntervalMs", async () => {
+    const { row, deposit, required } = await h.launch(defaultForm(), { ttlMs: 60_000 });
+    h.advance(61_000);
+    await h.tick(); // expired; the first sweep is a full one
+    expect((await h.row(row.id)).status).toBe("expired");
+    // Four days later (past the recent window; a full sweep runs first, nothing paid yet) the address is paid: the
+    // sweeps of the next ticks do not look that far back...
+    h.advance(4 * 24 * 3600_000);
+    await h.tick();
+    h.chain.fund(sender(), deposit.publicKey, required);
+    await h.tick(3);
+    expect((await h.row(row.id)).status).toBe("expired");
+    // ...the next full sweep, an hour after the last one, does.
+    h.advance(h.settings.sweepFullIntervalMs);
+    await h.tick();
+    expect((await h.row(row.id)).status).toBe("refunded");
   });
 
   it("refunds a full deposit made after expiry but seen before the expired sweep", async () => {

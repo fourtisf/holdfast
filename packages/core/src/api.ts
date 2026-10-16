@@ -395,6 +395,8 @@ export interface LaunchStatus {
   name?: string;
   ticker?: string;
   devBuySol?: number;
+  /** Who claims the coin's creator fees: the form's wallet, or null when it is the wallet that pays. */
+  creatorWallet?: string | null;
   /** Deposits after this are refunded (unix ms). */
   expiresAt?: number;
 }

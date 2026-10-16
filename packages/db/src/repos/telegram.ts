@@ -1,5 +1,6 @@
 import type { Queryable } from "../db.js";
 import { big, dec, ms, num, ts } from "../sql.js";
+import { mapLaunch, type LaunchRow } from "./launches.js";
 
 /** Telegram launch bot and group buy bot state (apps/notifier), and the $MOATPAD burns it announces. */
 
@@ -54,6 +55,16 @@ export async function chatForLaunch(q: Queryable, launchId: string): Promise<num
   return res.rows[0] ? num(res.rows[0].chat_id) : null;
 }
 
+/** The newest launch started from `chatId` (a second tap on the Launch button finds it). */
+export async function latestTgLaunch(q: Queryable, chatId: number): Promise<LaunchRow | null> {
+  // launch_id is text (no cast that a bad row could break): compare as text.
+  const res = await q.query(
+    "SELECT l.* FROM tg_launches t JOIN launches l ON l.id::text = t.launch_id WHERE t.chat_id = $1 ORDER BY t.created_at DESC, l.created_at DESC LIMIT 1",
+    [String(chatId)],
+  );
+  return res.rows[0] ? mapLaunch(res.rows[0]) : null;
+}
+
 /**
  * A basic group upgraded to a supergroup gets a new chat id: move everything the bot keeps for
  * `fromChatId` (buy bot, subscriptions, launch draft, launch progress, sent-message claims) to
@@ -84,18 +95,37 @@ export interface TgBuybot {
   mint: string;
   minLamports: bigint;
   createdAt: number;
+  /** Forum topic the alerts go to (where /buybot was sent); null: the General topic or a group without topics. */
+  threadId: number | null;
 }
 
 function mapBuybot(r: Record<string, unknown>): TgBuybot {
-  return { chatId: num(r.chat_id), mint: r.mint as string, minLamports: big(r.min_lamports), createdAt: ms(r.created_at) };
+  return {
+    chatId: num(r.chat_id),
+    mint: r.mint as string,
+    minLamports: big(r.min_lamports),
+    createdAt: ms(r.created_at),
+    threadId: r.thread_id === null || r.thread_id === undefined ? null : num(r.thread_id),
+  };
 }
 
 /** One coin per group: setting a new one replaces the old. */
-export async function setBuybot(q: Queryable, b: { chatId: number; mint: string; minLamports: bigint; createdBy: number | null; atMs?: number }): Promise<void> {
+export async function setBuybot(
+  q: Queryable,
+  b: { chatId: number; mint: string; minLamports: bigint; createdBy: number | null; atMs?: number; threadId?: number | null },
+): Promise<void> {
   await q.query(
-    `INSERT INTO tg_buybots (chat_id, mint, min_lamports, created_by, created_at) VALUES ($1, $2, $3, $4, COALESCE($5, now()))
-     ON CONFLICT (chat_id) DO UPDATE SET mint = EXCLUDED.mint, min_lamports = EXCLUDED.min_lamports, created_by = EXCLUDED.created_by, created_at = EXCLUDED.created_at`,
-    [String(b.chatId), b.mint, dec(b.minLamports), b.createdBy === null ? null : String(b.createdBy), b.atMs === undefined ? null : ts(b.atMs)],
+    `INSERT INTO tg_buybots (chat_id, mint, min_lamports, created_by, created_at, thread_id) VALUES ($1, $2, $3, $4, COALESCE($5, now()), $6)
+     ON CONFLICT (chat_id) DO UPDATE SET mint = EXCLUDED.mint, min_lamports = EXCLUDED.min_lamports, created_by = EXCLUDED.created_by,
+       created_at = EXCLUDED.created_at, thread_id = EXCLUDED.thread_id`,
+    [
+      String(b.chatId),
+      b.mint,
+      dec(b.minLamports),
+      b.createdBy === null ? null : String(b.createdBy),
+      b.atMs === undefined ? null : ts(b.atMs),
+      b.threadId === undefined || b.threadId === null ? null : String(b.threadId),
+    ],
   );
 }
 
@@ -107,6 +137,17 @@ export async function getBuybot(q: Queryable, chatId: number): Promise<TgBuybot 
 export async function removeBuybot(q: Queryable, chatId: number): Promise<boolean> {
   const res = await q.query("DELETE FROM tg_buybots WHERE chat_id = $1 RETURNING chat_id", [String(chatId)]);
   return res.rows.length > 0;
+}
+
+/**
+ * Forum topic `threadId` of `chatId` was deleted: the buy bot and subscriptions that posted there go to the
+ * General topic from now on. Returns how many rows moved.
+ */
+export async function clearTelegramThread(q: Queryable, chatId: number, threadId: number): Promise<number> {
+  const ids = [String(chatId), String(threadId)];
+  const buybots = await q.query("UPDATE tg_buybots SET thread_id = NULL WHERE chat_id = $1 AND thread_id = $2 RETURNING chat_id", ids);
+  const subs = await q.query("UPDATE tg_subscriptions SET thread_id = NULL WHERE chat_id = $1 AND thread_id = $2 RETURNING chat_id", ids);
+  return buybots.rows.length + subs.rows.length;
 }
 
 export async function buybotsForMint(q: Queryable, mint: string): Promise<TgBuybot[]> {

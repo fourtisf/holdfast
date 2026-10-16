@@ -8,6 +8,7 @@ import {
   applyVaultDelta,
   chatForLaunch,
   chatsWatchingCoin,
+  clearTelegramThread,
   chatsWatchingWallets,
   countCoins,
   countChatSubscriptions,
@@ -43,6 +44,8 @@ import {
   insertRound,
   insertTrade,
   isExcluded,
+  latestTgLaunch,
+  listFinishedLaunches,
   latestTradePrice,
   listCandles,
   listChatSubscriptions,
@@ -78,6 +81,7 @@ import {
   setBuybot,
   setLaunchSig,
   setTelegramOffset,
+  sentKeys,
   sumCarries,
   unmarkSent,
   updateCoinMetadata,
@@ -130,6 +134,7 @@ describe("coins", () => {
       imageUrl: "http://img",
       lastPrice: 2e-8,
       lastTradeAt: T0 + 1000,
+      lastTradeSlot: 100,
       graduated: true,
       ammPool: pool,
       graduatedAt: T0 + 2000,
@@ -429,14 +434,53 @@ describe("launches", () => {
     expect((await listPendingLaunches(db)).map((l) => l.id)).toEqual([id]);
 
     expect(await updateLaunchStatus(db, id, "creating", {}, ["deposit_received"])).toBeNull();
+    // Quoted below its real cost: the launcher stores what the deposit must really hold; other patches keep it.
+    const raised = await updateLaunchStatus(db, id, "awaiting_deposit", { receivedLamports: 15_000_000n, requiredLamports: 15_500_000n }, ["awaiting_deposit"]);
+    expect(raised).toMatchObject({ status: "awaiting_deposit", receivedLamports: 15_000_000n, requiredLamports: 15_500_000n });
     const received = await updateLaunchStatus(db, id, "deposit_received", { receivedLamports: 20_000_000n, sender: "S" }, ["awaiting_deposit"]);
-    expect(received).toMatchObject({ status: "deposit_received", receivedLamports: 20_000_000n, sender: "S" });
+    expect(received).toMatchObject({ status: "deposit_received", receivedLamports: 20_000_000n, requiredLamports: 15_500_000n, sender: "S" });
     const failed = await updateLaunchStatus(db, id, "failed", { error: "x", incrementAttempts: true });
     expect(failed).toMatchObject({ status: "failed", error: "x", attempts: 1 });
 
     const id2 = "6f1c5c34-8a32-4bb1-9d0e-6a7a0f8b2a12";
     await insertLaunch(db, { id: id2, form: { name: "C", ticker: "C", triggerBps: 1500 }, depositAddress: addr("dep2"), depositIndex: i2, requiredLamports: 1n, devBuyLamports: 0n, expiresAt: T0 });
     expect((await expireLaunches(db, T0 + 1)).map((l) => l.id)).toEqual([id2]);
+  });
+});
+
+describe("finished launches", () => {
+  it("pages through every finished launch since a cutoff, newest first, without skipping rows updated in the same millisecond", async () => {
+    const ids = Array.from({ length: 5 }, (_, i) => `6f1c5c34-8a32-4bb1-9d0e-6a7a0f8b2b1${i}`);
+    for (const [i, id] of ids.entries()) {
+      await insertLaunch(db, { id, form: { name: "D", ticker: "D", triggerBps: 2500 }, depositAddress: addr(`fin${i}`), depositIndex: await nextDepositIndex(db), requiredLamports: 1n, devBuyLamports: 0n, expiresAt: Date.now() - 50 * 24 * 3600_000 });
+    }
+    await updateLaunchStatus(db, ids[0]!, "expired");
+    await updateLaunchStatus(db, ids[1]!, "refunded");
+    await updateLaunchStatus(db, ids[2]!, "live");
+    await updateLaunchStatus(db, ids[3]!, "failed");
+    // ids[4] is still awaiting its deposit: not finished. Two rows share one updated_at down to the microsecond.
+    await db.query("UPDATE launches SET updated_at = now() - interval '4 days' WHERE id = ANY($1::uuid[])", [[ids[0], ids[1]]]);
+    await db.query("UPDATE launches SET updated_at = now() - interval '40 days' WHERE id = $1", [ids[3]]);
+
+    const seen: string[] = [];
+    let after = null;
+    let pages = 0;
+    do {
+      const page = await listFinishedLaunches(db, { sinceMs: Date.now() - 30 * 24 * 3600_000, limit: 1, after });
+      seen.push(...page.rows.map((l) => l.id));
+      after = page.next;
+      pages++;
+    } while (after && pages < 10);
+    expect(seen.slice(0, 1)).toEqual([ids[2]]);
+    expect(new Set(seen)).toEqual(new Set([ids[0], ids[1], ids[2]]));
+    expect(seen).toHaveLength(3);
+    const all = await listFinishedLaunches(db, { sinceMs: Date.now() - 30 * 24 * 3600_000, limit: 10 });
+    expect(all.rows.map((l) => l.status)).toEqual(["live", expect.any(String), expect.any(String)]);
+    expect(all.next).toBeNull();
+    // Each row's own cursor: going on after the first row gives the other two.
+    expect(all.cursors.map((c) => c.id)).toEqual(all.rows.map((l) => l.id));
+    const rest = await listFinishedLaunches(db, { sinceMs: Date.now() - 30 * 24 * 3600_000, limit: 10, after: all.cursors[0] });
+    expect(rest.rows.map((l) => l.id)).toEqual(all.rows.slice(1).map((l) => l.id));
   });
 });
 
@@ -469,13 +513,21 @@ describe("telegram notifier", () => {
     expect(await countChatSubscriptions(db, 1)).toBe(2);
     expect(await countSubscriptionsByKind(db)).toEqual({ wallet: 2, coin: 1 });
     expect(await listChatSubscriptions(db, 1)).toEqual([
-      { chatId: 1, kind: "wallet", target: w1, createdAt: T0 },
-      { chatId: 1, kind: "coin", target: m1, createdAt: T0 + 1 },
+      { chatId: 1, kind: "wallet", target: w1, createdAt: T0, threadId: null },
+      { chatId: 1, kind: "coin", target: m1, createdAt: T0 + 1, threadId: null },
     ]);
     expect(await chatsWatchingWallets(db, [w1, w2])).toEqual(
-      new Map([[w1, [{ chatId: -1001234567890, createdAt: T0 + 2 }, { chatId: 1, createdAt: T0 }]]]),
+      new Map([
+        [
+          w1,
+          [
+            { chatId: -1001234567890, createdAt: T0 + 2, threadId: null },
+            { chatId: 1, createdAt: T0, threadId: null },
+          ],
+        ],
+      ]),
     );
-    expect(await chatsWatchingCoin(db, m1)).toEqual([{ chatId: 1, createdAt: T0 + 1 }]);
+    expect(await chatsWatchingCoin(db, m1)).toEqual([{ chatId: 1, createdAt: T0 + 1, threadId: null }]);
     expect((await listWalletSubscriptions(db)).map((s) => s.chatId)).toEqual([-1001234567890, 1]);
 
     expect(await removeSubscription(db, 1, "coin", m1)).toBe(true);
@@ -495,11 +547,72 @@ describe("telegram notifier", () => {
     await unmarkSent(db, 1, "round:m:1:w");
     expect(await markSent(db, 1, "round:m:1:w")).toBe(true);
     expect(await markSent(db, 1, "weight:w:m:1.0:1")).toBe(true);
+    // A message claimed under an older key counts as claimed under the new one (and gets no second claim).
+    expect(await markSent(db, 1, "buy:s:0")).toBe(true);
+    expect(await markSent(db, 1, "buy:s:w", ["buy:s:0", "buy:s:1"])).toBe(false);
+    expect(await sentKeys(db, 1, ["buy:s:w"])).toEqual(new Set());
+    expect(await markSent(db, 2, "buy:s:w", ["buy:s:0", "buy:s:1"])).toBe(true);
+    expect(await markSent(db, 2, "buy:s:w", ["buy:s:0"])).toBe(false);
+    await unmarkSent(db, 1, "buy:s:0");
+    await unmarkSent(db, 2, "buy:s:w");
 
     expect(await pruneSent(db, Date.now() - 60_000)).toBe(0);
     expect(await pruneSent(db, Date.now() + 60_000, ["weight:"])).toBe(2);
     expect(await markSent(db, 1, "weight:w:m:1.0:1")).toBe(false);
     expect(await markSent(db, 1, "round:m:1:w")).toBe(true);
+  });
+
+  it("buy bots remember the forum topic they were set up in", async () => {
+    const m1 = addr("m1");
+    await setBuybot(db, { chatId: -1001, mint: m1, minLamports: 0n, createdBy: 9, atMs: T0 });
+    expect(await getBuybot(db, -1001)).toMatchObject({ mint: m1, threadId: null });
+    await setBuybot(db, { chatId: -1001, mint: m1, minLamports: 0n, createdBy: 9, atMs: T0, threadId: 77 });
+    expect(await getBuybot(db, -1001)).toMatchObject({ threadId: 77 });
+    await setBuybot(db, { chatId: -1001, mint: m1, minLamports: 0n, createdBy: 9, atMs: T0 });
+    expect(await getBuybot(db, -1001)).toMatchObject({ threadId: null });
+  });
+
+  it("subscriptions remember their forum topic: following again from another topic moves them, a deleted topic sends them to General", async () => {
+    const [m1, w1] = [addr("m1"), addr("w1")];
+    const G = -1002;
+    expect(await addSubscription(db, { chatId: G, kind: "coin", target: m1, atMs: T0, threadId: 77 })).toBe("added");
+    expect(await addSubscription(db, { chatId: G, kind: "wallet", target: w1, atMs: T0, threadId: 78 })).toBe("added");
+    expect(await chatsWatchingCoin(db, m1)).toEqual([{ chatId: G, createdAt: T0, threadId: 77 }]);
+    expect(await addSubscription(db, { chatId: G, kind: "coin", target: m1, threadId: 77 })).toBe("exists");
+    // Without a topic given (an older caller), nothing moves.
+    expect(await addSubscription(db, { chatId: G, kind: "coin", target: m1 })).toBe("exists");
+    expect(await addSubscription(db, { chatId: G, kind: "coin", target: m1, threadId: 80 }, { limit: 1 })).toBe("moved");
+    expect((await listWalletSubscriptions(db)).map((x) => x.threadId)).toEqual([78]);
+    await setBuybot(db, { chatId: G, mint: m1, minLamports: 0n, createdBy: 9, atMs: T0, threadId: 80 });
+    await setBuybot(db, { chatId: -1003, mint: m1, minLamports: 0n, createdBy: 9, atMs: T0, threadId: 80 });
+
+    expect(await clearTelegramThread(db, G, 80)).toBe(2);
+    expect(await getBuybot(db, G)).toMatchObject({ threadId: null });
+    expect(await getBuybot(db, -1003)).toMatchObject({ threadId: 80 });
+    expect((await listChatSubscriptions(db, G)).map((x) => [x.kind, x.threadId])).toEqual([
+      ["wallet", 78],
+      ["coin", null],
+    ]);
+    expect(await clearTelegramThread(db, G, 80)).toBe(0);
+  });
+
+  it("finds claimed keys, and the newest launch a chat started", async () => {
+    await markSent(db, 5, "weight:w:m:0.5:1");
+    await markSent(db, 5, "weight:w:m:1.0:2");
+    await markSent(db, 6, "weight:w:m:0.5:3");
+    expect(await sentKeys(db, 5, ["weight:w:m:0.5:1", "weight:w:m:0.5:3", "weight:w:m:1.0:2", "weight:w:m:0.5:1"])).toEqual(new Set(["weight:w:m:0.5:1", "weight:w:m:1.0:2"]));
+    expect(await sentKeys(db, 5, [])).toEqual(new Set());
+
+    expect(await latestTgLaunch(db, 42)).toBeNull();
+    const [first, second] = ["6f1c5c34-8a32-4bb1-9d0e-6a7a0f8b2a31", "6f1c5c34-8a32-4bb1-9d0e-6a7a0f8b2a32"];
+    for (const [i, id] of [first, second].entries()) {
+      await insertLaunch(db, { id, form: { name: "Dog", ticker: "DOG", triggerBps: 2500 }, depositAddress: addr(`tg${i}`), depositIndex: await nextDepositIndex(db), requiredLamports: 1n, devBuyLamports: 0n, expiresAt: T0 });
+    }
+    await addTgLaunch(db, first, 42);
+    await db.query("UPDATE tg_launches SET created_at = now() - interval '1 minute' WHERE launch_id = $1", [first]);
+    await addTgLaunch(db, second, 42);
+    expect((await latestTgLaunch(db, 42))?.id).toBe(second);
+    expect(await latestTgLaunch(db, 43)).toBeNull();
   });
 
   it("moves a migrated group's rows to its new chat id, keeping the new chat's rows on conflicts", async () => {
@@ -523,8 +636,8 @@ describe("telegram notifier", () => {
     expect(await getBuybot(db, OTHER)).toMatchObject({ mint: m2 });
     expect(await countChatSubscriptions(db, OLD)).toBe(0);
     expect(await listChatSubscriptions(db, NEW)).toEqual([
-      { chatId: NEW, kind: "wallet", target: w1, createdAt: T0 + 5 },
-      { chatId: NEW, kind: "coin", target: m1, createdAt: T0 },
+      { chatId: NEW, kind: "wallet", target: w1, createdAt: T0 + 5, threadId: null },
+      { chatId: NEW, kind: "coin", target: m1, createdAt: T0, threadId: null },
     ]);
     expect(await getDraft(db, OLD)).toBeNull();
     expect(await getDraft(db, NEW)).toMatchObject({ userId: 7, step: "ticker", data: { name: "Dog" } });

@@ -51,14 +51,22 @@ export interface Sent {
   chatId: number;
   text: string;
   buttons?: Keyboard;
+  /** Forum topic the message was posted in. */
+  threadId?: number;
 }
 
-/** Records sendMessage calls; getUpdates serves queued batches. `fail` makes sends to a chat throw. */
+/**
+ * Records sendMessage calls; getUpdates serves queued batches. `fail` makes sends to a chat throw, `failIn` sends to one
+ * of its topics; `floodWait` is what floodWaitMs says for a chat (a send there fails at once in the real client).
+ */
 export class FakeTelegram implements TelegramApi {
   readonly sent: Sent[] = [];
   readonly offsets: number[] = [];
   readonly batches: TgUpdate[][] = [];
   readonly fail = new Map<number, Error>();
+  /** `${chatId}:${threadId}`, or `${chatId}:general` for the General topic (a send without a topic). */
+  readonly failIn = new Map<string, Error>();
+  readonly floodWait = new Map<number, number>();
   readonly answered: string[] = [];
   /** Toast texts of answered callbacks, by callback id. */
   readonly toasts = new Map<string, string>();
@@ -80,9 +88,13 @@ export class FakeTelegram implements TelegramApi {
   }
 
   async sendMessage(chatId: number, html: string, opts?: SendOptions): Promise<void> {
-    const err = this.fail.get(chatId);
+    const err = this.fail.get(chatId) ?? this.failIn.get(`${chatId}:${opts?.threadId ?? "general"}`);
     if (err) throw err;
-    this.sent.push({ chatId, text: html, buttons: opts?.buttons });
+    this.sent.push({ chatId, text: html, buttons: opts?.buttons, ...(opts?.threadId !== undefined ? { threadId: opts.threadId } : {}) });
+  }
+
+  floodWaitMs(chatId: number): number {
+    return this.floodWait.get(chatId) ?? 0;
   }
 
   async answerCallback(callbackId: string, text?: string): Promise<void> {

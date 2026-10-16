@@ -26,6 +26,8 @@ export interface SentMessage {
   text: string;
   buttons: InlineButton[][];
   previewDisabled: boolean;
+  /** Forum topic it was posted in (message_thread_id); undefined: the General topic, or a chat without topics. */
+  threadId?: number;
   /** When the bot sent it (Date.now()). */
   at: number;
 }
@@ -146,6 +148,10 @@ export class FakeTelegram {
   readonly blocked = new Set<number>();
   /** The next send to these chats answers 429 with this retry_after (seconds), once. */
   readonly floodOnce = new Map<number, number>();
+  /** Closed forum topics, `${chatId}:${threadId}` (`${chatId}:general` for the General topic): sending there answers 400 TOPIC_CLOSED. */
+  readonly closedTopics = new Set<string>();
+  /** Deleted forum topics, `${chatId}:${threadId}`: sending there answers 400 "message thread not found". */
+  readonly deletedTopics = new Set<string>();
   /** File downloads served (paths). */
   readonly downloads: string[] = [];
   private readonly updates: TgUpdate[] = [];
@@ -358,6 +364,9 @@ export class FakeTelegram {
       this.floodOnce.delete(chatId);
       throw new BadRequest(429, `Too Many Requests: retry after ${flood}`, { retry_after: flood });
     }
+    const threadId = p.message_thread_id === undefined ? undefined : Number(p.message_thread_id);
+    if (threadId !== undefined && this.deletedTopics.has(`${chatId}:${threadId}`)) throw new BadRequest(400, "Bad Request: message thread not found");
+    if (this.closedTopics.has(`${chatId}:${threadId ?? "general"}`)) throw new BadRequest(400, "Bad Request: TOPIC_CLOSED");
     const text = typeof p.text === "string" ? p.text : "";
     if (LONE_SURROGATE.test(text)) throw new BadRequest(400, "Bad Request: strings must be encoded in UTF-8");
     if (p.parse_mode !== undefined && p.parse_mode !== "HTML") throw new BadRequest(400, `Bad Request: unsupported parse_mode ${String(p.parse_mode)}`);
@@ -368,7 +377,7 @@ export class FakeTelegram {
     const messageId = ++this.messageId;
     const previewDisabled = Boolean((p.link_preview_options as { is_disabled?: boolean } | undefined)?.is_disabled);
     // Recorded with the sequence number the call itself gets next.
-    this.messages.push({ seq: this.seq + 1, chatId, messageId, text, buttons, previewDisabled, at: Date.now() });
+    this.messages.push({ seq: this.seq + 1, chatId, messageId, text, buttons, previewDisabled, ...(threadId !== undefined ? { threadId } : {}), at: Date.now() });
     return { message_id: messageId, date: Math.floor(Date.now() / 1000), chat: { id: chatId, type: chatId > 0 ? "private" : "supergroup" }, text: plain };
   }
 }

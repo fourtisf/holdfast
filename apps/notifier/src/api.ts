@@ -34,16 +34,16 @@ export interface QuoteRequest {
   ticker?: string;
 }
 
-/** `userId`: the Telegram user a launch call is made for (the API's rate-limit key with INTERNAL_API_TOKEN). */
+/** `userId`: the Telegram user a call is made for (the API's rate-limit key with INTERNAL_API_TOKEN). */
 export interface MoatpadApi {
   quote(req: QuoteRequest, userId?: number): Promise<LaunchQuote>;
   createLaunch(req: LaunchRequest, userId?: number): Promise<LaunchResponse>;
   /** Returns the hosted image URL to put in the launch form. */
   uploadImage(bytes: Uint8Array, filename: string, userId?: number): Promise<string>;
   /** Null when no Moatpad coin has this mint. */
-  coin(mint: string): Promise<CoinDetail | null>;
-  trending(limit: number): Promise<CoinSummary[]>;
-  burns(): Promise<BurnStats>;
+  coin(mint: string, userId?: number): Promise<CoinDetail | null>;
+  trending(limit: number, userId?: number): Promise<CoinSummary[]>;
+  burns(userId?: number): Promise<BurnStats>;
 }
 
 type Fetch = typeof fetch;
@@ -107,21 +107,21 @@ export class HttpMoatpadApi implements MoatpadApi {
     return res.imageUrl;
   }
 
-  async coin(mint: string): Promise<CoinDetail | null> {
+  async coin(mint: string, userId?: number): Promise<CoinDetail | null> {
     try {
-      return await this.request<CoinDetail>(`/coins/${encodeURIComponent(mint)}`);
+      return await this.request<CoinDetail>(`/coins/${encodeURIComponent(mint)}`, {}, userId);
     } catch (err) {
       if (err instanceof ApiError && (err.status === 404 || err.status === 400)) return null;
       throw err;
     }
   }
 
-  async trending(limit: number): Promise<CoinSummary[]> {
-    const page = await this.request<Page<CoinSummary>>(`/coins?sort=trending&limit=${limit}`);
+  async trending(limit: number, userId?: number): Promise<CoinSummary[]> {
+    const page = await this.request<Page<CoinSummary>>(`/coins?sort=trending&limit=${limit}`, {}, userId);
     return page.items;
   }
 
-  burns(): Promise<BurnStats> {
-    return this.request("/burns");
+  burns(userId?: number): Promise<BurnStats> {
+    return this.request("/burns", {}, userId);
   }
 }

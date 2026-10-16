@@ -125,6 +125,8 @@ async function main(): Promise<number> {
     const pngBytes = png();
     const botUser = { id: 7000000001, is_bot: true, first_name: "Moatpad", username: BOT_USERNAME };
     const tg = new FakeTelegram({ token: BOT_TOKEN, bot: botUser, fileBytes: pngBytes });
+    // The burn channel has the bot as an admin (the notifier checks at startup that it may post there).
+    tg.members.set(`${BURN_CHAT_ID}:${botUser.id}`, "administrator");
     const tgUrl = await tg.start();
     cleanups.push(() => tg.stop());
     log(`fake Telegram Bot API at ${tgUrl}`);
@@ -180,6 +182,9 @@ async function main(): Promise<number> {
         SOLANA_CLUSTER: "devnet",
         NOTIFIER_OPS_PORT: String(opsPort),
         NOTIFIER_POLL_TIMEOUT_SECS: "10",
+        // The scenarios answer each bot message at once (a whole launch in well under a second): no reply budget per private chat.
+        NOTIFIER_PRIVATE_REPLIES_PER_MINUTE: "100000",
+        NOTIFIER_PRIVATE_REPLY_BURST: "100000",
         LOG_LEVEL: "info",
       },
     });

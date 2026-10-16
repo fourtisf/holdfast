@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { isLaunchId, normalizeSocial, normalizeTicker, parseDevBuy, requiredDepositSol, solanaPayUrl, toLaunchRequest, validateLaunch, type LaunchForm } from "./launch";
+import {
+  amountDue,
+  creatingStepsText,
+  creatorFeesRecipient,
+  isLaunchId,
+  lamportsToSolExact,
+  launchFailureText,
+  liveLaunchNotes,
+  nameBytes,
+  normalizeSocial,
+  normalizeTicker,
+  parseDevBuy,
+  partialDeposit,
+  requiredDepositSol,
+  solanaPayUrl,
+  toLaunchRequest,
+  validateLaunch,
+  type LaunchForm,
+} from "./launch";
 
 const base: LaunchForm = { name: "Kelp Lord", ticker: "KELP", description: "", imageUrl: null, x: "", telegram: "", website: "", triggerBps: 2500, devBuy: "", creatorWallet: "" };
 
@@ -51,6 +69,49 @@ describe("validateLaunch", () => {
   it("flags missing and invalid fields", () => {
     const errors = validateLaunch({ ...base, name: " ", ticker: "", website: "nope", devBuy: "500", creatorWallet: "not a wallet" });
     expect(Object.keys(errors).sort()).toEqual(["creatorWallet", "devBuy", "name", "ticker", "website"]);
+  });
+  it("measures the name in UTF-8 bytes, like pump.fun (the launcher refuses longer names after payment)", () => {
+    expect(nameBytes(" Crème Brûlée ")).toBe(15);
+    for (const name of ["Пушистый Кот Монета", "Crème Brûlée Pâtisserie Royale", "🐸 Frog King of the Pond 🐸👑"]) {
+      expect(validateLaunch({ ...base, name }).name, name).toBe("Too long for pump.fun: accented letters and emoji take 2 to 4 of the 32 allowed");
+    }
+    expect(validateLaunch({ ...base, name: "x".repeat(33) }).name).toBe("Max 32 characters");
+    expect(validateLaunch({ ...base, name: "Café Moat Dog Coin of the Ponds" }).name).toBeUndefined();
+  });
+});
+
+describe("launch progress", () => {
+  it("shows the reason of a refused form, never the launcher's internal error", () => {
+    expect(launchFailureText("invalid launch: name must be 1-32 bytes")).toBe("name must be 1-32 bytes");
+    expect(launchFailureText("launch failed after 6 attempts (atomic: simulation failed: ... [rejected 5ig])")).toBe("Something went wrong on our side while creating the coin.");
+    expect(launchFailureText(null)).toBeNull();
+  });
+  it("says when a live launch skipped its dev buy or still owes a refund", () => {
+    expect(liveLaunchNotes("dev buy skipped after 6 failed attempts; its SOL was refunded; refund pending: x")).toEqual([
+      "Your dev buy could not be made: its SOL goes back to the wallet that paid, and you hold no tokens from it.",
+      "Your leftover SOL is still being refunded to the wallet that paid.",
+    ]);
+    expect(liveLaunchNotes(null)).toEqual([]);
+  });
+  it("says who gets the creator fees on the payment screen (a payment link can be for someone else's launch)", () => {
+    const wallet = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+    expect(creatorFeesRecipient(wallet)).toBe(wallet);
+    expect(creatorFeesRecipient(null)).toBe("The wallet you pay from");
+  });
+  it("describes the creation without calling the vault the creator, and mentions a dev buy only when there is one", () => {
+    expect(creatingStepsText(0)).toBe("pump.fun creator fees routed to the coin's vault, floor locked.");
+    expect(creatingStepsText(0.5)).toBe("pump.fun creator fees routed to the coin's vault, floor locked, dev buy.");
+  });
+  it("tells how much of a short deposit is missing", () => {
+    expect(partialDeposit({ receivedLamports: "23450000", requiredLamports: "23456789" })).toEqual({ receivedLamports: 23_450_000n, missingLamports: 6_789n });
+    expect(partialDeposit({ receivedLamports: "0", requiredLamports: "23456789" })).toBeNull();
+    expect(partialDeposit({ receivedLamports: "23456789", requiredLamports: "23456789" })).toBeNull();
+    expect(lamportsToSolExact(6_789n)).toBe("0.000006789");
+    // The payment screen (QR code, wallet link, amount) asks only for what is missing, from the launch as it is now.
+    expect(amountDue("23456789", { receivedLamports: "23450000", requiredLamports: "23456789" })).toBe(6_789n);
+    expect(amountDue("23456789", { receivedLamports: "0", requiredLamports: "23500000" })).toBe(23_500_000n);
+    expect(amountDue("23456789", null)).toBe(23_456_789n);
+    expect(lamportsToSolExact(2_000_000_000n)).toBe("2");
   });
 });
 

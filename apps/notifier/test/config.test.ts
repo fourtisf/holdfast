@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { loadConfig, resolveDatabaseUrl } from "../src/config.js";
+import { botUsernameMismatch, loadConfig, resolveDatabaseUrl } from "../src/config.js";
 
 const BASE = { TELEGRAM_BOT_TOKEN: "123456:abc-DEF_ghi", DATABASE_URL: "postgres://h/db" };
 
@@ -19,6 +19,7 @@ describe("loadConfig", () => {
       opsPort: 9104,
       milestoneIntervalMs: 600_000,
       pollTimeoutSec: 30,
+      privateReplies: { perMinute: 20, burst: 3 },
       catchUpMs: 900_000,
       migrate: true,
       logLevel: "info",
@@ -45,10 +46,12 @@ describe("loadConfig", () => {
       SOLANA_CLUSTER: "devnet",
       NOTIFIER_OPS_PORT: "0",
       NOTIFIER_MILESTONE_INTERVAL_MS: "60000",
+      NOTIFIER_PRIVATE_REPLIES_PER_MINUTE: "30",
+      NOTIFIER_PRIVATE_REPLY_BURST: "5",
       NOTIFIER_MIGRATE: "0",
       LOG_LEVEL: "debug",
     });
-    expect(cfg).toMatchObject({ webUrl: "https://holdfast.example", cluster: "devnet", opsPort: 0, milestoneIntervalMs: 60_000, migrate: false, logLevel: "debug" });
+    expect(cfg).toMatchObject({ webUrl: "https://holdfast.example", cluster: "devnet", opsPort: 0, milestoneIntervalMs: 60_000, privateReplies: { perMinute: 30, burst: 5 }, migrate: false, logLevel: "debug" });
     expect(loadConfig({ ...BASE, PUBLIC_SITE_URL: "https://site.example" }).webUrl).toBe("https://site.example");
     expect(loadConfig({ ...BASE, SOLANA_CLUSTER: "mainnet" }).cluster).toBe("mainnet-beta");
   });
@@ -61,6 +64,30 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...BASE, WEB_URL: "holdfast.example" })).toThrow("WEB_URL must be an absolute http(s) URL");
     expect(() => loadConfig({ ...BASE, NOTIFIER_OPS_PORT: "70000" })).toThrow("NOTIFIER_OPS_PORT");
     expect(() => loadConfig({ ...BASE, NOTIFIER_MILESTONE_INTERVAL_MS: "10" })).toThrow("NOTIFIER_MILESTONE_INTERVAL_MS");
+    expect(() => loadConfig({ ...BASE, NOTIFIER_PRIVATE_REPLY_BURST: "0" })).toThrow("NOTIFIER_PRIVATE_REPLY_BURST must be an integer ≥ 1");
+  });
+
+  it("refuses a TELEGRAM_API_URL that is not an absolute http(s) URL (fetch would log the URL with the token)", () => {
+    expect(loadConfig({ ...BASE, TELEGRAM_API_URL: "http://127.0.0.1:8081/" }).telegramApiUrl).toBe("http://127.0.0.1:8081");
+    for (const bad of ["127.0.0.1:8081", "api.telegram.org", "ftp://bot.local", "localhost:8081"]) {
+      const err = (() => {
+        try {
+          loadConfig({ ...BASE, TELEGRAM_API_URL: bad });
+        } catch (e) {
+          return e as Error;
+        }
+        return null;
+      })();
+      expect(err?.message, bad).toBe("TELEGRAM_API_URL must be an absolute http(s) URL, like http://127.0.0.1:8081");
+      expect(err?.message).not.toContain(BASE.TELEGRAM_BOT_TOKEN);
+    }
+  });
+
+  it("notices when the website's NEXT_PUBLIC_TELEGRAM_BOT is another bot", () => {
+    expect(botUsernameMismatch({ NEXT_PUBLIC_TELEGRAM_BOT: "@MoatpadBot" }, "moatpadbot")).toBeNull();
+    expect(botUsernameMismatch({ NEXT_PUBLIC_TELEGRAM_BOT: "MoatpadTestBot" }, "MoatpadBot")).toBe("MoatpadTestBot");
+    expect(botUsernameMismatch({}, "MoatpadBot")).toBeNull();
+    expect(botUsernameMismatch({ NEXT_PUBLIC_TELEGRAM_BOT: "MoatpadBot" }, undefined)).toBeNull();
   });
 
   it("resolves relative PGlite directories against INIT_CWD", () => {

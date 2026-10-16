@@ -19,6 +19,7 @@ import {
   DESCRIPTION_MAX,
   launchFeeSol,
   NAME_MAX,
+  nameBytes,
   TICKER_MAX,
   normalizeTicker,
   parseDevBuy,
@@ -113,7 +114,7 @@ export function CreateView() {
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [launch, setLaunch] = useState<{ res: LaunchResponse; ticker: string; name: string; devBuySol: number } | null>(null);
+  const [launch, setLaunch] = useState<{ res: LaunchResponse; ticker: string; name: string; devBuySol: number; creatorWallet: string | null } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [walletLaunch, setWalletLaunch] = useState<{ state: WalletLaunchState; ticker: string; failedAt: number } | null>(null);
 
@@ -191,7 +192,7 @@ export function CreateView() {
     try {
       const req = toLaunchRequest(form);
       const res = await api.launch(req);
-      setLaunch({ res, ticker: req.ticker, name: req.name, devBuySol: req.devBuySol ?? 0 });
+      setLaunch({ res, ticker: req.ticker, name: req.name, devBuySol: req.devBuySol ?? 0, creatorWallet: req.creatorWallet ?? null });
       setModalOpen(true);
     } catch (err) {
       setSubmitError(errorMessage(err));
@@ -259,7 +260,7 @@ export function CreateView() {
                 error={shown.name}
                 aside={
                   <span className="text-[11px] text-faint tabular">
-                    {form.name.length}/{NAME_MAX}
+                    {nameBytes(form.name)}/{NAME_MAX}
                   </span>
                 }
               >
@@ -468,7 +469,15 @@ export function CreateView() {
         />
       ) : null}
       {launch && modalOpen ? (
-        <DepositModal launch={launch.res} ticker={launch.ticker} name={launch.name} devBuySol={launch.devBuySol} onClose={() => setModalOpen(false)} onRestart={restart} />
+        <DepositModal
+          launch={launch.res}
+          ticker={launch.ticker}
+          name={launch.name}
+          devBuySol={launch.devBuySol}
+          creatorWallet={launch.creatorWallet}
+          onClose={() => setModalOpen(false)}
+          onRestart={restart}
+        />
       ) : null}
     </div>
   );

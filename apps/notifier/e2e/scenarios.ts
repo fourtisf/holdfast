@@ -90,7 +90,7 @@ export async function runScenarios(ctx: Ctx, scenario: Scenario): Promise<void> 
     check(getMe?.ok, "getMe was not called (the bot needs its username for deep links)");
     const menus = tg.calls.filter((c) => c.method === "setMyCommands");
     const byScope = new Map(menus.map((c) => [(c.params.scope as { type: string }).type, (c.params.commands as { command: string }[]).map((x) => x.command)]));
-    equal(byScope.get("default"), ["launch", "coin", "trending", "burns", "buybot", "follow", "watch", "alerts", "cancel", "help"], "private (default scope) menu");
+    equal(byScope.get("default"), ["launch", "coin", "trending", "burns", "buybot", "follow", "unfollow", "watch", "unwatch", "alerts", "stop", "cancel", "help"], "private (default scope) menu");
     equal(byScope.get("all_group_chats"), ["buybot", "coin", "trending", "burns", "help"], "group menu");
     check(menus.every((c) => c.ok), "a setMyCommands call was refused");
     const poll = tg.calls.find((c) => c.method === "getUpdates");
@@ -110,6 +110,8 @@ export async function runScenarios(ctx: Ctx, scenario: Scenario): Promise<void> 
   await scenario("/help lists every command", async () => {
     const m = await alice.say("/help");
     contains(m, "/launch", "/coin <address>", "/trending", "/burns", "/buybot", "/follow <address>", "/watch <wallet>", "/alerts", "/cancel", "40% defends the floor", "10% buys and burns $MOATPAD");
+    // ... and how to turn alerts off again.
+    contains(m, "/unfollow <address>", "/unwatch <wallet>", "/stop - turn off every alert in this chat");
     equal(callbackData(m), ["m:launch"], "help buttons");
     check(urls(m).includes(ctx.webUrl), "no website button");
   });
@@ -521,14 +523,35 @@ export async function runScenarios(ctx: Ctx, scenario: Scenario): Promise<void> 
     };
     const r = one("$LIM1 launch was refunded");
     check(r.text.includes(`href="${solscanTxUrl(refundSig, "devnet")}"`), "no Solscan link to the refund");
+    contains(r, "The address expired before the launch could start, so the payment was refunded.");
     contains(one("$LIM2 launch expired"), "No payment arrived in time", "it will be refunded automatically");
     contains(one("Payment received"), "Creating $LIM3");
     const f = one("$LIM3 launch failed");
-    contains(f, "create: Blockhash not found");
-    lacks(f, "will be refunded");
+    // The launcher's own error text (transaction logs, signatures) never reaches the user.
+    contains(f, "Something went wrong on our side while creating the coin.");
+    lacks(f, "Blockhash", "will be refunded");
     contains(f, "refunded");
     check(f.text.includes(`href="${solscanTxUrl(failSig, "devnet")}"`), "no Solscan link to the refund of the failed launch");
     equal(msgs.length, 4, "messages to Carol");
+  });
+
+  const ivan = new Chat(ctx, { id: 5008, type: "private" }, user(5008, "Ivan"));
+
+  await scenario("launch progress: a short deposit says what is missing, then the refund says why", async () => {
+    const id = await insertBotLaunch(db, ivan.id, "SHORT"); // 0.02 SOL required
+    const since = tg.cursor;
+    // The user typed a rounded amount: the launcher records it and keeps waiting.
+    await transition(db, id, "awaiting_deposit", { receivedLamports: 19_990_000n }, ["awaiting_deposit"]);
+    const short = await tg.waitForMessage(since, (m) => m.chatId === ivan.id, 15_000, "the short-deposit message");
+    contains(short, "Only part of your $SHORT payment arrived", "Received 0.01999 of the 0.02 SOL needed.", "Send the missing 0.00001 SOL to the same address within");
+    equal(urls(short), [`${ctx.webUrl}/pay/${id}`], "pay button");
+    // Nothing more came before the deadline: refunding (no error), then refunded.
+    await transition(db, id, "refunding", { sender: address("payer:ivan"), depositSig: sig("deposit:short") }, ["awaiting_deposit"]);
+    await transition(db, id, "refunded", { refundSig: sig("refund:short") }, ["refunding"]);
+    await eventsSettled(ctx);
+    const msgs = tg.messagesSince(since, ivan.id);
+    equal(msgs.length, 2, "messages to Ivan");
+    contains(msgs[1], "Your $SHORT launch was refunded.", "Received 0.01999 of the 0.02 SOL needed, and the full amount did not arrive before the address expired.");
   });
 
   // ---- groups and the buy bot ------------------------------------------------------------------
@@ -960,6 +983,61 @@ export async function runScenarios(ctx: Ctx, scenario: Scenario): Promise<void> 
     tg.blocked.delete(frank.id);
   });
 
+  await scenario("forum topics: a closed General keeps the topic buy bot; a deleted topic falls back to General", async () => {
+    const g7 = new Chat(ctx, { id: -1001000000507, type: "supergroup", title: "Forum Group" }, ADMIN);
+    tg.members.set(`${g7.id}:${ADMIN.id}`, "administrator");
+    const on = await g7.send({ text: `/buybot ${buyCoin.mint}`, message_thread_id: 77, is_topic_message: true });
+    contains(on, `Buy bot on for $${buyCoin.ticker}`, "Every buy will be posted in this topic.");
+    equal(on.threadId, 77, "topic of the /buybot reply");
+    contains(await g7.say(`/follow ${alertCoin.mint}`), `Alerts on for $${alertCoin.ticker}`); // from the General topic
+    // The group closes its General topic (overnight, say): the follower alert there is refused, nothing is removed.
+    tg.closedTopics.add(`${g7.id}:general`);
+    ctx.expectedRefusals.push((c) => Number(c.params.chat_id) === g7.id && c.errorCode === 400 && /TOPIC_CLOSED/.test(c.description ?? ""));
+    let since = tg.cursor;
+    await runPayoutRound(db, alertCoin, { roundId: 4n, potSol: 400_000_000n, potTokens: 0n, holders: [{ wallet: address("wallet:holder-4"), amount: 30_000_000_000_000n }], now: Date.now() });
+    await eventsSettled(ctx);
+    const roundTries = tg.callsSince(since, "sendMessage").filter((c) => Number(c.params.chat_id) === g7.id);
+    equal(roundTries.map((c) => c.errorCode ?? 200), [400], "round summary sends to the closed General topic");
+    equal((await getBuybot(db, g7.id))?.threadId, 77, "buy bot topic after the refusal");
+    const subs = await db.query("SELECT 1 FROM tg_subscriptions WHERE chat_id = $1", [String(g7.id)]);
+    equal(subs.rows.length, 1, "the group's subscriptions after the refusal");
+    // Buys still go to the buy bot's topic.
+    since = tg.cursor;
+    const first = buyTrade("buy:forum-1", 0.2);
+    await indexTrade(db, buyCoin, first);
+    const alert = await tg.waitForMessage(since, (m) => m.chatId === g7.id && m.text.includes(first.sig), 15_000, "the buy alert in the buy bot's topic");
+    equal(alert.threadId, 77, "topic of the buy alert");
+    // General opens again; the buy bot's topic is deleted: its alerts go to General from then on.
+    tg.closedTopics.delete(`${g7.id}:general`);
+    tg.deletedTopics.add(`${g7.id}:77`);
+    ctx.expectedRefusals.push((c) => Number(c.params.chat_id) === g7.id && c.errorCode === 400 && /message thread not found/.test(c.description ?? ""));
+    since = tg.cursor;
+    const [second, third] = [buyTrade("buy:forum-2", 0.3), buyTrade("buy:forum-3", 0.4)];
+    await indexTrade(db, buyCoin, second);
+    await indexTrade(db, buyCoin, third);
+    await tg.waitForMessage(since, (m) => m.chatId === g7.id && m.text.includes(third.sig), 15_000, "the second buy alert after the topic was deleted");
+    await eventsSettled(ctx);
+    const buyTries = tg.callsSince(since, "sendMessage").filter((c) => Number(c.params.chat_id) === g7.id && [second.sig, third.sig].some((x) => String(c.params.text).includes(x)));
+    equal(
+      buyTries.map((c) => [c.errorCode ?? 200, c.params.message_thread_id ?? "general"]),
+      [
+        [400, 77],
+        [200, "general"],
+        [200, "general"],
+      ],
+      "buy alert sends after the topic was deleted",
+    );
+    equal((await getBuybot(db, g7.id))?.threadId, null, "buy bot topic after the topic was deleted");
+  });
+
+  await scenario("group: other bots' commands (/price) get no answer and use up none of the group's replies", async () => {
+    const g8 = new Chat(ctx, { id: -1001000000508, type: "supergroup", title: "Many Bots" }, MEMBER);
+    for (let i = 0; i < 25; i++) tg.push({ message: { message_id: 91_000 + i, date: Math.floor(Date.now() / 1000), chat: g8.chat, from: MEMBER, text: i % 2 ? "/price" : "/chart" } } as never);
+    await updatesSettled(ctx);
+    contains(await g8.say("/help"), "Moatpad Bot");
+    equal(tg.messagesSince(0, g8.id).length, 1, "messages in the group");
+  });
+
   await scenario("Telegram flood limit (429 retry_after) is waited out, the post arrives once", async () => {
     tg.floodOnce.set(ctx.burnChatId, 1);
     ctx.expectedRefusals.push((c) => Number(c.params.chat_id) === ctx.burnChatId && c.errorCode === 429);
@@ -972,6 +1050,21 @@ export async function runScenarios(ctx: Ctx, scenario: Scenario): Promise<void> 
     const tries = tg.callsSince(since, "sendMessage").filter((c) => Number(c.params.chat_id) === ctx.burnChatId);
     equal(tries.map((c) => c.errorCode ?? 200), [429, 200], "sends to the burn channel");
     equal(tg.messagesSince(since, ctx.burnChatId).length, 1, "burn posts");
+  });
+
+  let floodedBurnSig = "";
+
+  await scenario("a long flood wait (429 retry_after 6 s) is not waited out: the event queue goes on at once", async () => {
+    tg.floodOnce.set(ctx.burnChatId, 6);
+    ctx.expectedRefusals.push((c) => Number(c.params.chat_id) === ctx.burnChatId && c.errorCode === 429);
+    const since = tg.cursor;
+    floodedBurnSig = sig("burn:long-flood");
+    const t0 = Date.now();
+    await indexBurn(db, buyCoin, { sig: floodedBurnSig, lamports: 10_000_000n, holdBurned: 125_000_000_000n, ts: Date.now() });
+    await eventsSettled(ctx);
+    check(Date.now() - t0 < 5_000, `the event queue waited ${Date.now() - t0} ms behind the flooded chat`);
+    const tries = tg.callsSince(since, "sendMessage").filter((c) => Number(c.params.chat_id) === ctx.burnChatId);
+    equal(tries.map((c) => c.errorCode ?? 200), [429], "sends to the burn channel so far");
   });
 
   await scenario("buy limit: the first alert after the minute counts the buys that were dropped", async () => {
@@ -989,6 +1082,14 @@ export async function runScenarios(ctx: Ctx, scenario: Scenario): Promise<void> 
     check(m.text.includes(t.sig), "the alert is not for the new buy");
     await eventsSettled(ctx);
     equal(tg.messagesSince(since, g6.id).length, 1, "alerts for the new buy");
+  });
+
+  await scenario("the flooded burn post arrives once, with the next retry of failed deliveries", async () => {
+    check(floodedBurnSig, "no flooded burn from the flood-wait scenario");
+    const m = await tg.waitForMessage(0, (x) => x.chatId === ctx.burnChatId && x.text.includes(floodedBurnSig), 75_000, "the retried burn post");
+    contains(m, "125K $MOATPAD");
+    await eventsSettled(ctx);
+    equal(tg.messages.filter((x) => x.chatId === ctx.burnChatId && x.text.includes(floodedBurnSig)).length, 1, "posts of the flooded burn");
   });
 
   // ---- hygiene ---------------------------------------------------------------------------------

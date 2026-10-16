@@ -42,6 +42,7 @@ export function PayView({ launchId }: { launchId: string }) {
       ticker={ticker}
       name={data.name}
       devBuySol={data.devBuySol ?? 0}
+      creatorWallet={data.creatorWallet}
       initialStatus={data}
       onClose={() => router.push("/")}
       onRestart={() => router.push("/create")}

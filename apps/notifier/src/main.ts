@@ -3,9 +3,9 @@ import { pino } from "pino";
 import { connectDb, countSubscriptionsByKind, migrate, pruneSent } from "@holdfast/db";
 
 import { HttpMoatpadApi } from "./api.js";
-import { Bot, SerialQueue } from "./bot.js";
+import { Bot, drainForShutdown, SerialQueue, SHUTDOWN_DEADLINE_MS } from "./bot.js";
 import { GROUP_COMMANDS, PRIVATE_COMMANDS } from "./commands.js";
-import { loadConfig } from "./config.js";
+import { botUsernameMismatch, loadConfig } from "./config.js";
 import { LaunchFlow } from "./launch.js";
 import { listenForEvents, MAX_EVENT_AGE_MS, Notifier } from "./events.js";
 import { NotifierMonitor } from "./monitor.js";
@@ -15,6 +15,8 @@ import { TelegramClient } from "./telegram.js";
 /** Delivered-message claims are kept this long (milestone claims forever). */
 const SENT_RETENTION_MS = Math.max(30 * 24 * 3600_000, 2 * MAX_EVENT_AGE_MS);
 const PRUNE_EVERY_MS = 24 * 3600_000;
+/** How often deliveries that failed (a Telegram or network blip, a flood wait) are retried. */
+const RETRY_EVERY_MS = 60_000;
 
 const config = loadConfig();
 const log = pino({ level: config.logLevel, base: { service: "notifier" } });
@@ -34,10 +36,20 @@ if (!me) {
 
 const monitor = new NotifierMonitor(log, { maxPollAgeMs: (config.pollTimeoutSec + 60) * 1000 });
 const ops = await monitor.start(config.opsPort);
+
+// The website's Telegram links (NEXT_PUBLIC_TELEGRAM_BOT, baked into the web build) must open this bot.
+const expectedBot = botUsernameMismatch(process.env, me.username);
+if (expectedBot) log.warn({ expected: expectedBot, actual: me.username }, "NEXT_PUBLIC_TELEGRAM_BOT is not this bot: the website's Telegram links open another one (fix .env, then rebuild web)");
+
+// The burn feed only works where the bot may post: check it now rather than lose every burn quietly.
+if (config.burnChatId !== null) await monitor.checkBurnChat(tg, config.burnChatId, me.id);
+
+// Aborted on SIGINT/SIGTERM: polling stops, and no new delivery starts.
+const abort = new AbortController();
 const links = { webUrl: config.webUrl, cluster: config.cluster, botUsername: me.username ?? null, moatCa: config.moatCa };
 const api = new HttpMoatpadApi(config.apiUrl, { internalToken: config.internalApiToken });
-const launch = new LaunchFlow({ db, api, tg, links, now: Date.now });
-const outbox = new Outbox(db, tg, { metrics: monitor, log });
+const launch = new LaunchFlow({ db, api, tg, links, now: Date.now, log });
+const outbox = new Outbox(db, tg, { metrics: monitor, log, operatorChats: config.burnChatId === null ? [] : [config.burnChatId], signal: abort.signal });
 const notifier = new Notifier({ db, outbox, links, burnChatId: config.burnChatId, log, metrics: monitor });
 const bot = new Bot({
   db,
@@ -45,6 +57,7 @@ const bot = new Bot({
   commands: { db, links, now: Date.now, api, launch, tg },
   botUsername: me.username ?? null,
   pollTimeoutSec: config.pollTimeoutSec,
+  privateReplies: config.privateReplies,
   metrics: monitor,
   log,
 });
@@ -63,6 +76,22 @@ const catchUp = (reason: "startup" | "reconnect") =>
     const sent = await notifier.catchUp(Date.now() - config.catchUpMs);
     if (sent > 0) log.info({ sent, windowMs: config.catchUpMs, reason }, "caught up on missed events");
   });
+// A delivery that a later attempt may get through (no connection, a flood wait, a 5xx) released its claim: once a minute, make
+// those deliveries again (and only those), a batch at a time.
+// One retry at a time: during an outage a run can take longer than a minute, and runs must not pile up in the queue.
+let retryQueued = false;
+const retry = () => {
+  if (retryQueued) return;
+  retryQueued = true;
+  queue.push(async () => {
+    try {
+      const sent = await notifier.retryFailed();
+      if (sent > 0) log.info({ sent }, "delivered messages that failed before");
+    } finally {
+      retryQueued = false;
+    }
+  });
+};
 const unlisten = await listenForEvents(db, (n) => queue.push(() => notifier.handle(n)), {
   onReconnect: () => {
     log.warn("database notifications are back after a dropped connection; catching up");
@@ -85,9 +114,8 @@ const prune = () =>
 if (config.catchUpMs > 0) catchUp("startup");
 sweep();
 prune();
-const timers = [setInterval(sweep, config.milestoneIntervalMs), setInterval(prune, PRUNE_EVERY_MS)];
+const timers = [setInterval(sweep, config.milestoneIntervalMs), setInterval(prune, PRUNE_EVERY_MS), setInterval(retry, RETRY_EVERY_MS)];
 
-const abort = new AbortController();
 const polling = bot.run(abort.signal);
 log.info(
   {
@@ -112,8 +140,8 @@ async function shutdown(signal: string) {
   for (const t of timers) clearInterval(t);
   abort.abort();
   await unlisten().catch(() => {});
-  await polling;
-  await queue.idle();
+  // Queued work not started yet is dropped (the next start's catch-up has it); the rest gets a deadline under docker's grace period.
+  if (!(await drainForShutdown(polling, queue))) log.warn({ deadlineMs: SHUTDOWN_DEADLINE_MS }, "shutdown: work still running at the deadline; exiting anyway");
   await ops?.close();
   await db.close();
   process.exit(0);

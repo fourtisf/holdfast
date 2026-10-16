@@ -3,7 +3,7 @@ import type { BurnStats, CoinDetail, CoinSummary } from "@holdfast/core";
 import { countChatSubscriptions, getBuybot, listChatSubscriptions, type Db } from "@holdfast/db";
 
 import type { MoatpadApi } from "../src/api.js";
-import { GROUP_COMMANDS, handleText, isValidAddress, MAX_SUBSCRIPTIONS_PER_CHAT, parseCommand, PRIVATE_COMMANDS, runCommand, type CommandContext } from "../src/commands.js";
+import { COMMAND_NAMES, GROUP_COMMANDS, handleText, isValidAddress, MAX_SUBSCRIPTIONS_PER_CHAT, parseCommand, PRIVATE_COMMANDS, runCommand, type CommandContext } from "../src/commands.js";
 import type { BotReply } from "../src/messages.js";
 import { addr, FakeTelegram, freshDb, LINKS, NOW, resetDb, seedCoin, wellFormed } from "./helpers.js";
 
@@ -15,6 +15,8 @@ let tg: FakeTelegram;
 class FakeApi implements MoatpadApi {
   coins = new Map<string, CoinDetail>();
   burnStats: BurnStats = { burns: 0, solSpent: 0, tokensBurned: 0, lastAt: null, recent: [] };
+  /** The Telegram user of every read, for the API's per-user rate limits. */
+  readers: (number | undefined)[] = [];
   async quote() {
     return { launchFeeSol: 0.015, devBuySol: 0, devBuyExtraSol: 0, requiredSol: 0.015, requiredLamports: "15000000", specFeeSol: 0.015, exceedsSpecFee: false };
   }
@@ -24,13 +26,16 @@ class FakeApi implements MoatpadApi {
   async uploadImage(): Promise<string> {
     return "https://img.example/x.png";
   }
-  async coin(mint: string) {
+  async coin(mint: string, userId?: number) {
+    this.readers.push(userId);
     return this.coins.get(mint) ?? null;
   }
-  async trending(limit: number): Promise<CoinSummary[]> {
+  async trending(limit: number, userId?: number): Promise<CoinSummary[]> {
+    this.readers.push(userId);
     return [...this.coins.values()].slice(0, limit);
   }
-  async burns() {
+  async burns(userId?: number) {
+    this.readers.push(userId);
     return this.burnStats;
   }
 }
@@ -125,7 +130,7 @@ describe("isValidAddress", () => {
 
 describe("menus, /start and /help", () => {
   it("has short English command menus for private chats and groups", () => {
-    expect(PRIVATE_COMMANDS.map((c) => c.command)).toEqual(["launch", "coin", "trending", "burns", "buybot", "follow", "watch", "alerts", "cancel", "help"]);
+    expect(PRIVATE_COMMANDS.map((c) => c.command)).toEqual(["launch", "coin", "trending", "burns", "buybot", "follow", "unfollow", "watch", "unwatch", "alerts", "stop", "cancel", "help"]);
     expect(GROUP_COMMANDS.map((c) => c.command)).toEqual(["buybot", "coin", "trending", "burns", "help"]);
     for (const c of [...PRIVATE_COMMANDS, ...GROUP_COMMANDS]) expect(c.description.length).toBeLessThanOrEqual(40);
   });
@@ -136,6 +141,8 @@ describe("menus, /start and /help", () => {
     expect(buttons(start)).toEqual(["m:launch", "m:trending", "m:burns", "m:help", LINKS.webUrl]);
     const help = await say("/help");
     for (const c of ["/launch", "/coin", "/trending", "/burns", "/buybot", "/follow", "/watch", "/alerts", "/cancel"]) expect(help).toContain(c);
+    // ... and how to turn alerts off again.
+    for (const c of ["/unfollow &lt;address&gt;", "/unwatch &lt;wallet&gt;", "/stop - turn off every alert in this chat"]) expect(help).toContain(c);
     expect(help).toContain("every 2 minutes");
     expect(help).toContain("10% buys and burns $MOATPAD");
   });
@@ -186,6 +193,14 @@ describe("/coin, /trending and /burns", () => {
     expect(b.html).toContain("2.5M $MOATPAD by the $HOUND vault");
     expect(buttons(b)).toEqual([`https://pump.fun/coin/${LINKS.moatCa}`]);
   });
+
+  it("reads are made for the Telegram user who asked, so the API rate limits each user on their own", async () => {
+    const coin = await seedCoin(db, "hound");
+    await say(`/coin ${coin.mint}`, PRIVATE, 11);
+    await say("/trending", PRIVATE, 12);
+    await say("/burns", GROUP, 13);
+    expect(api.readers).toEqual([11, 12, 13]);
+  });
 });
 
 describe("/buybot", () => {
@@ -209,6 +224,16 @@ describe("/buybot", () => {
     expect(await getBuybot(db, GROUP.id)).toBeNull();
   });
 
+  it("in a forum supergroup, posts to the topic /buybot was sent in", async () => {
+    const coin = await seedCoin(db, "hound");
+    tg.members.set(`${GROUP.id}:9`, "administrator");
+    const inTopic = await handleText(ctx, { chat: GROUP, from: { id: 9 }, threadId: 77 }, `/buybot ${coin.mint}`, "HoldfastBot");
+    expect(inTopic?.reply.html).toContain("Every buy will be posted in this topic.");
+    expect(await getBuybot(db, GROUP.id)).toMatchObject({ mint: coin.mint, threadId: 77 });
+    expect(await say(`/buybot ${coin.mint}`, GROUP, 9)).toContain("Every buy will be posted here.");
+    expect(await getBuybot(db, GROUP.id)).toMatchObject({ threadId: null });
+  });
+
   it("turns on from the add-to-group deep link (/start buybot_<mint>) and for anonymous admins", async () => {
     const coin = await seedCoin(db, "hound");
     tg.members.set(`${GROUP.id}:9`, "creator");
@@ -223,11 +248,33 @@ describe("/watch, /follow and the alert list", () => {
     const wallet = addr("alice");
     expect(await say("/watch")).toBe("Usage: /watch &lt;wallet address&gt;");
     expect(await say("/watch <script>")).toBe("<code>&lt;script&gt;</code> is not a valid Solana address.\nUsage: /watch &lt;wallet address&gt;");
-    expect(await say(`/watch ${wallet}`)).toContain(`👀 Watching wallet <code>${wallet}</code>.`);
+    const watching = await say(`/watch ${wallet}`);
+    expect(watching).toContain(`👀 Watching wallet <code>${wallet}</code>.`);
+    expect(watching).toContain(`Stop: <code>/unwatch ${wallet}</code>`);
     expect(await say(`/watch ${wallet}`)).toBe(`Already watching <code>${wallet}</code>.`);
-    expect(await listChatSubscriptions(db, PRIVATE.id)).toEqual([{ chatId: 42, kind: "wallet", target: wallet, createdAt: NOW }]);
+    expect(await listChatSubscriptions(db, PRIVATE.id)).toEqual([{ chatId: 42, kind: "wallet", target: wallet, createdAt: NOW, threadId: null }]);
     expect(await say(`/unwatch ${wallet}`)).toBe(`Stopped watching <code>${wallet}</code>.`);
     expect(await countChatSubscriptions(db, PRIVATE.id)).toBe(0);
+  });
+
+  it("in a forum supergroup, alerts go to the topic /follow or /watch was sent in; sent again elsewhere, they move", async () => {
+    const coin = await seedCoin(db, "hound");
+    const wallet = addr("alice");
+    tg.members.set(`${GROUP.id}:9`, "administrator");
+    const inTopic = async (text: string, threadId?: number) => (await handleText(ctx, { chat: GROUP, from: { id: 9 }, threadId }, text, "HoldfastBot"))?.reply.html;
+    expect(await inTopic(`/follow ${coin.mint}`, 77)).toContain("🔔 Alerts on for $HOUND");
+    expect(await inTopic(`/watch ${wallet}`, 78)).toContain("👀 Watching wallet");
+    expect((await listChatSubscriptions(db, GROUP.id)).map((x) => [x.kind, x.threadId])).toEqual([
+      ["wallet", 78],
+      ["coin", 77],
+    ]);
+    expect(await inTopic(`/follow ${coin.mint}`, 77)).toBe(`Alerts are already on for <code>${coin.mint}</code>.`);
+    expect(await inTopic(`/follow ${coin.mint}`, 80)).toBe(`Alerts for <code>${coin.mint}</code> now go to this topic.`);
+    expect(await inTopic(`/watch ${wallet}`)).toBe(`Alerts for wallet <code>${wallet}</code> now go to the General topic.`);
+    expect((await listChatSubscriptions(db, GROUP.id)).map((x) => [x.kind, x.threadId])).toEqual([
+      ["wallet", null],
+      ["coin", 80],
+    ]);
   });
 
   it("points a coin address to /follow", async () => {
@@ -240,6 +287,7 @@ describe("/watch, /follow and the alert list", () => {
     expect(await say(`/follow ${addr("nope")}`)).toBe(`No Moatpad coin has the address <code>${addr("nope")}</code>.`);
     const reply = await say(`/follow ${coin.mint}`);
     expect(reply).toContain("🔔 Alerts on for $HOUND (Hound &amp; &lt;Friends&gt;).");
+    expect(reply).toContain(`Turn off: <code>/unfollow ${coin.mint}</code>`);
     expect(await say(`/follow ${coin.mint}`)).toBe(`Alerts are already on for <code>${coin.mint}</code>.`);
     expect(await say(`/uncoin ${coin.mint}`)).toBe(`Alerts off for <code>${coin.mint}</code>.`);
     expect(await say(`/unfollow ${coin.mint}`)).toBe(`This chat had no alerts for <code>${coin.mint}</code>.`);
@@ -259,7 +307,18 @@ describe("/watch, /follow and the alert list", () => {
     await say(`/watch ${b}`);
     await say(`/watch ${a}`, { id: 7, type: "private" });
     expect(await say("/list")).toBe(
-      ["<b>This chat has 3 of 20 alerts</b>", "", "Wallets:", `• <code>${a}</code>`, `• <code>${b}</code>`, "", "Coins:", `• $HOUND <code>${coin.mint}</code>`].join("\n"),
+      [
+        "<b>This chat has 3 of 20 alerts</b>",
+        "",
+        "Wallets:",
+        `• <code>${a}</code>`,
+        `• <code>${b}</code>`,
+        "",
+        "Coins:",
+        `• $HOUND <code>${coin.mint}</code>`,
+        "",
+        "<i>Turn off: /unfollow &lt;coin&gt;, /unwatch &lt;wallet&gt;, or /stop for all of them.</i>",
+      ].join("\n"),
     );
     expect(await say("/stop")).toBe("Removed 3 alerts. Send /start to begin again.");
     expect(await say("/stop")).toBe("Nothing to remove: this chat has no alerts.");
@@ -318,5 +377,14 @@ describe("handleText", () => {
     expect(await handleText(ctx, { chat: GROUP }, `/watch@OtherBot ${addr("alice")}`, "HoldfastBot")).toBeNull();
     expect((await handleText(ctx, { chat: GROUP }, `/watch@HoldfastBot ${addr("alice")}`, "HoldfastBot"))?.command).toBe("watch");
     expect(await runCommand(ctx, { chat: PRIVATE }, { name: "dance", args: [] })).toBeNull();
+  });
+
+  it("COMMAND_NAMES is exactly what runCommand answers (groups ignore anything else before the reply budget)", async () => {
+    await seedCoin(db, "hound");
+    for (const name of COMMAND_NAMES) {
+      for (const chat of [PRIVATE, GROUP]) expect(await runCommand(ctx, { chat, from: { id: 7 } }, { name, args: [] }), `/${name}`).not.toBeNull();
+    }
+    // Every command in the "/" menus is one of them.
+    for (const c of [...PRIVATE_COMMANDS, ...GROUP_COMMANDS]) expect(COMMAND_NAMES.has(c.command), c.command).toBe(true);
   });
 });

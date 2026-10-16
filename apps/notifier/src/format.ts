@@ -31,6 +31,11 @@ export function formatSol(lamports: bigint): string {
   return formatUnits(lamports, LAMPORTS_DECIMALS);
 }
 
+/** Lamports as SOL to the last lamport, for amounts a user has to send: 23_456_789n → "0.023456789". */
+export function formatSolExact(lamports: bigint): string {
+  return formatUnits(lamports, LAMPORTS_DECIMALS, LAMPORTS_DECIMALS);
+}
+
 /** Token base units as whole tokens; 1,000 tokens and up are shown without decimals. */
 export function formatTokens(raw: bigint, decimals: number): string {
   const scale = 10n ** BigInt(decimals);

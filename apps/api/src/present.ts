@@ -140,6 +140,7 @@ export function toLaunchStatus(l: LaunchRow): LaunchStatus {
     name: l.form.name,
     ticker: l.form.ticker,
     devBuySol: lamportsToSol(l.devBuyLamports),
+    creatorWallet: l.form.creatorWallet ?? null,
     expiresAt: l.expiresAt,
   };
 }

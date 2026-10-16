@@ -14,37 +14,53 @@ export interface Subscription {
   /** Base58 wallet address or mint. */
   target: string;
   createdAt: number;
+  /** Forum topic its alerts go to (where /follow or /watch was sent); null: the General topic, or a chat without topics. */
+  threadId: number | null;
 }
 
-/** A chat following some target, and since when. */
+/** A chat following some target, since when, and the forum topic its alerts go to. */
 export interface Watcher {
   chatId: number;
   createdAt: number;
+  threadId: number | null;
 }
 
-export type SubscribeResult = "added" | "exists" | "limit";
+/** "moved": the chat already followed `target`, and its alerts now go to the topic of this request. */
+export type SubscribeResult = "added" | "exists" | "moved" | "limit";
+
+function threadOf(v: unknown): number | null {
+  return v === null || v === undefined ? null : num(v);
+}
 
 function mapSubscription(r: Record<string, unknown>): Subscription {
-  return { chatId: num(r.chat_id), kind: r.kind as SubscriptionKind, target: r.target as string, createdAt: ms(r.created_at) };
+  return { chatId: num(r.chat_id), kind: r.kind as SubscriptionKind, target: r.target as string, createdAt: ms(r.created_at), threadId: threadOf(r.thread_id) };
 }
 
 /**
- * Follow `target` from `chatId`. With `limit`, a chat that already has that many subscriptions gets
- * "limit" instead. Commands of one chat are handled one at a time, so check-then-insert is enough.
+ * Follow `target` from `chatId` (`threadId`: the forum topic its alerts go to). With `limit`, a chat that
+ * already has that many subscriptions gets "limit" instead. Following again from another topic moves the
+ * alerts there ("moved"). Commands of one chat are handled one at a time, so check-then-insert is enough.
  */
 export async function addSubscription(
   q: Queryable,
-  sub: { chatId: number; kind: SubscriptionKind; target: string; atMs?: number },
+  sub: { chatId: number; kind: SubscriptionKind; target: string; atMs?: number; threadId?: number | null },
   opts: { limit?: number } = {},
 ): Promise<SubscribeResult> {
   const chat = String(sub.chatId);
-  const existing = await q.query("SELECT 1 FROM tg_subscriptions WHERE chat_id = $1 AND kind = $2 AND target = $3", [chat, sub.kind, sub.target]);
-  if (existing.rows.length > 0) return "exists";
+  const threadId = sub.threadId ?? null;
+  const thread = threadId === null ? null : String(threadId);
+  const existing = await q.query("SELECT thread_id FROM tg_subscriptions WHERE chat_id = $1 AND kind = $2 AND target = $3", [chat, sub.kind, sub.target]);
+  const row = existing.rows[0];
+  if (row) {
+    if (sub.threadId === undefined || threadOf(row.thread_id) === threadId) return "exists";
+    await q.query("UPDATE tg_subscriptions SET thread_id = $4 WHERE chat_id = $1 AND kind = $2 AND target = $3", [chat, sub.kind, sub.target, thread]);
+    return "moved";
+  }
   if (opts.limit !== undefined && (await countChatSubscriptions(q, sub.chatId)) >= opts.limit) return "limit";
   const res = await q.query(
-    `INSERT INTO tg_subscriptions (chat_id, kind, target, created_at) VALUES ($1, $2, $3, COALESCE($4, now()))
+    `INSERT INTO tg_subscriptions (chat_id, kind, target, created_at, thread_id) VALUES ($1, $2, $3, COALESCE($4, now()), $5)
      ON CONFLICT (chat_id, kind, target) DO NOTHING RETURNING chat_id`,
-    [chat, sub.kind, sub.target, sub.atMs === undefined ? null : ts(sub.atMs)],
+    [chat, sub.kind, sub.target, sub.atMs === undefined ? null : ts(sub.atMs), thread],
   );
   return res.rows.length > 0 ? "added" : "exists";
 }
@@ -64,7 +80,7 @@ export async function removeChatSubscriptions(q: Queryable, chatId: number): Pro
 /** Wallets first, then coins, oldest first. */
 export async function listChatSubscriptions(q: Queryable, chatId: number): Promise<Subscription[]> {
   const res = await q.query(
-    "SELECT chat_id, kind, target, created_at FROM tg_subscriptions WHERE chat_id = $1 ORDER BY kind DESC, created_at, target",
+    "SELECT chat_id, kind, target, created_at, thread_id FROM tg_subscriptions WHERE chat_id = $1 ORDER BY kind DESC, created_at, target",
     [String(chatId)],
   );
   return res.rows.map(mapSubscription);
@@ -80,13 +96,13 @@ export async function chatsWatchingWallets(q: Queryable, wallets: readonly strin
   const out = new Map<string, Watcher[]>();
   if (wallets.length === 0) return out;
   const res = await q.query(
-    "SELECT chat_id, target, created_at FROM tg_subscriptions WHERE kind = 'wallet' AND target = ANY($1::text[]) ORDER BY target, chat_id",
+    "SELECT chat_id, target, created_at, thread_id FROM tg_subscriptions WHERE kind = 'wallet' AND target = ANY($1::text[]) ORDER BY target, chat_id",
     [[...new Set(wallets)]],
   );
   for (const r of res.rows) {
     const wallet = r.target as string;
     const list = out.get(wallet) ?? [];
-    list.push({ chatId: num(r.chat_id), createdAt: ms(r.created_at) });
+    list.push({ chatId: num(r.chat_id), createdAt: ms(r.created_at), threadId: threadOf(r.thread_id) });
     out.set(wallet, list);
   }
   return out;
@@ -97,8 +113,8 @@ export async function chatsWatchingWallet(q: Queryable, wallet: string): Promise
 }
 
 export async function chatsWatchingCoin(q: Queryable, mint: string): Promise<Watcher[]> {
-  const res = await q.query("SELECT chat_id, created_at FROM tg_subscriptions WHERE kind = 'coin' AND target = $1 ORDER BY chat_id", [mint]);
-  return res.rows.map((r) => ({ chatId: num(r.chat_id), createdAt: ms(r.created_at) }));
+  const res = await q.query("SELECT chat_id, created_at, thread_id FROM tg_subscriptions WHERE kind = 'coin' AND target = $1 ORDER BY chat_id", [mint]);
+  return res.rows.map((r) => ({ chatId: num(r.chat_id), createdAt: ms(r.created_at), threadId: threadOf(r.thread_id) }));
 }
 
 export async function countSubscriptionsByKind(q: Queryable): Promise<Record<SubscriptionKind, number>> {
@@ -110,7 +126,7 @@ export async function countSubscriptionsByKind(q: Queryable): Promise<Record<Sub
 
 /** Every wallet subscription (weight-milestone sweep). */
 export async function listWalletSubscriptions(q: Queryable): Promise<Subscription[]> {
-  const res = await q.query("SELECT chat_id, kind, target, created_at FROM tg_subscriptions WHERE kind = 'wallet' ORDER BY target, chat_id");
+  const res = await q.query("SELECT chat_id, kind, target, created_at, thread_id FROM tg_subscriptions WHERE kind = 'wallet' ORDER BY target, chat_id");
   return res.rows.map(mapSubscription);
 }
 
@@ -139,13 +155,29 @@ export async function setTelegramOffset(q: Queryable, offset: number): Promise<v
 
 // ---- idempotency -------------------------------------------------------------------------------
 
-/** Claim `eventKey` for `chatId`. False when it was already claimed: the message must not be sent. */
-export async function markSent(q: Queryable, chatId: number, eventKey: string): Promise<boolean> {
-  const res = await q.query(
-    "INSERT INTO tg_sent (chat_id, event_key) VALUES ($1, $2) ON CONFLICT (chat_id, event_key) DO NOTHING RETURNING chat_id",
-    [String(chatId), eventKey],
-  );
+/**
+ * Claim `eventKey` for `chatId`. False when it was already claimed: the message must not be sent.
+ * `sentAs`: keys the same message was claimed under before (an older key format); a claim of any of them
+ * counts as a claim of `eventKey` (and none is made).
+ */
+export async function markSent(q: Queryable, chatId: number, eventKey: string, sentAs: readonly string[] = []): Promise<boolean> {
+  const res =
+    sentAs.length === 0
+      ? await q.query("INSERT INTO tg_sent (chat_id, event_key) VALUES ($1, $2) ON CONFLICT (chat_id, event_key) DO NOTHING RETURNING chat_id", [String(chatId), eventKey])
+      : await q.query(
+          `INSERT INTO tg_sent (chat_id, event_key)
+           SELECT $1::bigint, $2::text WHERE NOT EXISTS (SELECT 1 FROM tg_sent WHERE chat_id = $1::bigint AND event_key = ANY($3::text[]))
+           ON CONFLICT (chat_id, event_key) DO NOTHING RETURNING chat_id`,
+          [String(chatId), eventKey, [...sentAs]],
+        );
   return res.rows.length > 0;
+}
+
+/** Which of `eventKeys` are claimed for `chatId`. */
+export async function sentKeys(q: Queryable, chatId: number, eventKeys: readonly string[]): Promise<Set<string>> {
+  if (eventKeys.length === 0) return new Set();
+  const res = await q.query("SELECT event_key FROM tg_sent WHERE chat_id = $1 AND event_key = ANY($2::text[])", [String(chatId), [...new Set(eventKeys)]]);
+  return new Set(res.rows.map((r) => r.event_key as string));
 }
 
 /** Release a claim whose message could not be delivered, so a later attempt may send it. */

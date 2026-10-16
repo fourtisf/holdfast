@@ -96,9 +96,11 @@ The frontend also runs with no backend at all: `NEXT_PUBLIC_USE_MOCKS=1 pnpm --f
 
 ### Telegram notifier
 
-`apps/notifier` is a Telegram bot for holders. `/watch <wallet>` sends a message for every payout that wallet
-receives ("💰 You earned 0.0123 SOL from $TICKER round #42") and when one of its positions reaches 0.5x and full
-weight. `/coin <mint>` follows a coin's round results, floor defences and graduation to PumpSwap. It listens on the
+`apps/notifier` is the Moatpad Telegram bot. `/launch` launches a coin from a private chat, `/buybot <mint>` posts
+every buy of a coin in a group, `/coin <mint>`, `/trending` and `/burns` show the numbers, and `/alerts` lists what a
+chat follows. `/watch <wallet>` sends a message for every payout that wallet receives ("💰 You earned 0.0123 SOL from
+$TICKER round #42") and when one of its positions reaches 0.5x and full weight; `/follow <mint>` follows a coin's round
+results, floor defences and graduation to PumpSwap (`/unwatch`, `/unfollow` and `/stop` turn them off). It listens on the
 `holdfast_events` channel the indexer and payout worker publish on, and records every message in `tg_sent` so a
 restart never sends anything twice. Create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN` and `WEB_URL`, and run
 `pnpm --filter @holdfast/notifier start`. Commands, events and operations: [docs/notifier.md](docs/notifier.md).

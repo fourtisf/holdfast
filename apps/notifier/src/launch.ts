@@ -7,11 +7,12 @@
  * flow class adds the side effects (drafts in the database, image upload, creating the launch).
  */
 import { containsBlockedTerm, TRIGGER_OPTIONS_BPS, type LaunchQuote, type LaunchRequest, type Socials, type TriggerBps } from "@holdfast/core";
-import { addTgLaunch, deleteDraft, getDraft, saveDraft, type Queryable } from "@holdfast/db";
+import { addTgLaunch, deleteDraft, getDraft, latestTgLaunch, saveDraft, type Queryable } from "@holdfast/db";
 
 import { ApiError, type MoatpadApi } from "./api.js";
 import { isValidAddress, isWalletAddress } from "./address.js";
-import { ellipsize, shortAddress, type Links } from "./format.js";
+import { ellipsize, formatSolExact, shortAddress, type Links } from "./format.js";
+import { underpaidMessage } from "./messages.js";
 import { escapeHtml, type Keyboard, type TelegramApi, type TgMessage } from "./telegram.js";
 
 export interface Reply {
@@ -52,7 +53,10 @@ function header(step: Step): string {
 export function ask(step: Step, d: LaunchDraft, quote?: LaunchQuote | null): Reply {
   switch (step) {
     case "name":
-      return { html: `🚀 <b>Let's launch your coin!</b>\n\n${header(step)}\nWhat is your coin's <b>name</b>?\n<i>Example: Moat Dog (max 32 characters)</i>`, buttons: [cancelRow] };
+      return {
+        html: `🚀 <b>Let's launch your coin!</b>\n\n${header(step)}\nWhat is your coin's <b>name</b>?\n<i>Example: Moat Dog (max 32 characters; accented letters and emoji take 2 to 4 each)</i>`,
+        buttons: [cancelRow],
+      };
     case "ticker":
       return { html: `${header(step)}\nWhat is the <b>ticker</b>?\n<i>Example: MDOG (letters and numbers, max 10)</i>`, buttons: [cancelRow] };
     case "image":
@@ -82,7 +86,7 @@ export function ask(step: Step, d: LaunchDraft, quote?: LaunchQuote | null): Rep
       };
     case "devbuy":
       return {
-        html: `${header(step)}\nDo you want a <b>dev buy</b>?\nYou buy your own coin in the launch transaction, so no sniper gets in before you.\n<i>Tap an amount, or type one (0 to 10 SOL).</i>`,
+        html: `${header(step)}\nDo you want a <b>dev buy</b>?\nYou buy your own coin when it launches. Dev-buy tokens go to the wallet that pays and do not earn holder payouts.\n<i>Tap an amount, or type one (0 to 10 SOL).</i>`,
         buttons: [
           [
             { text: "No dev buy", callback_data: "l:dev:0" },
@@ -99,7 +103,7 @@ export function ask(step: Step, d: LaunchDraft, quote?: LaunchQuote | null): Rep
       return {
         html: [
           `${header(step)}\nWho receives the <b>creator fees</b>? 💸`,
-          "The creator earns 15% of every trading fee of the coin and claims it on moatpad.fun.",
+          "The creator earns 15% of the coin's creator fees (what each trade pays into its vault) and claims it on moatpad.fun.",
           "Tap the button to use the wallet you pay from, or send another wallet address.",
           "<i>Don't pay from an exchange: refunds and dev-buy tokens go back to the wallet that pays.</i>",
         ].join("\n\n"),
@@ -116,7 +120,10 @@ function socialsLine(s: Socials | undefined): string {
   return parts.length ? parts.join(", ") : "none";
 }
 
-/** The final check before paying. */
+/** The answer while the operator keeps launches closed (LAUNCHES_PAUSED). */
+export const LAUNCHES_PAUSED_TEXT = "🚧 Launches open soon on Moatpad. I'll be ready when they do.";
+
+/** The final check before paying. While launches are paused it says so instead of offering the Launch button. */
 export function summary(d: LaunchDraft, quote: LaunchQuote | null): Reply {
   const lines = [
     "<b>Ready to launch? Check your coin:</b>",
@@ -129,6 +136,10 @@ export function summary(d: LaunchDraft, quote: LaunchQuote | null): Reply {
     `🛒 Dev buy: ${d.devBuySol ? `${d.devBuySol} SOL` : "none"}`,
     `💸 Creator fees go to: ${d.creatorWallet ? `<code>${escapeHtml(shortAddress(d.creatorWallet))}</code>` : "the wallet you pay from"}`,
   ];
+  if (quote?.launchesPaused) {
+    lines.push("", LAUNCHES_PAUSED_TEXT, "<i>Your coin is saved here: tap Check again once they are open.</i>");
+    return { html: lines.join("\n"), buttons: [[{ text: "🔁 Check again", callback_data: "l:recheck" }], [{ text: "✏️ Start over", callback_data: "l:restart" }, ...cancelRow]] };
+  }
   if (quote) lines.push("", `💰 <b>Total to pay: ${quote.requiredSol} SOL</b>`, "<i>Launch cost + dev buy. Anything left over is refunded.</i>");
   return {
     html: lines.join("\n"),
@@ -141,11 +152,12 @@ export type Applied = { ok: true; data: LaunchDraft } | { ok: false; error: stri
 /*
  * The API's rules for a launch (apps/api/src/launch/schema.ts, LaunchRequestSchema, and the blocked terms
  * of moderateLaunchText), checked at each step so a launch is never refused after the last question:
- * name 1-32 characters, ticker 1-10 A-Z/0-9, description up to 500 characters, links up to 200
- * characters, dev buy 0-10 SOL, creator a regular (on-curve) wallet. Lengths count UTF-16 units, like
- * the API. Operators can block more terms on the API (MODERATION_BLOCKLIST_FILE); the API still decides.
+ * name 1-32 UTF-8 bytes (pump.fun's limit, which the launcher checks only once the SOL arrived), ticker
+ * 1-10 A-Z/0-9, description up to 500 characters, links up to 200 characters, dev buy 0-10 SOL, creator a
+ * regular (on-curve) wallet. Other lengths count UTF-16 units, like the API. Operators can block more terms
+ * on the API (MODERATION_BLOCKLIST_FILE); the API still decides.
  */
-export const MAX_NAME_LENGTH = 32;
+export const MAX_NAME_BYTES = 32;
 export const MAX_DESCRIPTION_LENGTH = 500;
 export const MAX_LINK_LENGTH = 200;
 export const MAX_DEV_BUY_SOL = 10;
@@ -191,15 +203,26 @@ function tooLong(what: string, t: string, max: number): string {
   return `That ${what} is too long: emoji count as 2 characters, so it is ${t.length} of the ${max} allowed. Please make it a bit shorter.`;
 }
 
+/** pump.fun counts the name in UTF-8 bytes: a plain letter takes 1, an accented or non-Latin letter 2 or 3, an emoji 4. */
+function nameTooLong(t: string): string | null {
+  const bytes = Buffer.byteLength(t, "utf8");
+  if (bytes <= MAX_NAME_BYTES) return null;
+  const chars = Array.from(t).length;
+  if (chars > MAX_NAME_BYTES) return `That name is ${chars} characters. Please keep it to ${MAX_NAME_BYTES} or less.`;
+  return `That name is too long for pump.fun: it takes ${bytes} of the ${MAX_NAME_BYTES} bytes allowed, because accented letters, non-Latin letters and emoji take 2 to 4 each. Please make it shorter.`;
+}
+
 /** Validates a typed answer for `step`. */
 export function applyText(step: Step, d: LaunchDraft, text: string): Applied {
   const t = text.trim();
   switch (step) {
-    case "name":
+    case "name": {
       if (!t) return { ok: false, error: "Please type a name." };
-      if (t.length > MAX_NAME_LENGTH) return { ok: false, error: tooLong("name", t, MAX_NAME_LENGTH) };
+      const tooLongName = nameTooLong(t);
+      if (tooLongName) return { ok: false, error: tooLongName };
       if (containsBlockedTerm(t)) return { ok: false, error: notAllowed("name") };
       return { ok: true, data: { ...d, name: t } };
+    }
     case "ticker": {
       const ticker = t.replace(/^\$/, "").toUpperCase();
       if (!/^[A-Z0-9]{1,10}$/.test(ticker)) return { ok: false, error: "A ticker is 1 to 10 letters or numbers, like MDOG." };
@@ -300,9 +323,14 @@ export class SlidingWindowLimit {
     if (this.hits.size > 10_000) for (const [k, times] of this.hits) if (times.every((t) => now - t >= this.windowMs)) this.hits.delete(k);
     return true;
   }
+
+  /** Gives back the last event of `key` (it did not count after all). */
+  release(key: number): void {
+    this.hits.get(key)?.pop();
+  }
 }
 
-/** Launch submissions per Telegram user (tries that the API refused count too). */
+/** Launch submissions per Telegram user (tries that the API refused count too; tries it never answered, or answered "paused", do not). */
 export const LAUNCHES_PER_USER = { max: 3, windowMs: 10 * 60_000 };
 /** Images sent at the image step per Telegram user. */
 export const UPLOADS_PER_USER = { max: 10, windowMs: 60_000 };
@@ -313,7 +341,11 @@ export interface LaunchFlowDeps {
   tg: Pick<TelegramApi, "downloadFile">;
   links: Links;
   now: () => number;
+  log?: { warn(obj: object, msg?: string): void };
 }
+
+/** The answer when the API could not be reached for the launch itself (timeout, connection refused). */
+export const LAUNCH_UNREACHABLE = "Moatpad is not reachable right now. Please tap Try again in a moment.";
 
 /** The side-effect half of /launch: drafts, uploads and creating the launch. Every method returns the reply. */
 export class LaunchFlow {
@@ -329,6 +361,9 @@ export class LaunchFlow {
   }
 
   async start(chatId: number, userId: number): Promise<Reply> {
+    // While the operator keeps launches closed, say so before the first question, not after the last one.
+    const quote = await this.deps.api.quote({ devBuySol: 0 }, userId).catch(() => null);
+    if (quote?.launchesPaused) return { html: LAUNCHES_PAUSED_TEXT, buttons: [[{ text: "🌐 Open moatpad.fun", url: this.deps.links.webUrl }]] };
     await saveDraft(this.deps.db, { chatId, userId, step: "name", data: {} });
     return ask("name", {});
   }
@@ -351,6 +386,11 @@ export class LaunchFlow {
     const next = nextStep(step);
     await saveDraft(this.deps.db, { chatId, userId, step: next, data: data as Record<string, unknown> });
     if (next !== "confirm") return ask(next, data);
+    return this.confirm(userId, data);
+  }
+
+  /** The summary with the API's quote for this coin. */
+  private async confirm(userId: number, data: LaunchDraft): Promise<Reply> {
     const quote = await this.deps.api.quote({ devBuySol: data.devBuySol ?? 0, name: data.name, ticker: data.ticker }, userId).catch(() => null);
     return ask("confirm", data, quote);
   }
@@ -381,6 +421,10 @@ export class LaunchFlow {
       }
     }
     const text = msg.text ?? msg.caption;
+    // A GIF from the picker (an MP4 animation), a sticker or a video has no image to use.
+    if (!text && draft.step === "image") {
+      return this.retry("I can't use that kind of file. Send a picture as a photo, or a PNG/JPG/GIF/WEBP image as a file, or tap Skip.", "image", draft.data);
+    }
     if (!text) return this.retry("Please answer with text.", draft.step, draft.data);
     const applied = applyText(draft.step, draft.data, text);
     if (!applied.ok) return this.retry(applied.error, draft.step, draft.data);
@@ -393,10 +437,21 @@ export class LaunchFlow {
     if (action === "cancel") return this.cancel(chatId);
     if (action === "restart") return this.start(chatId, userId);
     const draft = await this.load(chatId);
-    if (!draft) return { html: "This launch has expired. Send /launch to start a new one.", buttons: [[{ text: "🚀 Launch a coin", callback_data: "m:launch" }]] };
+    if (!draft) {
+      // A second tap on Launch (or the old summary's button): the launch exists already, waiting for its SOL.
+      if (action === "go") {
+        const pending = await this.pendingLaunch(chatId);
+        if (pending) return pending;
+      }
+      return { html: "This launch has expired. Send /launch to start a new one.", buttons: [[{ text: "🚀 Launch a coin", callback_data: "m:launch" }]] };
+    }
     if (action === "go") {
       if (draft.step !== "confirm") return this.retry("Please finish the steps first.", draft.step, draft.data);
       return this.submit(chatId, userId, draft.data);
+    }
+    if (action === "recheck") {
+      if (draft.step !== "confirm") return this.retry("Please finish the steps first.", draft.step, draft.data);
+      return this.confirm(userId, draft.data);
     }
     const applied = applyButton(draft.step, draft.data, action, value);
     if (!applied.ok) return this.retry(applied.error, draft.step, draft.data);
@@ -416,28 +471,59 @@ export class LaunchFlow {
       res = await this.deps.api.createLaunch(toLaunchRequest(data), userId);
     } catch (err) {
       if (err instanceof ApiError) {
+        // Paused is not the user's try: they may tap again once launches open.
+        if (err.status === 503) this.launchLimit.release(userId);
         return failed(err.status === 503 ? "Launches are paused right now. Please try again a bit later." : err.status === 429 ? "Too many launches at once. Please try again in a minute." : err.message);
       }
-      throw err;
+      // No answer (timeout, connection refused while the API restarts): not the user's try either.
+      this.launchLimit.release(userId);
+      this.deps.log?.warn({ chatId, err: err instanceof Error ? err.message : String(err) }, "creating a launch failed: the API did not answer");
+      return failed(LAUNCH_UNREACHABLE);
     }
     await addTgLaunch(this.deps.db, res.launchId, chatId);
     await deleteDraft(this.deps.db, chatId);
-    const minutes = Math.max(1, Math.round((res.expiresAt - this.deps.now()) / 60_000));
+    return this.payment({ ...res, creatorNamed: Boolean(data.creatorWallet) });
+  }
+
+  /** "Send exactly X SOL to <address>": the last step, for a new launch or one already waiting for its SOL. */
+  private payment(p: { launchId: string; requiredSol: string | number; depositAddress: string; expiresAt: number; creatorNamed: boolean }, again = false): Reply {
+    const minutes = Math.max(1, Math.round((p.expiresAt - this.deps.now()) / 60_000));
     return {
       html: [
-        "💳 <b>Last step: send the SOL</b>",
+        again ? "💳 <b>Your launch is already created: send the SOL</b>" : "💳 <b>Last step: send the SOL</b>",
         "",
-        `Send exactly <b>${res.requiredSol} SOL</b> to this address:`,
-        `<code>${escapeHtml(res.depositAddress)}</code>`,
+        `Send exactly <b>${p.requiredSol} SOL</b> to this address:`,
+        `<code>${escapeHtml(p.depositAddress)}</code>`,
         "<i>(tap the address to copy it)</i>",
         "",
-        `• Send it from your own wallet (Phantom, Solflare, ...).${data.creatorWallet ? "" : " That wallet becomes the creator."}`,
+        `• Send it from your own wallet (Phantom, Solflare, ...).${p.creatorNamed ? "" : " That wallet becomes the creator."}`,
         "• Anything above the amount is refunded.",
-        `• This address expires in ${minutes} minutes.`,
+        `• This address expires in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+        ...(again ? ["• Sent it already? Don't send it again: I'll message you here once it arrives."] : []),
         "",
         "I'll message you here the moment your coin is live. 🚀",
       ].join("\n"),
-      buttons: [[{ text: "💳 Pay with QR / wallet on moatpad.fun", url: `${this.deps.links.webUrl}/pay/${res.launchId}` }]],
+      buttons: [[{ text: "💳 Pay with QR / wallet on moatpad.fun", url: `${this.deps.links.webUrl}/pay/${p.launchId}` }]],
     };
+  }
+
+  /**
+   * The chat's newest launch on a second tap of Launch: the payment step while it waits for its SOL (the address has
+   * not expired), only the missing part once some of it arrived, or that the payment is in. SOL that arrived already
+   * is never asked for again.
+   */
+  private async pendingLaunch(chatId: number): Promise<Reply | null> {
+    const l = await latestTgLaunch(this.deps.db, chatId);
+    const now = this.deps.now();
+    if (!l) return null;
+    const received: Reply = {
+      html: `✅ <b>Payment received</b> (${formatSolExact(l.receivedLamports)} SOL)\nYour $${escapeHtml(l.form.ticker)} launch is starting. I'll message you here the moment your coin is live. 🚀`,
+    };
+    if (l.status === "deposit_received" || l.status === "creating") return received;
+    if (l.status !== "awaiting_deposit" || l.expiresAt <= now) return null;
+    if (l.receivedLamports >= l.requiredLamports) return received;
+    const short = underpaidMessage(this.deps.links, { ...l, ticker: l.form.ticker }, now);
+    if (short) return short;
+    return this.payment({ launchId: l.id, requiredSol: formatSolExact(l.requiredLamports), depositAddress: l.depositAddress, expiresAt: l.expiresAt, creatorNamed: Boolean(l.form.creatorWallet) }, true);
   }
 }

@@ -7,6 +7,7 @@ import {
   formatMultiplier,
   formatPrice,
   formatSol,
+  formatSolExact,
   formatSolNumber,
   formatTokens,
   shortAddress,
@@ -105,6 +106,9 @@ export interface BotLinks extends Links {
   moatCa: string;
 }
 
+/** The answer when a command could not be carried out (the API is down or answers with an error). */
+export const NOT_REACHABLE = "⚠️ Moatpad is not reachable right now. Please try again in a minute.";
+
 export const MENU: Keyboard = [
   [
     { text: "🚀 Launch a coin", callback_data: "m:launch" },
@@ -140,8 +144,11 @@ export function helpMessage(links: BotLinks): BotReply {
       "🔥 /burns - $MOATPAD buy &amp; burn",
       "🟢 /buybot - buy alerts for your group",
       "🔔 /follow &lt;address&gt; - alerts for a coin",
+      "🔕 /unfollow &lt;address&gt; - turn a coin's alerts off",
       "👛 /watch &lt;wallet&gt; - payout alerts for your wallet",
+      "🙈 /unwatch &lt;wallet&gt; - stop watching a wallet",
       "📋 /alerts - what this chat follows",
+      "🛑 /stop - turn off every alert in this chat",
       "✖️ /cancel - stop what you are doing",
       "",
       "<b>How Moatpad works</b>",
@@ -264,16 +271,58 @@ export function buyAlert(
   return { html: lines.join("\n"), buttons };
 }
 
-/** Progress of a launch started from the bot. Null for statuses that need no message. */
-export function launchStatusMessage(
-  links: BotLinks,
-  l: { status: LaunchStatusKind; ticker: string; mint: string | null; receivedSol: number; refundSig: string | null; error: string | null },
+/** A launch started from the bot, as `launchStatusMessage` needs it. */
+export interface LaunchProgress {
+  id: string;
+  status: LaunchStatusKind;
+  ticker: string;
+  mint: string | null;
+  depositAddress: string;
+  requiredLamports: bigint;
+  receivedLamports: bigint;
+  expiresAt: number;
+  refundSig: string | null;
+  error: string | null;
+}
+
+/** The launcher's reason for a failed launch, when it is one the user can act on (their form was refused). */
+const INVALID_LAUNCH = "invalid launch: ";
+
+/** Part of the amount arrived: what is missing, while there is still time to send it. Null otherwise. */
+export function underpaidMessage(
+  links: Links,
+  l: Pick<LaunchProgress, "id" | "ticker" | "depositAddress" | "requiredLamports" | "receivedLamports" | "expiresAt">,
+  now: number,
 ): BotReply | null {
+  if (l.receivedLamports <= 0n || l.receivedLamports >= l.requiredLamports || l.expiresAt <= now) return null;
+  const minutes = Math.max(1, Math.floor((l.expiresAt - now) / 60_000));
+  return {
+    html: [
+      `⚠️ <b>Only part of your $${escapeHtml(l.ticker)} payment arrived</b>`,
+      `Received ${formatSolExact(l.receivedLamports)} of the ${formatSolExact(l.requiredLamports)} SOL needed.`,
+      "",
+      `Send the missing <b>${formatSolExact(l.requiredLamports - l.receivedLamports)} SOL</b> to the same address within ${minutes} ${minutes === 1 ? "minute" : "minutes"}:`,
+      `<code>${escapeHtml(l.depositAddress)}</code>`,
+      "",
+      "<i>If the rest does not arrive in time, everything you sent is refunded.</i>",
+    ].join("\n"),
+    buttons: [[{ text: "💳 Pay with QR / wallet on moatpad.fun", url: `${links.webUrl}/pay/${l.id}` }]],
+  };
+}
+
+/**
+ * Progress of a launch started from the bot. Null for statuses that need no message. The launcher's error
+ * text is never shown as is: it can carry transaction logs and signatures.
+ */
+export function launchStatusMessage(links: BotLinks, l: LaunchProgress, now: number): BotReply | null {
   const t = escapeHtml(l.ticker);
+  const refundLink = l.refundSig ? `<a href="${escapeHtml(solscanTxUrl(l.refundSig, links.cluster))}">Refund on Solscan</a>` : null;
   switch (l.status) {
+    case "awaiting_deposit":
+      return underpaidMessage(links, l, now);
     case "deposit_received":
     case "creating":
-      return { html: `✅ <b>Payment received</b> (${formatSolNumber(l.receivedSol)} SOL)\nCreating $${t} on pump.fun... this takes a few seconds.` };
+      return { html: `✅ <b>Payment received</b> (${formatSolNumber(Number(l.receivedLamports) / 1e9)} SOL)\nCreating $${t} on pump.fun... this takes a few seconds.` };
     case "live": {
       if (!l.mint) return null;
       const url = coinUrl(links, l.mint);
@@ -282,24 +331,43 @@ export function launchStatusMessage(
       const group = botLink(links.botUsername, `buybot_${l.mint}`, true);
       if (group) buttons.push([{ text: "➕ Add buy bot to your group", url: group }]);
       buttons.push([{ text: "🐦 Share on X", url: `https://x.com/intent/tweet?text=${encodeURIComponent(tweet)}` }]);
+      // The launcher's notes on a live launch: the dev buy was given up, or the leftover refund is still being retried.
+      const notes: string[] = [];
+      if (l.error?.includes("dev buy skipped")) notes.push("⚠️ Your dev buy could not be made: its SOL goes back to the wallet that paid, and you hold no tokens from it.");
+      if (l.error?.includes("refund pending")) notes.push("↩️ Your leftover SOL is still being refunded to the wallet that paid.");
       return {
-        html: [`🚀 <b>$${t} is LIVE!</b>`, "", `CA: <code>${escapeHtml(l.mint)}</code>`, "", "Share it with your community and turn on buy alerts in your group. 🎉"].join("\n"),
+        html: [`🚀 <b>$${t} is LIVE!</b>`, "", `CA: <code>${escapeHtml(l.mint)}</code>`, ...(notes.length ? ["", ...notes] : []), "", "Share it with your community and turn on buy alerts in your group. 🎉"].join("\n"),
         buttons,
       };
     }
     case "refunded": {
+      // A launch is refunded (not failed) only once its address has expired without the launch starting: the payment
+      // was short, or came (or was seen) too late. requiredLamports is what the launcher really waited for (it raises a
+      // launch quoted below its real cost on the row), so less than that is short for sure. A full amount says nothing
+      // certain about when it arrived (a late transfer, or one the launcher saw only after the expiry): neutral text.
       const lines = [`↩️ <b>Your $${t} launch was refunded.</b>`];
-      if (l.error) lines.push(`Reason: ${escapeHtml(l.error)}`);
-      if (l.refundSig) lines.push(`<a href="${escapeHtml(solscanTxUrl(l.refundSig, links.cluster))}">Refund on Solscan</a>`);
+      lines.push(
+        l.receivedLamports < l.requiredLamports
+          ? `Received ${formatSolExact(l.receivedLamports)} of the ${formatSolExact(l.requiredLamports)} SOL needed, and the full amount did not arrive before the address expired.`
+          : "The address expired before the launch could start, so the payment was refunded.",
+      );
+      if (refundLink) lines.push(refundLink);
       lines.push("", "Send /launch to try again.");
       return { html: lines.join("\n") };
     }
     case "expired":
-      return { html: `⌛ No payment arrived in time, so the $${t} launch expired.\nIf you sent SOL late, it will be refunded automatically. Send /launch to start again.` };
+      return {
+        html: [
+          `⌛ No payment arrived in time, so the $${t} launch expired.`,
+          "If you sent SOL late, it will be refunded automatically. Don't reuse the address: SOL sent to it more than 30 days from now is not refunded automatically.",
+          "Send /launch to start again.",
+        ].join("\n"),
+      };
     case "failed": {
       // The launcher only marks a launch failed once its refund went out (refunding → failed).
-      const lines = [`⚠️ The $${t} launch failed${l.error ? `: ${escapeHtml(l.error)}` : ""}.`];
-      if (l.refundSig) lines.push(`Your SOL was refunded to the wallet that paid: <a href="${escapeHtml(solscanTxUrl(l.refundSig, links.cluster))}">Refund on Solscan</a>`);
+      const reason = l.error?.startsWith(INVALID_LAUNCH) ? `: ${escapeHtml(l.error.slice(INVALID_LAUNCH.length))}` : ". Something went wrong on our side while creating the coin";
+      const lines = [`⚠️ The $${t} launch failed${reason}.`];
+      if (refundLink) lines.push(`Your SOL was refunded to the wallet that paid: ${refundLink}`);
       else lines.push("Anything left of your deposit goes back to the wallet that paid.");
       lines.push("", "Send /launch to try again.");
       return { html: lines.join("\n") };

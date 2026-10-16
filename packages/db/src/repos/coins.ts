@@ -24,6 +24,8 @@ export interface CoinRow {
   createdAt: number;
   lastPrice: number | null;
   lastTradeAt: number | null;
+  /** Slot of the trade `lastPrice` is from (0 before the first trade). */
+  lastTradeSlot: number;
   /** Bonding-curve real token reserves after the newest curve trade (graduation progress). */
   curveRealTokenReserves: bigint | null;
   /** Hidden by moderators: not listed, user content withheld (the coin itself lives on). */
@@ -54,7 +56,7 @@ export interface NewCoin {
 
 export const COIN_COLUMNS = `c.mint, c.name, c.ticker, c.image_url, c.description, c.socials, c.trigger_bps, c.creator, c.vault,
   c.treasury, c.bonding_curve, c.amm_pool, c.token_program, c.decimals, c.graduated, c.graduated_at, c.launch_sig,
-  c.metadata_uri, c.created_at, c.last_price, c.last_trade_at, c.hidden, c.hidden_reason, c.needs_review, c.curve_real_token_reserves`;
+  c.metadata_uri, c.created_at, c.last_price, c.last_trade_at, c.last_trade_slot, c.hidden, c.hidden_reason, c.needs_review, c.curve_real_token_reserves`;
 
 export function mapCoin(r: Record<string, unknown>): CoinRow {
   return {
@@ -79,6 +81,7 @@ export function mapCoin(r: Record<string, unknown>): CoinRow {
     createdAt: ms(r.created_at),
     lastPrice: numOrNull(r.last_price),
     lastTradeAt: msOrNull(r.last_trade_at),
+    lastTradeSlot: num(r.last_trade_slot),
     curveRealTokenReserves: r.curve_real_token_reserves === null || r.curve_real_token_reserves === undefined ? null : BigInt(String(r.curve_real_token_reserves).split(".")[0]!),
     hidden: Boolean(r.hidden),
     hiddenReason: (r.hidden_reason as string | null) ?? null,

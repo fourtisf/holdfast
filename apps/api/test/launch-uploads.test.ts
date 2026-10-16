@@ -89,6 +89,8 @@ describe("POST /launch", () => {
       name: "Dog Coin",
       ticker: "DOG",
       devBuySol: 0.5,
+      // nobody named: the creator fees go to the wallet that pays
+      creatorWallet: null,
       expiresAt: NOW + 30 * 60_000,
     });
     await updateLaunchStatus(db, body.launchId, "deposit_received", { receivedLamports: 600_000_000n, sender: "Sender1" });
@@ -114,6 +116,8 @@ describe("POST /launch", () => {
     const res = await api.app.inject({ method: "POST", url: "/launch", payload: { ...valid, creatorWallet } });
     expect(res.statusCode, res.body).toBe(200);
     expect((await getLaunch(db, res.json<LaunchResponse>().launchId))?.form.creatorWallet).toBe(creatorWallet);
+    // the payment page shows who gets the creator fees
+    expect((await api.app.inject({ method: "GET", url: `/launch/${res.json<LaunchResponse>().launchId}` })).json<LaunchStatus>().creatorWallet).toBe(creatorWallet);
     // empty means "the deposit's sender"
     const blank = await api.app.inject({ method: "POST", url: "/launch", payload: { ...valid, creatorWallet: " " } });
     expect(blank.statusCode, blank.body).toBe(200);
@@ -127,6 +131,10 @@ describe("POST /launch", () => {
 
   it.each([
     [{ ...valid, name: "x".repeat(33) }, "name"],
+    // pump.fun's limit is 32 UTF-8 bytes: 19 Cyrillic letters (36 bytes), accents, emoji
+    [{ ...valid, name: "Пушистый Кот Монета" }, "name"],
+    [{ ...valid, name: "Crème Brûlée Pâtisserie Royale" }, "name"],
+    [{ ...valid, name: "🐸 Frog King of the Pond 🐸👑" }, "name"],
     [{ ...valid, ticker: "TOOLONGTICKER" }, "ticker"],
     [{ ...valid, ticker: "DO-G" }, "ticker"],
     [{ ...valid, triggerBps: 2000 }, "triggerBps"],
@@ -141,6 +149,14 @@ describe("POST /launch", () => {
     const res = await api.app.inject({ method: "POST", url: "/launch", payload });
     expect(res.statusCode).toBe(400);
     expect(res.json<{ error: string }>().error).toContain(field);
+  });
+
+  it("accepts a name of exactly 32 bytes", async () => {
+    const name = "Café Moat Dog Coin of the Ponds"; // 31 characters, 32 bytes
+    expect(Buffer.byteLength(name)).toBe(32);
+    expect(parseLaunchRequest({ ...valid, name }).name).toBe(name);
+    expect(() => parseLaunchRequest({ ...valid, name: "🐶".repeat(9) })).toThrow(/at most 32 bytes/);
+    expect(parseLaunchRequest({ ...valid, name: "🐶".repeat(8) }).name).toBe("🐶".repeat(8));
   });
 
   it("normalizes the request", () => {

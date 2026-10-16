@@ -4,6 +4,7 @@ import {
   addExcluded,
   addSubscription,
   applyLotConsumptions,
+  getBuybot,
   insertLot,
   insertRound,
   insertTrade,
@@ -11,13 +12,15 @@ import {
   markGraduated,
   markPayout,
   notify,
+  sentKeys,
+  setBuybot,
   updateRoundStatus,
   upsertVaultState,
   type Db,
   type NewCoin,
 } from "@holdfast/db";
 
-import { crossedMilestones, listenForEvents, multiplierPpm, Notifier } from "../src/events.js";
+import { crossedMilestones, listenForEvents, multiplierPpm, Notifier, RETRY_BATCH } from "../src/events.js";
 import { formatSol, formatTokens, shortAddress } from "../src/format.js";
 import { Outbox } from "../src/outbox.js";
 import { TelegramError } from "../src/telegram.js";
@@ -52,8 +55,8 @@ afterAll(async () => {
   await db.close();
 });
 
-async function watch(chatId: number, kind: "wallet" | "coin", target: string, atMs = NOW - DAY): Promise<void> {
-  await addSubscription(db, { chatId, kind, target, atMs });
+async function watch(chatId: number, kind: "wallet" | "coin", target: string, atMs = NOW - DAY, threadId?: number): Promise<void> {
+  await addSubscription(db, { chatId, kind, target, atMs, threadId });
 }
 
 /**
@@ -299,6 +302,32 @@ describe("weight milestones", () => {
     expect(tg.to(CHAT_C)[1]).toContain("reached 0.5x weight");
   });
 
+  it("a sell that uses up the oldest lot (FIFO) does not announce full weight again", async () => {
+    // W buys lot A, then lot B an hour later, and holds both for 9 days.
+    await watch(CHAT_A, "wallet", alice, NOW - 10 * DAY);
+    const a = await insertLot(db, { wallet: alice, mint: coin.mint, amount: 100n * TOK, acquiredAt: NOW - 9 * DAY, sourceSig: "a1", sourceIx: 0 });
+    await insertLot(db, { wallet: alice, mint: coin.mint, amount: 100n * TOK, acquiredAt: NOW - 9 * DAY + H, sourceSig: "a2", sourceIx: 0 });
+    expect(await notifier.checkMilestones()).toBe(1);
+    expect(tg.to(CHAT_A)[0]).toContain("reached full weight (1.0x)");
+    expect(await notifier.checkMilestones()).toBe(0);
+    // Selling exactly lot A's amount empties lot A (FIFO): lot B is still at full weight, the same position.
+    await applyLotConsumptions(db, [{ lotId: a!, amount: 100n * TOK }]);
+    expect(await notifier.checkMilestones()).toBe(0);
+    expect(tg.to(CHAT_A)).toHaveLength(1);
+  });
+
+  it("a lot bought after a milestone inherits its claim, so a later FIFO sell keeps it announced", async () => {
+    await watch(CHAT_A, "wallet", alice, NOW - 5 * DAY);
+    const a = await insertLot(db, { wallet: alice, mint: coin.mint, amount: 1000n * TOK, acquiredAt: NOW - 4 * DAY, sourceSig: "a1", sourceIx: 0 });
+    expect(await notifier.checkMilestones()).toBe(1); // 0.5x
+    // A second lot (bought an hour after the first, recorded late) is past 0.5x too; then the first lot is sold.
+    await insertLot(db, { wallet: alice, mint: coin.mint, amount: 10n * TOK, acquiredAt: NOW - 4 * DAY + H, sourceSig: "a2", sourceIx: 0 });
+    expect(await notifier.checkMilestones()).toBe(0);
+    await applyLotConsumptions(db, [{ lotId: a!, amount: 1000n * TOK }]);
+    expect(await notifier.checkMilestones()).toBe(0);
+    expect(tg.to(CHAT_A)).toHaveLength(1);
+  });
+
   it("ignores excluded addresses and unwatched wallets", async () => {
     const pool = addr("pool");
     await addExcluded(db, [{ address: pool, reason: "pool" }]);
@@ -307,6 +336,262 @@ describe("weight milestones", () => {
     await insertLot(db, { wallet: bob, mint: coin.mint, amount: 10n * TOK, acquiredAt: NOW - 4 * DAY, sourceSig: "b1", sourceIx: 0 });
     expect(await notifier.checkMilestones()).toBe(0);
     expect(tg.sent).toEqual([]);
+  });
+});
+
+describe("forum topics", () => {
+  const GROUP = -100500;
+  const closed = () => new TelegramError("sendMessage", 400, "Bad Request: TOPIC_CLOSED");
+  const buy = (sig: string) =>
+    insertTrade(db, { sig, ixIndex: 0, mint: coin.mint, wallet: addr(`buyer:${sig}`), side: "buy", sol: 100_000_000n, tokens: 5n * TOK, price: 2e-7, ts: NOW - MIN, slot: 20, source: "curve" });
+
+  it("posts each alert in the topic /follow or /watch was sent in", async () => {
+    await watch(GROUP, "wallet", alice, NOW - DAY, 5);
+    await watch(GROUP, "coin", coin.mint, NOW - DAY, 9);
+    await watch(CHAT_C, "coin", coin.mint);
+    await closedRound(1);
+    expect(await notifier.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(3);
+    expect(tg.sent.map((m) => [m.chatId, m.threadId, m.text.startsWith("💰 You earned") ? "payout" : "round"])).toEqual([
+      [GROUP, 5, "payout"],
+      [GROUP, 9, "round"],
+      [CHAT_C, undefined, "round"],
+    ]);
+  });
+
+  it("a follower alert to a closed General topic is not sent, and the group keeps its topic buy bot and alerts", async () => {
+    const outbox = new Outbox(db, tg, { now: () => now });
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    await setBuybot(db, { chatId: GROUP, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - DAY, threadId: 77 });
+    await watch(GROUP, "coin", coin.mint); // followed from the General topic
+    tg.failIn.set(`${GROUP}:general`, closed());
+    await closedRound(1);
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(0);
+    expect(await getBuybot(db, GROUP)).toMatchObject({ mint: coin.mint, threadId: 77 });
+    expect(await listChatSubscriptions(db, GROUP)).toHaveLength(1);
+    // Not a failure to retry every minute: the group closed that topic on purpose.
+    expect(outbox.pendingFailures()).toEqual([]);
+    expect(await sentKeys(db, GROUP, [`round:${coin.mint}:1:coin`])).toEqual(new Set());
+    // Buys still go to the buy bot's topic.
+    await buy("TopicBuy1");
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "TopicBuy1" })).toBe(1);
+    expect(tg.last(GROUP)).toMatchObject({ threadId: 77 });
+    // The topic opens again: the round summary is sent then.
+    tg.failIn.clear();
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(1);
+    expect(tg.last(GROUP)!.threadId).toBeUndefined();
+  });
+
+  it("a buy bot whose topic was deleted posts in the General topic from then on, without retries", async () => {
+    const outbox = new Outbox(db, tg, { now: () => now });
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    await setBuybot(db, { chatId: GROUP, mint: coin.mint, minLamports: 0n, createdBy: 9, atMs: NOW - DAY, threadId: 77 });
+    await watch(GROUP, "coin", coin.mint, NOW - DAY, 77);
+    await watch(GROUP, "wallet", alice, NOW - DAY, 78);
+    tg.failIn.set(`${GROUP}:77`, new TelegramError("sendMessage", 400, "Bad Request: message thread not found"));
+    await buy("GoneBuy1");
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "GoneBuy1" })).toBe(1);
+    expect(tg.sent.map((m) => [m.chatId, m.threadId])).toEqual([[GROUP, undefined]]);
+    expect(await getBuybot(db, GROUP)).toMatchObject({ mint: coin.mint, threadId: null });
+    // What else posted in that topic moved too; other topics stay.
+    expect((await listChatSubscriptions(db, GROUP)).map((x) => [x.kind, x.threadId])).toEqual([
+      ["wallet", 78],
+      ["coin", null],
+    ]);
+    expect(outbox.pendingFailures()).toEqual([]);
+    await buy("GoneBuy2");
+    expect(await n.handle({ kind: "trade", mint: coin.mint, sig: "GoneBuy2" })).toBe(1);
+    expect(tg.sent.map((m) => m.threadId)).toEqual([undefined, undefined]);
+  });
+});
+
+describe("failed deliveries", () => {
+  it("only a failure a later attempt may fix is retried", async () => {
+    const outbox = new Outbox(db, tg, { now: () => now });
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    await watch(CHAT_C, "coin", coin.mint);
+    await closedRound(1);
+    tg.fail.set(CHAT_C, new TelegramError("sendMessage", 400, "Bad Request: message is too long"));
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(0);
+    expect(outbox.pendingFailures()).toEqual([]);
+    tg.fail.set(CHAT_C, new TelegramError("sendMessage", 502, "Bad Gateway"));
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(0);
+    expect(outbox.pendingFailures()).toEqual([{ chatId: CHAT_C, eventKey: `round:${coin.mint}:1:coin`, event: { kind: "round", mint: coin.mint, roundId: 1 }, since: NOW, seq: 1 }]);
+  });
+
+  it("a long outage loses nothing: a failed delivery is retried until it gets through, and a run stops at the first one failing again", async () => {
+    const outbox = new Outbox(db, tg, { now: () => now });
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    await watch(CHAT_B, "coin", coin.mint);
+    await watch(CHAT_C, "coin", coin.mint);
+    await closedRound(1); // closed 2 minutes ago
+    const down = new TelegramError("sendMessage", 0, "no answer (ECONNREFUSED)");
+    tg.fail.set(CHAT_B, down);
+    tg.fail.set(CHAT_C, down);
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(0);
+    // Telegram stays unreachable for 25 minutes; the notifier retries every minute, one send per run while nothing gets through.
+    const deliver = vi.spyOn(outbox, "deliver");
+    for (let i = 0; i < 25; i++) {
+      now += MIN;
+      expect(await n.retryFailed()).toBe(0);
+    }
+    expect(deliver.mock.calls.map((c) => c[0])).toEqual(Array.from({ length: 25 }, (_, i) => (i % 2 ? CHAT_C : CHAT_B)));
+    // The one that failed last goes last: neither waits behind the other for good.
+    expect(outbox.pendingFailures().map((f) => [f.chatId, f.since])).toEqual([
+      [CHAT_C, NOW],
+      [CHAT_B, NOW],
+    ]);
+    tg.fail.clear();
+    now += MIN;
+    expect(await n.retryFailed()).toBe(2);
+    expect(tg.sent.map((m) => m.chatId)).toEqual([CHAT_C, CHAT_B]);
+    // Everything got through: nothing more to retry until the next failure.
+    expect(outbox.pendingFailures()).toEqual([]);
+    expect(await n.retryFailed()).toBe(0);
+  });
+
+  it("a send that got no answer after it went out may have been posted: its claim is kept, it is never sent again, and it ends a retry run", async () => {
+    const outbox = new Outbox(db, tg, { now: () => now });
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    await watch(CHAT_B, "coin", coin.mint);
+    await watch(CHAT_C, "coin", coin.mint);
+    await closedRound(1);
+    const key = `round:${coin.mint}:1:coin`;
+    const timedOut = new TelegramError("sendMessage", 0, "no answer (TimeoutError)", undefined, undefined, true);
+    // Live: no retry, and the claim stays (a catch-up or a repeated NOTIFY sends nothing).
+    tg.fail.set(CHAT_B, timedOut);
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(1);
+    expect(outbox.pendingFailures()).toEqual([]);
+    expect(await sentKeys(db, CHAT_B, [key])).toEqual(new Set([key]));
+    tg.fail.clear();
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(0);
+    expect(tg.sent.map((m) => m.chatId)).toEqual([CHAT_C]);
+    // Retried after a refused connection, then Telegram turns slow: the first timeout ends the run, and is given up.
+    await closedRound(2);
+    const refused = new TelegramError("sendMessage", 0, "no answer (ECONNREFUSED)");
+    tg.fail.set(CHAT_B, refused);
+    tg.fail.set(CHAT_C, refused);
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 2 })).toBe(0);
+    expect(outbox.pendingFailures().map((f) => f.chatId)).toEqual([CHAT_B, CHAT_C]);
+    tg.fail.set(CHAT_B, timedOut);
+    tg.fail.set(CHAT_C, timedOut);
+    const deliver = vi.spyOn(outbox, "deliver");
+    now += MIN;
+    expect(await n.retryFailed()).toBe(0);
+    expect(deliver.mock.calls.map((c) => c[0])).toEqual([CHAT_B]);
+    expect(outbox.pendingFailures().map((f) => f.chatId)).toEqual([CHAT_C]);
+    tg.fail.clear();
+    for (let i = 0; i < 3; i++) {
+      now += MIN;
+      await n.retryFailed();
+    }
+    expect(tg.sent.map((m) => m.chatId)).toEqual([CHAT_C, CHAT_C]);
+    expect(outbox.pendingFailures()).toEqual([]);
+  });
+
+  it("a delivery whose event fails to be handled again goes last: the other failed deliveries still get through", async () => {
+    const outbox = new Outbox(db, tg, { now: () => now });
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    await watch(CHAT_B, "coin", coin.mint);
+    await closedRound(1);
+    await closedRound(2);
+    tg.fail.set(CHAT_B, new TelegramError("sendMessage", 502, "Bad Gateway"));
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(0);
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 2 })).toBe(0);
+    tg.fail.clear();
+    // Round 1 can no longer be handled (its data changed since the first try): its handler throws on every retry.
+    type Handlers = { roundChanged(mint: string, roundId: number, scope: object): Promise<number> };
+    const handlers = n as unknown as Handlers;
+    const roundChanged = handlers.roundChanged.bind(n);
+    const broken = vi.spyOn(handlers, "roundChanged").mockImplementation(async (mint, roundId, scope) => {
+      if (roundId === 1) throw new Error("round 1 changed under us");
+      return roundChanged(mint, roundId, scope);
+    });
+    const keys = () => outbox.pendingFailures().map((f) => f.eventKey);
+    now += MIN;
+    expect(await n.retryFailed()).toBe(0);
+    expect(keys()).toEqual([`round:${coin.mint}:2:coin`, `round:${coin.mint}:1:coin`]);
+    now += MIN;
+    expect(await n.retryFailed()).toBe(1);
+    expect(tg.to(CHAT_B)).toEqual([expect.stringContaining("Round #2 of $HOUND paid")]);
+    expect(outbox.pendingFailures().map((f) => [f.eventKey, f.since])).toEqual([[`round:${coin.mint}:1:coin`, NOW]]);
+    // Once it can be handled again, it is sent too.
+    broken.mockRestore();
+    now += MIN;
+    expect(await n.retryFailed()).toBe(1);
+    expect(tg.to(CHAT_B)).toHaveLength(2);
+    expect(outbox.pendingFailures()).toEqual([]);
+  });
+
+  it("retries only what failed: a chat that stays in a flood wait holds up nothing, and the others' messages are not made again", async () => {
+    const outbox = new Outbox(db, tg, { now: () => now });
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    for (const chat of [CHAT_A, CHAT_B, CHAT_C]) await watch(chat, "coin", coin.mint);
+    await closedRound(1);
+    // A Telegram blip for two chats, and a long flood wait for CHAT_C (a busy group at Telegram's per-group limit).
+    for (const chat of [CHAT_A, CHAT_B]) tg.fail.set(chat, new TelegramError("sendMessage", 502, "Bad Gateway"));
+    tg.fail.set(CHAT_C, new TelegramError("sendMessage", 429, "Too Many Requests: retry after 600", 600));
+    tg.floodWait.set(CHAT_C, 600_000);
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(0);
+    expect(outbox.pendingFailures().map((f) => f.chatId)).toEqual([CHAT_A, CHAT_B, CHAT_C]);
+    tg.fail.delete(CHAT_A);
+    tg.fail.delete(CHAT_B);
+    const deliver = vi.spyOn(outbox, "deliver");
+    now += MIN;
+    expect(await n.retryFailed()).toBe(2);
+    expect(deliver.mock.calls.map((c) => c[0])).toEqual([CHAT_A, CHAT_B]);
+    // The next round reaches A and B live; CHAT_C's wait goes on through an hour of retries, which make no send at all.
+    await closedRound(2, { ts: now - MIN });
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 2 })).toBe(2);
+    deliver.mockClear();
+    for (let i = 0; i < 60; i++) {
+      now += MIN;
+      expect(await n.retryFailed()).toBe(0);
+    }
+    expect(deliver).not.toHaveBeenCalled();
+    expect(outbox.pendingFailures().map((f) => [f.chatId, f.eventKey, f.since])).toEqual([
+      [CHAT_C, `round:${coin.mint}:1:coin`, NOW],
+      [CHAT_C, `round:${coin.mint}:2:coin`, NOW + MIN],
+    ]);
+    // The wait is over: CHAT_C gets both rounds, once.
+    tg.fail.clear();
+    tg.floodWait.clear();
+    now += MIN;
+    expect(await n.retryFailed()).toBe(2);
+    expect(deliver.mock.calls.map((c) => c[0])).toEqual([CHAT_C, CHAT_C]);
+    expect(tg.to(CHAT_C)).toHaveLength(2);
+    expect(tg.sent).toHaveLength(6);
+    expect(outbox.pendingFailures()).toEqual([]);
+  });
+
+  it(`retries at most ${RETRY_BATCH} deliveries a run`, async () => {
+    const outbox = new Outbox(db, tg, { now: () => now });
+    const n = new Notifier({ db, outbox, links: LINKS, now: () => now });
+    const chats = Array.from({ length: RETRY_BATCH + 10 }, (_, i) => 1000 + i);
+    for (const chat of chats) await watch(chat, "coin", coin.mint);
+    await closedRound(1);
+    for (const chat of chats) tg.fail.set(chat, new TelegramError("sendMessage", 502, "Bad Gateway"));
+    expect(await n.handle({ kind: "round", mint: coin.mint, roundId: 1 })).toBe(0);
+    tg.fail.clear();
+    now += MIN;
+    expect(await n.retryFailed()).toBe(RETRY_BATCH);
+    expect(outbox.pendingFailures()).toHaveLength(10);
+    now += MIN;
+    expect(await n.retryFailed()).toBe(10);
+    expect(tg.sent).toHaveLength(chats.length);
+    expect(outbox.pendingFailures()).toEqual([]);
+  });
+
+  it("starts no delivery once shutdown has begun, and releases a claim the caller holds", async () => {
+    const abort = new AbortController();
+    const outbox = new Outbox(db, tg, { signal: abort.signal });
+    abort.abort();
+    expect(await outbox.deliver(CHAT_A, "k1", "hi", "payout")).toBe("stopped");
+    expect(await outbox.claim(CHAT_A, "k2")).toBe(true);
+    expect(await outbox.deliver(CHAT_A, "k2", "hi", "buy", undefined, { claimed: true })).toBe("stopped");
+    expect(tg.sent).toEqual([]);
+    // Neither key is claimed: the next start's catch-up can send them.
+    expect(await sentKeys(db, CHAT_A, ["k1", "k2"])).toEqual(new Set());
+    expect(outbox.pendingFailures()).toEqual([]);
   });
 });
 

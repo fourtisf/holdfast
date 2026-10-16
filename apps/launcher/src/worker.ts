@@ -26,6 +26,7 @@ import {
   getLaunch,
   insertCoin,
   insertWalletLaunch,
+  listFinishedLaunches,
   listPendingLaunches,
   listPendingWalletLaunches,
   notify,
@@ -36,6 +37,7 @@ import {
   updateLaunchStatus,
   type Db,
   type ExcludedWallet,
+  type LaunchCursor,
   type LaunchPatch,
   type LaunchRow,
 } from "@holdfast/db";
@@ -63,7 +65,7 @@ import { normalizeForm, ValidationError, type LaunchForm, type MetadataSettings 
 import { freshCurveBuyState, pump, quoteDevBuy, readPumpBuyState, readPumpGlobals } from "./pump.js";
 import { LocalMetadataStorage, type MetadataStorage, type PublishedMetadata } from "./storage.js";
 import { PUMP_MAX_NAME_BYTES, PUMP_MAX_SYMBOL_BYTES, PUMP_USER_VOLUME_ACCUMULATOR_SIZE, SYSTEM_ACCOUNT_SIZE, TOKEN_2022_ATA_SIZE, utf8Len } from "@holdfast/chain";
-import { forceLaunchSig, listRecentTerminalLaunches, setMintSecretOnce } from "./store.js";
+import { forceLaunchSig, setMintSecretOnce } from "./store.js";
 import {
   buildAtomicLaunchTx,
   buildCreateTx,
@@ -115,9 +117,23 @@ export interface LauncherSettings {
   inFlightGuardMs: number;
   /** A deposit whose funding transfer is at most this late (block time vs expires_at) still counts. */
   expiryGraceMs: number;
-  /** How often finished launches are checked for late or leftover deposits, and how far back. */
+  /**
+   * How often finished launches are checked for late or leftover deposits, and how far back (every finished
+   * launch touched or expiring in that window, page by page). The launches of the last `sweepRecentMs` are
+   * checked every `sweepIntervalMs`; all of `sweepLookbackMs` (long-expired addresses) every `sweepFullIntervalMs`.
+   */
   sweepIntervalMs: number;
   sweepLookbackMs: number;
+  sweepRecentMs: number;
+  sweepFullIntervalMs: number;
+  /** Pages of the sweep read per tick (one balance read per 100 launches): a longer sweep goes on in the next tick. */
+  sweepPagesPerTick: number;
+  /**
+   * Finished launches with SOL on their address the sweep handles per tick (a refund each; for an expired one, a
+   * funding lookup first). The rest wait for the next tick, so dust sent to many old addresses cannot hold new launches back.
+   */
+  sweepRefundsPerTick: number;
+  /** Launches read per query (pending launches per tick; a page of the sweep). */
   batchSize: number;
   /** Launches processed in parallel per tick. */
   concurrency: number;
@@ -137,7 +153,11 @@ export const DEFAULT_SETTINGS = {
   inFlightGuardMs: 120_000,
   expiryGraceMs: 30_000,
   sweepIntervalMs: 5 * 60_000,
-  sweepLookbackMs: 3 * 24 * 3600_000,
+  sweepLookbackMs: 30 * 24 * 3600_000,
+  sweepRecentMs: 3 * 24 * 3600_000,
+  sweepFullIntervalMs: 60 * 60_000,
+  sweepPagesPerTick: 1,
+  sweepRefundsPerTick: 2,
   batchSize: 500,
   concurrency: 4,
 } satisfies Partial<LauncherSettings>;
@@ -179,6 +199,9 @@ export class LaunchWorker {
   private readonly mintKey: Buffer;
   private rentFn: RentFn | null = null;
   private lastSweep = Number.NEGATIVE_INFINITY;
+  private lastFullSweep = Number.NEGATIVE_INFINITY;
+  /** The sweep in progress: its window, and where its next page starts (null: at the first). */
+  private sweeping: { sinceMs: number; after: LaunchCursor | null } | null = null;
   private readonly underQuoted = new Set<string>();
   private readonly storage: MetadataStorage;
   private table: { account: AddressLookupTableAccount; at: number } | null = null;
@@ -198,7 +221,7 @@ export class LaunchWorker {
     return this.s.lookupTable ? "atomic" : "split";
   }
 
-  /** One pass over every pending launch (+ the periodic sweep of finished ones). */
+  /** One pass over every pending launch (+ a part of the periodic sweep of finished ones). */
   async tick(): Promise<void> {
     const due = (await listPendingLaunches(this.db, { limit: this.s.batchSize })).filter((l) => this.isDue(l));
     const balances = await this.depositBalances(due.filter((l) => l.status === "awaiting_deposit"));
@@ -217,10 +240,7 @@ export class LaunchWorker {
     };
     await Promise.all(Array.from({ length: Math.min(this.s.concurrency, due.length) }, lane));
     await this.settleWalletLaunches();
-    if (this.now() - this.lastSweep >= this.s.sweepIntervalMs) {
-      this.lastSweep = this.now();
-      await this.sweep();
-    }
+    if (this.sweeping || this.now() - this.lastSweep >= this.s.sweepIntervalMs) await this.sweep(this.s.sweepPagesPerTick, this.s.sweepRefundsPerTick);
   }
 
   /** One RPC round trip per 100 deposit addresses instead of one per launch. */
@@ -328,6 +348,9 @@ export class LaunchWorker {
   private async watchDeposit(l: LaunchRow, knownBalance?: bigint): Promise<void> {
     const deposit = this.depositKeypair(l).publicKey;
     const required = await this.requiredLamports(l);
+    // Under-quoted: the row is raised to what the deposit must really hold, so the bot and the website ask for
+    // the rest of it, and a refund is told for the right reason (short, not late).
+    const raised: LaunchPatch = required > l.requiredLamports ? { requiredLamports: required } : {};
     const balance = knownBalance ?? (await this.chain.getBalance(deposit));
     const expired = this.now() > l.expiresAt;
 
@@ -337,7 +360,7 @@ export class LaunchWorker {
         this.log.info({ launchId: l.id, balance: balance.toString() }, "deposit seen; funding transfer not indexed yet");
         return;
       }
-      const patch: LaunchPatch = { receivedLamports: balance, sender: funding.sender, depositSig: funding.signature };
+      const patch: LaunchPatch = { ...raised, receivedLamports: balance, sender: funding.sender, depositSig: funding.signature };
       const onTime = !expired || (funding.blockTime !== null && funding.blockTime * 1000 <= l.expiresAt + this.s.expiryGraceMs);
       if (onTime) {
         const next = await this.transition(l, "deposit_received", { ...patch, error: null }, ["awaiting_deposit"]);
@@ -359,14 +382,16 @@ export class LaunchWorker {
       const next = await this.transition(
         l,
         "refunding",
-        { receivedLamports: balance, sender: funding.sender, depositSig: funding.signature },
+        { ...raised, receivedLamports: balance, sender: funding.sender, depositSig: funding.signature },
         ["awaiting_deposit"],
       );
       if (next) await this.refund(next);
       return;
     }
 
-    if (balance !== l.receivedLamports) await this.transition(l, "awaiting_deposit", { receivedLamports: balance }, ["awaiting_deposit"]);
+    if (balance !== l.receivedLamports || raised.requiredLamports !== undefined) {
+      await this.transition(l, "awaiting_deposit", { ...raised, receivedLamports: balance }, ["awaiting_deposit"]);
+    }
   }
 
   // ---- deposit_received ----------------------------------------------------------------------------
@@ -966,15 +991,65 @@ export class LaunchWorker {
     }
   }
 
-  /** Finished launches: refund deposits that arrived late (expired) or are left over (live/refunded/failed). */
-  async sweep(): Promise<void> {
-    const rows = await listRecentTerminalLaunches(this.db, this.now() - this.s.sweepLookbackMs, this.s.batchSize);
+  /**
+   * Finished launches: refund deposits that arrived late (expired) or are left over (live/refunded/failed), a page
+   * at a time, with one balance read per 100. A sweep checks the launches of the last `sweepRecentMs`, or of the whole
+   * `sweepLookbackMs` once `sweepFullIntervalMs` has passed since the last such sweep. It reads at most `maxPages`
+   * pages and handles at most `maxRefunds` launches with SOL on their address per call, and goes on from there (right
+   * after the last launch handled) at the next call; true once it is done. A page whose balances cannot be read (the
+   * RPC is down) ends the call there: the next call reads it again, so an outage costs one failed read a call.
+   */
+  async sweep(maxPages = Number.POSITIVE_INFINITY, maxRefunds = Number.POSITIVE_INFINITY): Promise<boolean> {
+    if (!this.sweeping) {
+      const now = this.now();
+      const full = now - this.lastFullSweep >= this.s.sweepFullIntervalMs;
+      this.lastSweep = now;
+      if (full) this.lastFullSweep = now;
+      this.sweeping = { sinceMs: now - (full ? this.s.sweepLookbackMs : Math.min(this.s.sweepRecentMs, this.s.sweepLookbackMs)), after: null };
+    }
+    const sweep = this.sweeping;
+    const budget = { refunds: maxRefunds };
+    for (let pages = 0; pages < maxPages; pages++) {
+      const page = await listFinishedLaunches(this.db, { sinceMs: sweep.sinceMs, limit: this.s.batchSize, after: sweep.after });
+      const handled = await this.sweepPage(page.rows, budget);
+      if (handled === null) return false;
+      if (handled < page.rows.length) {
+        // Out of refunds for this call: the next one goes on right after the last launch handled.
+        if (handled > 0) sweep.after = page.cursors[handled - 1]!;
+        return false;
+      }
+      if (!page.next) {
+        this.sweeping = null;
+        return true;
+      }
+      sweep.after = page.next;
+    }
+    return false;
+  }
+
+  /**
+   * One page of the sweep: how many of its launches were handled, in order. Fewer than all once `budget.refunds`
+   * launches with SOL on their address were handled (the rest are left for the next call); null (nothing done)
+   * when its balances could not be read.
+   */
+  private async sweepPage(rows: readonly LaunchRow[], budget: { refunds: number }): Promise<number | null> {
+    if (rows.length === 0) return 0;
     const minimum = txFee("refund", this.s.priority);
-    for (const l of rows) {
+    let balances: bigint[];
+    try {
+      balances = await this.chain.getBalances(rows.map((l) => new PublicKey(l.depositAddress)));
+    } catch (err) {
+      // Not one read per launch instead: hundreds of calls to an RPC that is failing already. The page is read again next tick.
+      this.log.warn({ err: describe(err) }, "sweep balance read failed; that page is read again next tick");
+      return null;
+    }
+    for (const [i, l] of rows.entries()) {
+      const balance = balances[i]!;
+      if (balance <= minimum) continue;
+      if (budget.refunds <= 0) return i;
+      budget.refunds--;
       try {
         const deposit = this.depositKeypair(l);
-        const balance = await this.chain.getBalance(deposit.publicKey);
-        if (balance <= minimum) continue;
         if (l.status === "expired") {
           const funding = await this.chain.findFundingSender(deposit.publicKey);
           if (!funding) continue;
@@ -998,5 +1073,6 @@ export class LaunchWorker {
         this.log.warn({ launchId: l.id, status: l.status, err: describe(err) }, "sweep refund failed");
       }
     }
+    return rows.length;
   }
 }

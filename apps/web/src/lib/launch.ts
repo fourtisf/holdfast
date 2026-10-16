@@ -1,7 +1,8 @@
-import { LAUNCH_FEE_LAMPORTS, TRIGGER_OPTIONS_BPS, type LaunchQuote, type LaunchRequest, type Socials, type TriggerBps } from "@holdfast/core";
+import { LAUNCH_FEE_LAMPORTS, TRIGGER_OPTIONS_BPS, type LaunchQuote, type LaunchRequest, type LaunchStatus, type Socials, type TriggerBps } from "@holdfast/core";
 
 /** SPEC §2 target. The real cost comes from GET /launch/quote; this is only the fallback while it loads. */
 export const SPEC_LAUNCH_FEE_SOL = Number(LAUNCH_FEE_LAMPORTS) / 1e9;
+/** pump.fun's limit for the name, in UTF-8 bytes: a plain letter takes 1, an accented letter 2, an emoji 4. */
 export const NAME_MAX = 32;
 export const TICKER_MAX = 10;
 export const DESCRIPTION_MAX = 500;
@@ -80,19 +81,21 @@ export function isLaunchId(id: string): boolean {
 
 /** `solana:` transfer request for the wallet link and QR code, the same URI the API hands out at POST /launch. */
 export function solanaPayUrl(address: string, lamports: string, ticker: string): string {
-  const n = BigInt(lamports);
-  const whole = (n / 1_000_000_000n).toString();
-  const frac = (n % 1_000_000_000n).toString().padStart(9, "0").replace(/0+$/, "");
-  const amount = frac ? `${whole}.${frac}` : whole;
+  const amount = lamportsToSolExact(BigInt(lamports));
   const params = new URLSearchParams({ amount, label: "Moatpad", message: `Launch $${ticker}` });
   return `solana:${address}?${params.toString().replace(/\+/g, "%20")}`;
+}
+
+/** The name's size as pump.fun counts it (UTF-8 bytes). */
+export function nameBytes(name: string): number {
+  return new TextEncoder().encode(name.trim()).length;
 }
 
 export function validateLaunch(form: LaunchForm): LaunchErrors {
   const errors: LaunchErrors = {};
   const name = form.name.trim();
   if (!name) errors.name = "Give your coin a name";
-  else if (name.length > NAME_MAX) errors.name = `Max ${NAME_MAX} characters`;
+  else if (nameBytes(name) > NAME_MAX) errors.name = name.length > NAME_MAX ? `Max ${NAME_MAX} characters` : `Too long for pump.fun: accented letters and emoji take 2 to 4 of the ${NAME_MAX} allowed`;
   if (!form.ticker) errors.ticker = "Pick a ticker";
   else if (form.ticker.length > TICKER_MAX) errors.ticker = `Max ${TICKER_MAX} characters`;
   if (form.description.length > DESCRIPTION_MAX) errors.description = `Max ${DESCRIPTION_MAX} characters`;
@@ -126,4 +129,59 @@ export function toLaunchRequest(form: LaunchForm): LaunchRequest {
     devBuySol: devBuySol > 0 ? devBuySol : undefined,
     creatorWallet: form.creatorWallet.trim() || undefined,
   };
+}
+
+/** Who claims the creator fees, as the payment screen says it: the wallet the form named, or the one that pays. */
+export function creatorFeesRecipient(creatorWallet: string | null): string {
+  return creatorWallet ?? "The wallet you pay from";
+}
+
+/**
+ * What happens while the coin is created. pump.fun's "creator" is the coin's vault (its creator fees fund the vault),
+ * not the Moatpad creator who claims 15% of them, so the copy says fees, not creator.
+ */
+export function creatingStepsText(devBuySol: number): string {
+  return `pump.fun creator fees routed to the coin's vault, floor locked${devBuySol > 0 ? ", dev buy" : ""}.`;
+}
+
+/** The launcher's reason for a failed launch, when it is one the user can act on (their form was refused). */
+const INVALID_LAUNCH = "invalid launch: ";
+
+/** What went wrong, for the user: the launcher's own error text can carry transaction logs and signatures. */
+export function launchFailureText(error: string | null): string | null {
+  if (!error) return null;
+  if (error.startsWith(INVALID_LAUNCH)) return error.slice(INVALID_LAUNCH.length);
+  return "Something went wrong on our side while creating the coin.";
+}
+
+/** The launcher's notes on a live launch: the dev buy was given up, or the leftover refund is still being retried. */
+export function liveLaunchNotes(error: string | null): string[] {
+  const notes: string[] = [];
+  if (error?.includes("dev buy skipped")) notes.push("Your dev buy could not be made: its SOL goes back to the wallet that paid, and you hold no tokens from it.");
+  if (error?.includes("refund pending")) notes.push("Your leftover SOL is still being refunded to the wallet that paid.");
+  return notes;
+}
+
+/** Part of the deposit arrived (still waiting): how much, and how much is missing. Null when nothing (or everything) arrived. */
+export function partialDeposit(status: Pick<LaunchStatus, "receivedLamports" | "requiredLamports"> | null): { receivedLamports: bigint; missingLamports: bigint } | null {
+  if (!status) return null;
+  const received = BigInt(status.receivedLamports);
+  const required = BigInt(status.requiredLamports);
+  if (received <= 0n || received >= required) return null;
+  return { receivedLamports: received, missingLamports: required - received };
+}
+
+/**
+ * What the payment screen asks for, in lamports: the required amount as the launch status last gave it (the launcher
+ * raises a launch quoted below its real cost), or only the missing part once some of it arrived.
+ */
+export function amountDue(requiredLamports: string, status: Pick<LaunchStatus, "receivedLamports" | "requiredLamports"> | null): bigint {
+  return partialDeposit(status)?.missingLamports ?? BigInt(status?.requiredLamports ?? requiredLamports);
+}
+
+/** Lamports as an exact SOL amount (all nine decimals that matter): 6_789n → "0.000006789". */
+export function lamportsToSolExact(lamports: bigint): string {
+  const whole = (lamports / 1_000_000_000n).toString();
+  const frac = (lamports % 1_000_000_000n).toString().padStart(9, "0").replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole;
 }
