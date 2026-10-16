@@ -1,14 +1,16 @@
 /**
- * Minimal Telegram Bot API client on `fetch`: getMe, getUpdates (long poll) and sendMessage (HTML).
+ * Minimal Telegram Bot API client on `fetch`: getMe, getUpdates (long poll), sendMessage (HTML, inline
+ * buttons), callback answers, file downloads, chat member lookups and the "/" command menu.
  * The token only ever appears in request URLs; errors name the method, never the URL.
  */
 
 export interface FetchResponse {
   status: number;
   json(): Promise<unknown>;
+  arrayBuffer?(): Promise<ArrayBuffer>;
 }
 
-export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<FetchResponse>;
+export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<FetchResponse>;
 
 export interface TgUser {
   id: number;
@@ -24,12 +26,45 @@ export interface TgChat {
   username?: string;
 }
 
+export interface TgPhotoSize {
+  file_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
+export interface TgDocument {
+  file_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
 export interface TgMessage {
   message_id: number;
   date: number;
   chat: TgChat;
   from?: TgUser;
   text?: string;
+  caption?: string;
+  /** Sizes of one photo, smallest first. */
+  photo?: TgPhotoSize[];
+  document?: TgDocument;
+}
+
+export interface TgCallbackQuery {
+  id: string;
+  from: TgUser;
+  message?: TgMessage;
+  data?: string;
+}
+
+/** The bot's own membership changed (added to or removed from a group). */
+export interface TgChatMemberUpdated {
+  chat: TgChat;
+  from: TgUser;
+  old_chat_member: { status: string; user: TgUser };
+  new_chat_member: { status: string; user: TgUser };
 }
 
 export interface TgUpdate {
@@ -37,13 +72,44 @@ export interface TgUpdate {
   message?: TgMessage;
   /** Channels where the bot is an admin deliver their posts here. */
   channel_post?: TgMessage;
+  callback_query?: TgCallbackQuery;
+  my_chat_member?: TgChatMemberUpdated;
+}
+
+/** An inline button: opens `url`, or sends `callback_data` (at most 64 bytes) back to the bot. */
+export interface InlineButton {
+  text: string;
+  url?: string;
+  callback_data?: string;
+}
+
+/** Rows of inline buttons under a message. */
+export type Keyboard = InlineButton[][];
+
+export interface SendOptions {
+  buttons?: Keyboard;
+  /** Show the link preview of the first link (off by default). */
+  preview?: boolean;
+}
+
+export interface BotCommandSpec {
+  command: string;
+  description: string;
 }
 
 /** The part of the client the bot and the outbox use (tests pass a fake). */
 export interface TelegramApi {
   getMe(): Promise<TgUser>;
   getUpdates(opts: { offset: number; timeoutSec: number; signal?: AbortSignal }): Promise<TgUpdate[]>;
-  sendMessage(chatId: number, html: string): Promise<void>;
+  sendMessage(chatId: number, html: string, opts?: SendOptions): Promise<void>;
+  /** Stops the spinner on a pressed button (optionally with a short toast). */
+  answerCallback(callbackId: string, text?: string): Promise<void>;
+  /** Downloads a file a user sent (photo, document). */
+  downloadFile(fileId: string): Promise<{ bytes: Uint8Array; path: string }>;
+  /** "creator", "administrator", "member", "restricted", "left" or "kicked". */
+  getChatMemberStatus(chatId: number, userId: number): Promise<string>;
+  /** The "/" menu Telegram shows; `scope` "default" (private chats) or "groups". */
+  setMyCommands(commands: readonly BotCommandSpec[], scope: "default" | "groups"): Promise<void>;
 }
 
 interface TgResponse {
@@ -148,13 +214,40 @@ export class TelegramClient implements TelegramApi {
   getUpdates(opts: { offset: number; timeoutSec: number; signal?: AbortSignal }): Promise<TgUpdate[]> {
     return this.call<TgUpdate[]>(
       "getUpdates",
-      { offset: opts.offset, timeout: opts.timeoutSec, allowed_updates: ["message", "channel_post"] },
+      { offset: opts.offset, timeout: opts.timeoutSec, allowed_updates: ["message", "channel_post", "callback_query", "my_chat_member"] },
       { timeoutMs: (opts.timeoutSec + 10) * 1000, signal: opts.signal },
     );
   }
 
-  async sendMessage(chatId: number, html: string): Promise<void> {
-    await this.call("sendMessage", { chat_id: chatId, text: html, parse_mode: "HTML", disable_web_page_preview: true });
+  async sendMessage(chatId: number, html: string, opts: SendOptions = {}): Promise<void> {
+    await this.call("sendMessage", {
+      chat_id: chatId,
+      text: html,
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: !opts.preview },
+      ...(opts.buttons?.length ? { reply_markup: { inline_keyboard: opts.buttons } } : {}),
+    });
+  }
+
+  async answerCallback(callbackId: string, text?: string): Promise<void> {
+    await this.call("answerCallbackQuery", { callback_query_id: callbackId, ...(text ? { text } : {}) });
+  }
+
+  async downloadFile(fileId: string): Promise<{ bytes: Uint8Array; path: string }> {
+    const file = await this.call<{ file_path?: string; file_size?: number }>("getFile", { file_id: fileId });
+    if (!file.file_path) throw new TelegramError("getFile", 400, "file has no path (too big to download)");
+    const res = await this.fetchFn(`${this.apiUrl}/file/bot${this.token}/${file.file_path}`, { method: "GET", headers: {}, signal: AbortSignal.timeout(30_000) });
+    if (res.status !== 200 || !res.arrayBuffer) throw new TelegramError("downloadFile", res.status, `HTTP ${res.status}`);
+    return { bytes: new Uint8Array(await res.arrayBuffer()), path: file.file_path };
+  }
+
+  async getChatMemberStatus(chatId: number, userId: number): Promise<string> {
+    const member = await this.call<{ status: string }>("getChatMember", { chat_id: chatId, user_id: userId });
+    return member.status;
+  }
+
+  async setMyCommands(commands: readonly BotCommandSpec[], scope: "default" | "groups"): Promise<void> {
+    await this.call("setMyCommands", { commands, scope: { type: scope === "groups" ? "all_group_chats" : "default" } });
   }
 }
 

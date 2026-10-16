@@ -10,6 +10,12 @@ export interface NotifierConfig {
   databaseUrl: string;
   /** Web app origin for coin links, without a trailing slash. */
   webUrl: string;
+  /** The API the bot launches and reads through (inside compose: http://api:4000). */
+  apiUrl: string;
+  /** Channel or group that gets every $MOATPAD burn (e.g. -1001234567890); null = none. */
+  burnChatId: number | null;
+  /** The official $MOATPAD mint, linked from /burns. */
+  moatCa: string;
   /** Explorer links (Solscan) point at this cluster. */
   cluster: Cluster;
   /** /healthz + /metrics; 0 disables. */
@@ -74,6 +80,15 @@ function webUrl(env: NodeJS.ProcessEnv): string {
   return v;
 }
 
+/** A Telegram chat id (channels and supergroups are negative). */
+function chatId(env: NodeJS.ProcessEnv, key: string): number | null {
+  const v = (env[key] ?? "").trim();
+  if (v === "") return null;
+  const n = Number(v);
+  if (!Number.isSafeInteger(n) || n === 0) throw new Error(`${key} must be a Telegram chat id like -1001234567890, got ${v}`);
+  return n;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): NotifierConfig {
   const botToken = (env.TELEGRAM_BOT_TOKEN ?? "").trim();
   if (!botToken) throw new Error("TELEGRAM_BOT_TOKEN is required (create a bot with @BotFather)");
@@ -85,6 +100,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): NotifierConfig
     telegramApiUrl: (env.TELEGRAM_API_URL || "https://api.telegram.org").replace(/\/+$/, ""),
     databaseUrl: resolveDatabaseUrl(databaseUrl, env),
     webUrl: webUrl(env),
+    apiUrl: (env.API_INTERNAL_URL || env.NEXT_PUBLIC_API_URL || "http://localhost:4000").trim().replace(/\/+$/, ""),
+    burnChatId: chatId(env, "NOTIFIER_BURN_CHAT_ID"),
+    moatCa: (env.MOAT_CA || env.NEXT_PUBLIC_MOAT_CA || "4qLdhoVDiAkXVXqU4D3rSPp6pMMnJzRJr38do55Hpump").trim(),
     cluster: cluster(env),
     opsPort: opsPort(env, "NOTIFIER_OPS_PORT", 9104),
     milestoneIntervalMs: int(env, "NOTIFIER_MILESTONE_INTERVAL_MS", 10 * 60_000, 1_000),

@@ -5,14 +5,21 @@
  * - trade (side 'vault'): coin followers get the floor defence.
  * - coin (graduated): coin followers get the graduation.
  * - weight milestones: a watched wallet's position in a coin crossing 0.5x and 1.0x average weight.
+ * - trade (side 'buy'): groups with the buy bot on for the coin get the buy (throttled per group).
+ * - launch: the chat that started a launch from the bot hears about its progress (paid, live, refunded).
+ * - burn: the burn channel (NOTIFIER_BURN_CHAT_ID) gets every $MOATPAD buy & burn.
  *
  * Every message goes through the Outbox with a stable event key, so the same event reaching us
  * twice (the payout worker and the indexer both announce a closed round; catch-up replays) or a
  * restart never sends it twice.
  */
-import { fixedToSolPerToken, tradePrice, weightedAmount, type WeightedLot } from "@holdfast/core";
+import { fixedToSolPerToken, marketCapSol, tradePrice, weightedAmount, type WeightedLot } from "@holdfast/core";
 import {
+  buybotsForMint,
+  chatForLaunch,
   chatsWatchingCoin,
+  getHoldBurn,
+  getLaunch,
   chatsWatchingWallets,
   getCoin,
   getCoins,
@@ -32,9 +39,46 @@ import {
   type Watcher,
 } from "@holdfast/db";
 
-import type { Links } from "./format.js";
-import { defendMessage, graduatedMessage, milestoneMessage, payoutMessage, roundSummaryMessage, type Milestone } from "./messages.js";
+import {
+  burnAlert,
+  buyAlert,
+  defendMessage,
+  graduatedMessage,
+  launchStatusMessage,
+  milestoneMessage,
+  payoutMessage,
+  roundSummaryMessage,
+  type BotLinks,
+  type Milestone,
+} from "./messages.js";
 import type { Outbox } from "./outbox.js";
+import type { Keyboard } from "./telegram.js";
+
+/** Telegram allows a bot about 20 messages a minute in one group: buy alerts stay under that. */
+export const BUY_ALERTS_PER_MINUTE = 15;
+
+/** Sliding one-minute window per group; buys over the limit are counted and mentioned in the next alert. */
+export class BuyThrottle {
+  private readonly sent = new Map<number, number[]>();
+  private readonly skipped = new Map<number, number>();
+
+  constructor(private readonly perMinute = BUY_ALERTS_PER_MINUTE) {}
+
+  /** Null when this buy is dropped; otherwise how many were dropped since the last alert. */
+  take(chatId: number, now: number): number | null {
+    const recent = (this.sent.get(chatId) ?? []).filter((t) => now - t < 60_000);
+    if (recent.length >= this.perMinute) {
+      this.sent.set(chatId, recent);
+      this.skipped.set(chatId, (this.skipped.get(chatId) ?? 0) + 1);
+      return null;
+    }
+    recent.push(now);
+    this.sent.set(chatId, recent);
+    const skipped = this.skipped.get(chatId) ?? 0;
+    this.skipped.delete(chatId);
+    return skipped;
+  }
+}
 
 /** Events older than this are never announced (re-indexed history, very late replays). */
 export const MAX_EVENT_AGE_MS = 24 * 3600_000;
@@ -59,7 +103,9 @@ export interface EventMetrics {
 export interface NotifierDeps {
   db: Queryable;
   outbox: Outbox;
-  links: Links;
+  links: BotLinks;
+  /** Channel or group that gets every $MOATPAD burn; null = none. */
+  burnChatId?: number | null;
   now?: () => number;
   log?: Logger;
   metrics?: EventMetrics;
@@ -69,6 +115,7 @@ interface Outgoing {
   chatId: number;
   key: string;
   html: string;
+  buttons?: Keyboard;
 }
 
 /** Average weight of `lots` in parts per million (0 for an empty position). */
@@ -92,6 +139,7 @@ export function crossedMilestones(lots: readonly WeightedLot[], fromMs: number, 
 
 export class Notifier {
   private readonly now: () => number;
+  private readonly throttle = new BuyThrottle();
 
   constructor(private readonly deps: NotifierDeps) {
     this.now = deps.now ?? Date.now;
@@ -108,6 +156,10 @@ export class Notifier {
           return await this.tradeRecorded(n.mint, n.sig);
         case "coin":
           return await this.coinChanged(n.mint);
+        case "launch":
+          return await this.launchChanged(n.launchId);
+        case "burn":
+          return await this.burned(n.mint, n.sig);
         default:
           return 0;
       }
@@ -135,7 +187,7 @@ export class Notifier {
 
   private async send(out: readonly Outgoing[], kind: string): Promise<number> {
     let sent = 0;
-    for (const o of out) if ((await this.deps.outbox.deliver(o.chatId, o.key, o.html, kind)) === "sent") sent++;
+    for (const o of out) if ((await this.deps.outbox.deliver(o.chatId, o.key, o.html, kind, o.buttons)) === "sent") sent++;
     return sent;
   }
 
@@ -183,25 +235,82 @@ export class Notifier {
     return sent;
   }
 
-  /** Trades of `sig`: a vault buyback (side 'vault') is a floor defence. */
+  /** Trades of `sig`: a vault buyback (side 'vault') is a floor defence; buys go to the coin's buy bot groups. */
   async tradeRecorded(mint: string, sig: string): Promise<number> {
     const { db, links } = this.deps;
-    const trades = (await getTradesBySig(db, sig)).filter((t) => t.mint === mint && t.side === "vault");
-    const first = trades[0];
+    const all = (await getTradesBySig(db, sig)).filter((t) => t.mint === mint);
+    const first = all[0];
     if (!first || this.stale(first.ts)) return 0;
     const followers = (await chatsWatchingCoin(db, mint)).filter((w) => Notifier.isNewFor(w, first.ts));
-    if (followers.length === 0) return 0;
+    const groups = await buybotsForMint(db, mint);
+    if (followers.length === 0 && groups.length === 0) return 0;
     const coin = await getCoin(db, mint);
     if (!coin) return 0;
-    const sol = trades.reduce((s, t) => s + t.sol, 0n);
-    const tokens = trades.reduce((s, t) => s + t.tokens, 0n);
     const vault = await getVaultState(db, mint);
-    const floorPrice = vault && vault.floor > 0n ? fixedToSolPerToken(vault.floor, coin.decimals) : null;
-    const html = defendMessage(links, { coin, sol, price: tradePrice(sol, tokens, coin.decimals), floorPrice, sig });
-    return this.send(
-      followers.map((w) => ({ chatId: w.chatId, key: `defend:${mint}:${sig}`, html })),
-      "defend",
-    );
+    let sent = 0;
+
+    const defends = all.filter((t) => t.side === "vault");
+    if (defends.length > 0) {
+      const sol = defends.reduce((s, t) => s + t.sol, 0n);
+      const tokens = defends.reduce((s, t) => s + t.tokens, 0n);
+      const floorPrice = vault && vault.floor > 0n ? fixedToSolPerToken(vault.floor, coin.decimals) : null;
+      const html = defendMessage(links, { coin, sol, price: tradePrice(sol, tokens, coin.decimals), floorPrice, sig });
+      const chats = new Set([...followers.map((w) => w.chatId), ...groups.filter((g) => g.createdAt <= first.ts + SUBSCRIBE_GRACE_MS).map((g) => g.chatId)]);
+      sent += await this.send(
+        [...chats].map((chatId) => ({ chatId, key: `defend:${mint}:${sig}`, html })),
+        "defend",
+      );
+    }
+
+    for (const t of all.filter((x) => x.side === "buy")) {
+      const targets = groups.filter((g) => t.sol >= g.minLamports && Notifier.isNewFor({ chatId: g.chatId, createdAt: g.createdAt }, t.ts));
+      for (const g of targets) {
+        const skipped = this.throttle.take(g.chatId, this.now());
+        if (skipped === null) continue;
+        const alert = buyAlert(links, {
+          coin,
+          sol: Number(t.sol) / 1e9,
+          tokens: t.tokens,
+          wallet: t.wallet,
+          sig,
+          marketCapSol: marketCapSol(t.price),
+          floorSol: vault ? Number(vault.floorSol) / 1e9 : null,
+          skipped,
+        });
+        sent += await this.send([{ chatId: g.chatId, key: `buy:${sig}:${t.ixIndex}`, html: alert.html, buttons: alert.buttons }], "buy");
+      }
+    }
+    return sent;
+  }
+
+  /** A launch started from the bot changed status: tell the chat that started it. */
+  async launchChanged(launchId: string): Promise<number> {
+    const { db, links } = this.deps;
+    const chatId = await chatForLaunch(db, launchId);
+    if (chatId === null) return 0;
+    const l = await getLaunch(db, launchId);
+    if (!l) return 0;
+    const msg = launchStatusMessage(links, {
+      status: l.status,
+      ticker: l.form.ticker,
+      mint: l.mint,
+      receivedSol: Number(l.receivedLamports) / 1e9,
+      refundSig: l.refundSig,
+      error: l.error,
+    });
+    if (!msg) return 0;
+    return this.send([{ chatId, key: `launch:${launchId}:${l.status}`, html: msg.html, buttons: msg.buttons }], "launch");
+  }
+
+  /** A vault bought and burned $MOATPAD: post it to the burn channel. */
+  async burned(mint: string, sig: string): Promise<number> {
+    const { db, links, burnChatId } = this.deps;
+    if (burnChatId === undefined || burnChatId === null) return 0;
+    const burn = await getHoldBurn(db, sig, mint);
+    if (!burn || this.stale(burn.ts)) return 0;
+    const coin = await getCoin(db, mint);
+    const html = burnAlert(links, { ticker: coin?.ticker ?? null, mint, tokensBurned: Number(burn.holdBurned) / 1e6, solSpent: Number(burn.solSpent) / 1e9, sig });
+    return this.send([{ chatId: burnChatId, key: `burn:${sig}:${mint}`, html }], "burn");
   }
 
   /** Coin rows change for many reasons; only the graduation is announced. */

@@ -137,5 +137,9 @@ export function toLaunchStatus(l: LaunchRow): LaunchStatus {
     refundSig: l.refundSig,
     error: l.error,
     updatedAt: l.updatedAt,
+    name: l.form.name,
+    ticker: l.form.ticker,
+    devBuySol: lamportsToSol(l.devBuyLamports),
+    expiresAt: l.expiresAt,
   };
 }

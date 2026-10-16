@@ -14,6 +14,7 @@ import { ChartCard } from "./ChartCard";
 import { CoinHeader, MarketCapCard } from "./CoinHeader";
 import { CreatorClaimCard } from "./CreatorClaimCard";
 import { SharePanel } from "./SharePanel";
+import { TelegramCard } from "./TelegramCard";
 import { TopHolders } from "./TopHolders";
 import { TradePanel } from "./TradePanel";
 import { VaultPanel } from "./VaultPanel";
@@ -74,6 +75,7 @@ export function CoinPageView({ mint }: { mint: string }) {
         </div>
         <div className="order-7">
           <VaultPanel coin={coin} />
+          <TelegramCard coin={coin} />
         </div>
         <div className="order-8">
           <TopHolders coin={coin} wallet={wallet} />

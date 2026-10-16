@@ -11,7 +11,7 @@ import { ErrorNote } from "@/components/ui/States";
 import { cn } from "@/components/ui/cn";
 import { GlobeIcon, InfoIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
 import { api, errorMessage } from "@/lib/api";
-import { TELEGRAM_URL, X_HANDLE, X_URL } from "@/lib/config";
+import { botUrl, TELEGRAM_BOT, TELEGRAM_URL, X_HANDLE, X_URL } from "@/lib/config";
 import { formatSolExact, formatSolAmount } from "@/lib/format";
 import { decodeTransaction } from "@/lib/solana";
 import { signAndSend, waitForConfirmation } from "@/lib/submit";
@@ -213,6 +213,11 @@ export function CreateView() {
           Confirm one transaction in your wallet and your coin goes live on pump.fun with its own floor vault, for {quote ? "" : "≈"}
           {formatSolExact(launchFeeSol(quote))} SOL plus your dev buy.
         </p>
+        {botUrl("launch") ? (
+          <a href={botUrl("launch")!} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline">
+            <TelegramIcon size={13} /> Prefer Telegram? Launch with @{TELEGRAM_BOT}
+          </a>
+        ) : null}
       </div>
 
       {paused ? (

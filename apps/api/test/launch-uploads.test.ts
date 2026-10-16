@@ -85,6 +85,11 @@ describe("POST /launch", () => {
       refundSig: null,
       error: null,
       updatedAt: expect.any(Number),
+      // what a payment page opened from the Telegram bot needs
+      name: "Dog Coin",
+      ticker: "DOG",
+      devBuySol: 0.5,
+      expiresAt: NOW + 30 * 60_000,
     });
     await updateLaunchStatus(db, body.launchId, "deposit_received", { receivedLamports: 600_000_000n, sender: "Sender1" });
     expect((await api.app.inject({ method: "GET", url: `/launch/${body.launchId}` })).json()).toMatchObject({ status: "deposit_received", receivedLamports: "600000000", sender: "Sender1" });

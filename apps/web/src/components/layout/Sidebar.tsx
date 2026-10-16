@@ -7,7 +7,7 @@ import { WeightRamp } from "@/components/coin/WeightRamp";
 import { useHowItWorks } from "@/components/how-it-works/HowItWorksProvider";
 import { ButtonLink } from "@/components/ui/Button";
 import { ChevronRightIcon, RocketIcon, TelegramIcon, XLogoIcon } from "@/components/ui/icons";
-import { CLUSTER_LABEL, TELEGRAM_URL, X_HANDLE, X_URL } from "@/lib/config";
+import { botUrl, CLUSTER_LABEL, TELEGRAM_BOT, TELEGRAM_URL, X_HANDLE, X_URL } from "@/lib/config";
 import { PayoutCountdownCard } from "./PayoutCountdown";
 
 export function Sidebar() {
@@ -43,6 +43,17 @@ export function Sidebar() {
         <RocketIcon size={18} />
         <LaunchLabel />
       </ButtonLink>
+
+      {botUrl() ? (
+        <a
+          href={botUrl()!}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="-mt-2 flex items-center justify-center gap-1.5 text-xs font-semibold text-muted transition-colors hover:text-brand"
+        >
+          <TelegramIcon size={12} /> Launch &amp; alerts on Telegram · @{TELEGRAM_BOT}
+        </a>
+      ) : null}
 
       <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-[11px] text-faint">
         <span>Solana {CLUSTER_LABEL} · pump.fun</span>

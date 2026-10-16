@@ -11,6 +11,9 @@ describe("loadConfig", () => {
       telegramApiUrl: "https://api.telegram.org",
       databaseUrl: "postgres://h/db",
       webUrl: "http://localhost:3000",
+      apiUrl: "http://localhost:4000",
+      burnChatId: null,
+      moatCa: "4qLdhoVDiAkXVXqU4D3rSPp6pMMnJzRJr38do55Hpump",
       cluster: "mainnet-beta",
       opsPort: 9104,
       milestoneIntervalMs: 600_000,
@@ -19,6 +22,12 @@ describe("loadConfig", () => {
       migrate: true,
       logLevel: "info",
     });
+  });
+
+  it("reads the launch bot settings", () => {
+    const cfg = loadConfig({ ...BASE, API_INTERNAL_URL: "http://api:4000/", NOTIFIER_BURN_CHAT_ID: "-1001234567890", MOAT_CA: "Moat111" });
+    expect(cfg).toMatchObject({ apiUrl: "http://api:4000", burnChatId: -1001234567890, moatCa: "Moat111" });
+    expect(() => loadConfig({ ...BASE, NOTIFIER_BURN_CHAT_ID: "@channel" })).toThrow(/NOTIFIER_BURN_CHAT_ID/);
   });
 
   it("reads overrides", () => {

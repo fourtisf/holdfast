@@ -26,6 +26,7 @@ import {
   getTokenAccounts,
   insertCoin,
   insertDefend,
+  insertHoldBurn,
   insertFloorPoint,
   insertTrade,
   isProcessed,
@@ -574,6 +575,8 @@ class TxRun {
           const d = delta(mint);
           d.burnSol = add(d.burnSol, -e.solSpent);
           d.totalBurnedSol = add(d.totalBurnedSol, e.solSpent);
+          await insertHoldBurn(this.q, { sig: this.tx.signature, mint, solSpent: e.solSpent, holdBurned: e.holdBurned, ts: this.time });
+          this.notify({ kind: "burn", mint, sig: this.tx.signature });
           break;
         }
         case "TreasuryPrepared": {

@@ -13,7 +13,9 @@ export type HoldfastNotification =
   /** Coin row created or updated (graduation, metadata). */
   | { kind: "coin"; mint: string }
   /** Launch `launchId` changed status. */
-  | { kind: "launch"; launchId: string };
+  | { kind: "launch"; launchId: string }
+  /** The vault of `mint` bought and burned $MOATPAD in transaction `sig` (hold_burns row). */
+  | { kind: "burn"; mint: string; sig: string };
 
 /** Send notifications on `q`. Inside a transaction they are delivered on commit. */
 export async function notify(q: Queryable, events: HoldfastNotification | readonly HoldfastNotification[]): Promise<void> {
@@ -49,6 +51,8 @@ export function parseNotification(payload: string): HoldfastNotification | null 
         return typeof v.mint === "string" && typeof v.roundId === "number" ? { kind: "round", mint: v.mint, roundId: v.roundId } : null;
       case "launch":
         return typeof v.launchId === "string" ? { kind: "launch", launchId: v.launchId } : null;
+      case "burn":
+        return typeof v.mint === "string" && typeof v.sig === "string" ? { kind: "burn", mint: v.mint, sig: v.sig } : null;
       default:
         return null;
     }

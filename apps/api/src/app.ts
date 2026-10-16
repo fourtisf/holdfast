@@ -18,6 +18,7 @@ import type { TradeChain } from "./trade/chain.js";
 import { NO_PRICE, type SolPriceSource } from "./services/price.js";
 import { commentRoutes } from "./routes/comments.js";
 import { socialRoutes } from "./routes/social.js";
+import { burnRoutes } from "./routes/burns.js";
 import { adminRoutes } from "./routes/admin.js";
 import { creatorRoutes } from "./routes/creator.js";
 import { launchRoutes } from "./routes/launch.js";
@@ -155,6 +156,7 @@ export async function buildApp(deps: AppDeps): Promise<HoldfastApi> {
   creatorRoutes(app, ctx);
   moderationRoutes(app, ctx);
   socialRoutes(app, ctx);
+  burnRoutes(app, ctx);
   commentRoutes(app, ctx);
   adminRoutes(app, ctx);
   await app.register(async (scope) => wsRoutes(scope, ctx));

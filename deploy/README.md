@@ -47,8 +47,10 @@ Telegram channel (default https://t.me/MOATPAD).
 ## The program and the on-chain services
 
 `keeper`, `payout` and `launcher` need the vault program deployed and initialized with the keeper and launcher
-addresses that `init.sh` printed (`keys/*.address`). The Telegram bot (`notifier`) is opt-in: set `TELEGRAM_BOT_TOKEN`
-and `COMPOSE_PROFILES=telegram` in `.env`, then `docker compose up -d`.
+addresses that `init.sh` printed (`keys/*.address`). The Telegram bot (`notifier`: `/launch` from Telegram, the group
+buy bot, alerts and the $MOATPAD burn feed) is opt-in: create a bot with @BotFather, set `TELEGRAM_BOT_TOKEN`,
+`NEXT_PUBLIC_TELEGRAM_BOT=<its username>` and `COMPOSE_PROFILES=telegram` in `.env` (optionally
+`NOTIFIER_BURN_CHAT_ID` for the burn channel, with the bot as an admin there), then `docker compose up -d --build`.
 `deploy/program.sh` does the on-chain part from the server. It keeps the deployer keypair (fee payer, upgrade
 authority, Config admin) and the program keypair in `~/moatpad-admin`, outside the repository and every container:
 

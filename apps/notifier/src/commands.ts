@@ -1,22 +1,55 @@
-/** Bot commands: parsing and validation are pure; each command is one or two repository calls. */
-import { PublicKey } from "@solana/web3.js";
+/**
+ * Bot commands. Parsing and validation are pure; each command is a few repository or API calls and
+ * returns one reply (HTML plus optional inline buttons).
+ */
 import {
   addSubscription,
+  getBuybot,
   getCoin,
   getCoins,
   listChatSubscriptions,
+  removeBuybot,
   removeChatSubscriptions,
   removeSubscription,
+  setBuybot,
   type Queryable,
   type SubscriptionKind,
 } from "@holdfast/db";
 
-import { coinUrl, shortAddress, type Links } from "./format.js";
-import { tickerText } from "./messages.js";
-import { escapeHtml, type TgChat } from "./telegram.js";
+import type { MoatpadApi } from "./api.js";
+import { isValidAddress } from "./address.js";
+import { botLink, coinUrl, shortAddress } from "./format.js";
+import type { LaunchFlow } from "./launch.js";
+import { burnsMessage, coinCard, helpMessage, MENU, tickerText, trendingMessage, welcomeMessage, type BotLinks, type BotReply } from "./messages.js";
+import { escapeHtml, type BotCommandSpec, type TelegramApi, type TgChat, type TgUser } from "./telegram.js";
+
+export { isValidAddress };
 
 /** Most subscriptions (wallets + coins) one chat may hold. */
 export const MAX_SUBSCRIPTIONS_PER_CHAT = 20;
+
+/** The "/" menu in private chats. */
+export const PRIVATE_COMMANDS: readonly BotCommandSpec[] = [
+  { command: "launch", description: "Launch a new coin" },
+  { command: "coin", description: "Look up a coin by its address" },
+  { command: "trending", description: "Top coins right now" },
+  { command: "burns", description: "$MOATPAD buy & burn" },
+  { command: "buybot", description: "Buy alerts for your group" },
+  { command: "follow", description: "Alerts for a coin" },
+  { command: "watch", description: "Payout alerts for your wallet" },
+  { command: "alerts", description: "What this chat follows" },
+  { command: "cancel", description: "Stop what you are doing" },
+  { command: "help", description: "How it works" },
+];
+
+/** The "/" menu in groups. */
+export const GROUP_COMMANDS: readonly BotCommandSpec[] = [
+  { command: "buybot", description: "Buy alerts for this group" },
+  { command: "coin", description: "Look up a coin by its address" },
+  { command: "trending", description: "Top coins right now" },
+  { command: "burns", description: "$MOATPAD buy & burn" },
+  { command: "help", description: "How it works" },
+];
 
 export interface ParsedCommand {
   name: string;
@@ -24,7 +57,7 @@ export interface ParsedCommand {
 }
 
 /**
- * "/watch@HoldfastBot  <addr>" → { name: "watch", args: ["<addr>"] }. Null when `text` is not a
+ * "/watch@MoatpadBot  <addr>" → { name: "watch", args: ["<addr>"] }. Null when `text` is not a
  * command, or is addressed to another bot (`@OtherBot`) in a group.
  */
 export function parseCommand(text: string, botUsername?: string | null): ParsedCommand | null {
@@ -35,77 +68,57 @@ export function parseCommand(text: string, botUsername?: string | null): ParsedC
   return { name: name!.toLowerCase(), args: rest ? rest.trim().split(/\s+/).filter(Boolean) : [] };
 }
 
-const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-
-/** A base58 Solana address: 32–44 base58 characters that decode to exactly 32 bytes. */
-export function isValidAddress(value: string): boolean {
-  if (!BASE58_ADDRESS.test(value)) return false;
-  try {
-    return new PublicKey(value).toBase58() === value;
-  } catch {
-    return false;
-  }
-}
-
 export interface CommandContext {
   db: Queryable;
-  links: Links;
+  links: BotLinks;
   now: () => number;
+  api?: MoatpadApi;
+  launch?: LaunchFlow;
+  tg?: Pick<TelegramApi, "getChatMemberStatus">;
   maxSubscriptions?: number;
 }
 
-export function helpText(): string {
-  return [
-    "<b>Moatpad alerts</b>",
-    "Every Moatpad coin's creator fees fund a floor vault (buybacks when the price drops to the floor), pay holders every 2 minutes weighted by how long they hold, and burn $MOAT. This bot tells you when that happens to you.",
-    "",
-    "/watch &lt;wallet&gt; - your payouts, and when a position reaches 0.5x and full weight",
-    "/unwatch &lt;wallet&gt; - stop watching a wallet",
-    "/coin &lt;mint&gt; - follow a coin: round results, floor defences, graduation",
-    "/uncoin &lt;mint&gt; - unfollow a coin",
-    "/list - what this chat follows",
-    "/stop - remove everything for this chat",
-    "/help - this message",
-    "",
-    `Up to ${MAX_SUBSCRIPTIONS_PER_CHAT} subscriptions per chat.`,
-  ].join("\n");
+/** Who sent the command, and where. */
+export interface CommandSource {
+  chat: Pick<TgChat, "id" | "type">;
+  from?: Pick<TgUser, "id">;
 }
 
 const code = (s: string) => `<code>${escapeHtml(s)}</code>`;
+const text = (html: string): BotReply => ({ html });
+
+/** Telegram's account for "send as the group" (anonymous admins). */
+const ANONYMOUS_ADMIN = 1087968824;
 
 function limitText(max: number): string {
-  return `This chat already has ${max} subscriptions, the most allowed. Remove one with /unwatch or /uncoin first.`;
+  return `This chat already has ${max} alerts, the most allowed. Remove one with /unfollow or /unwatch first.`;
 }
 
 /** Validates the single address argument; returns the address or the reply explaining what is wrong. */
-function addressArg(cmd: ParsedCommand, what: "wallet" | "mint"): { address: string } | { reply: string } {
+function addressArg(cmd: ParsedCommand, what: "wallet" | "coin"): { address: string } | { reply: string } {
   const usage = `Usage: /${cmd.name} &lt;${what} address&gt;`;
-  if (cmd.args.length !== 1) return { reply: usage };
+  if (cmd.args.length < 1) return { reply: usage };
   const address = cmd.args[0]!;
   if (!isValidAddress(address)) return { reply: `${code(address.slice(0, 64))} is not a valid Solana address.\n${usage}` };
   return { address };
 }
 
-async function watch(ctx: CommandContext, chatId: number, cmd: ParsedCommand): Promise<string> {
-  const arg = addressArg(cmd, "wallet");
-  if ("reply" in arg) return arg.reply;
-  const wallet = arg.address;
+async function watch(ctx: CommandContext, chatId: number, wallet: string): Promise<string> {
   const coin = await getCoin(ctx.db, wallet);
-  if (coin) return `${code(shortAddress(wallet))} is the mint of $${tickerText(coin)}, not a wallet. Follow the coin with /coin ${wallet}`;
+  if (coin) return `${code(shortAddress(wallet))} is the coin $${tickerText(coin)}, not a wallet. Get its alerts with /follow ${wallet}`;
   return subscribed(ctx, chatId, "wallet", wallet, () =>
     [`👀 Watching wallet ${code(wallet)}.`, "You will get a message for every payout it receives, and when one of its positions reaches 0.5x and full weight."].join("\n"),
   );
 }
 
-async function follow(ctx: CommandContext, chatId: number, cmd: ParsedCommand): Promise<string> {
-  const arg = addressArg(cmd, "mint");
-  if ("reply" in arg) return arg.reply;
-  const coin = await getCoin(ctx.db, arg.address);
-  if (!coin) return `No Moatpad coin has the mint ${code(arg.address)}.`;
+/** Follow a coin: payout rounds, floor defences, graduation. */
+export async function follow(ctx: CommandContext, chatId: number, mint: string): Promise<string> {
+  const coin = await getCoin(ctx.db, mint);
+  if (!coin) return `No Moatpad coin has the address ${code(mint)}.`;
   return subscribed(ctx, chatId, "coin", coin.mint, () =>
     [
-      `🔔 Following $${tickerText(coin)} (${escapeHtml(coin.name)}).`,
-      "You will get every payout round's result, every floor defence and the graduation to PumpSwap.",
+      `🔔 Alerts on for $${tickerText(coin)} (${escapeHtml(coin.name)}).`,
+      "You will get every payout round, every floor defence and the graduation to PumpSwap.",
       `<a href="${escapeHtml(coinUrl(ctx.links, coin.mint))}">Coin page</a>`,
     ].join("\n"),
   );
@@ -115,25 +128,30 @@ async function subscribed(ctx: CommandContext, chatId: number, kind: Subscriptio
   const max = ctx.maxSubscriptions ?? MAX_SUBSCRIPTIONS_PER_CHAT;
   const result = await addSubscription(ctx.db, { chatId, kind, target, atMs: ctx.now() }, { limit: max });
   if (result === "limit") return limitText(max);
-  if (result === "exists") return kind === "wallet" ? `Already watching ${code(target)}.` : `Already following ${code(target)}.`;
+  if (result === "exists") return kind === "wallet" ? `Already watching ${code(target)}.` : `Alerts are already on for ${code(target)}.`;
   return added();
 }
 
 async function unfollow(ctx: CommandContext, chatId: number, cmd: ParsedCommand, kind: SubscriptionKind): Promise<string> {
-  const arg = addressArg(cmd, kind === "wallet" ? "wallet" : "mint");
+  const arg = addressArg(cmd, kind === "wallet" ? "wallet" : "coin");
   if ("reply" in arg) return arg.reply;
   const removed = await removeSubscription(ctx.db, chatId, kind, arg.address);
   if (kind === "wallet") return removed ? `Stopped watching ${code(arg.address)}.` : `This chat was not watching ${code(arg.address)}.`;
-  return removed ? `Unfollowed ${code(arg.address)}.` : `This chat was not following ${code(arg.address)}.`;
+  return removed ? `Alerts off for ${code(arg.address)}.` : `This chat had no alerts for ${code(arg.address)}.`;
 }
 
-async function list(ctx: CommandContext, chatId: number): Promise<string> {
+async function alerts(ctx: CommandContext, chatId: number): Promise<string> {
   const subs = await listChatSubscriptions(ctx.db, chatId);
-  if (subs.length === 0) return "This chat follows nothing yet. Try /watch &lt;wallet&gt; or /coin &lt;mint&gt;.";
+  const buybot = await getBuybot(ctx.db, chatId);
+  if (subs.length === 0 && !buybot) return "No alerts yet. Try /follow &lt;coin address&gt; or /watch &lt;wallet&gt;.";
   const wallets = subs.filter((s) => s.kind === "wallet");
   const coinSubs = subs.filter((s) => s.kind === "coin");
-  const coins = await getCoins(ctx.db, coinSubs.map((s) => s.target));
-  const lines = [`<b>This chat follows ${subs.length} of ${ctx.maxSubscriptions ?? MAX_SUBSCRIPTIONS_PER_CHAT}</b>`];
+  const coins = await getCoins(ctx.db, [...coinSubs.map((s) => s.target), ...(buybot ? [buybot.mint] : [])]);
+  const lines = [`<b>This chat has ${subs.length} of ${ctx.maxSubscriptions ?? MAX_SUBSCRIPTIONS_PER_CHAT} alerts</b>`];
+  if (buybot) {
+    const c = coins.get(buybot.mint);
+    lines.push("", `🟢 Buy bot: ${c ? `$${tickerText(c)}` : code(buybot.mint)}`);
+  }
   if (wallets.length > 0) lines.push("", "Wallets:", ...wallets.map((s) => `• ${code(s.target)}`));
   if (coinSubs.length > 0) {
     lines.push("", "Coins:");
@@ -147,27 +165,143 @@ async function list(ctx: CommandContext, chatId: number): Promise<string> {
 
 async function stop(ctx: CommandContext, chatId: number): Promise<string> {
   const n = await removeChatSubscriptions(ctx.db, chatId);
-  return n === 0 ? "Nothing to remove: this chat follows nothing." : `Removed ${n} ${n === 1 ? "subscription" : "subscriptions"}. Send /start to begin again.`;
+  const bot = await removeBuybot(ctx.db, chatId);
+  const total = n + (bot ? 1 : 0);
+  return total === 0 ? "Nothing to remove: this chat has no alerts." : `Removed ${total} ${total === 1 ? "alert" : "alerts"}. Send /start to begin again.`;
 }
 
-/** Runs a parsed command for `chatId`; returns the reply (HTML), or null for an unknown command. */
-export async function runCommand(ctx: CommandContext, chatId: number, cmd: ParsedCommand): Promise<string | null> {
+async function coin(ctx: CommandContext, chatId: number, cmd: ParsedCommand): Promise<BotReply> {
+  const arg = addressArg(cmd, "coin");
+  if ("reply" in arg) return text(arg.reply);
+  const detail = ctx.api ? await ctx.api.coin(arg.address) : null;
+  if (!detail) return text(`No Moatpad coin has the address ${code(arg.address)}.`);
+  return coinCard(ctx.links, detail);
+}
+
+async function trending(ctx: CommandContext): Promise<BotReply> {
+  if (!ctx.api) return text("Trending is not available right now.");
+  return trendingMessage(ctx.links, await ctx.api.trending(5));
+}
+
+async function burns(ctx: CommandContext): Promise<BotReply> {
+  if (!ctx.api) return text("Burn stats are not available right now.");
+  return burnsMessage(ctx.links, await ctx.api.burns());
+}
+
+async function isAdmin(ctx: CommandContext, src: CommandSource): Promise<boolean> {
+  if (!src.from) return false;
+  if (src.from.id === ANONYMOUS_ADMIN) return true;
+  if (!ctx.tg) return false;
+  const status = await ctx.tg.getChatMemberStatus(src.chat.id, src.from.id).catch(() => "left");
+  return status === "creator" || status === "administrator";
+}
+
+/** /buybot [<coin address> [min SOL] | off] — buy alerts in a group. */
+export async function buybot(ctx: CommandContext, src: CommandSource, args: string[]): Promise<BotReply> {
+  const addToGroup = botLink(ctx.links.botUsername, "buybot", true);
+  if (src.chat.type === "private" || src.chat.type === "channel") {
+    return {
+      html: [
+        "🟢 <b>Buy bot</b>",
+        "",
+        "Post every buy of your coin in your Telegram group, for free.",
+        "",
+        "1. Add me to your group (button below)",
+        "2. In the group, send: <code>/buybot &lt;coin address&gt;</code>",
+        "",
+        "<i>Optional: only buys above an amount, e.g. /buybot &lt;address&gt; 0.5</i>",
+      ].join("\n"),
+      buttons: addToGroup ? [[{ text: "➕ Add to a group", url: addToGroup }]] : undefined,
+    };
+  }
+  const current = await getBuybot(ctx.db, src.chat.id);
+  if (args.length === 0) {
+    if (!current) return text("Send <code>/buybot &lt;coin address&gt;</code> to post every buy of a Moatpad coin in this group.");
+    const c = await getCoin(ctx.db, current.mint);
+    const min = Number(current.minLamports) / 1e9;
+    return text(`🟢 Buy alerts are on for ${c ? `$${tickerText(c)}` : code(current.mint)}${min > 0 ? ` (buys of ${min} SOL or more)` : ""}.\nSend /buybot off to stop.`);
+  }
+  if (!(await isAdmin(ctx, src))) return text("Only group admins can set up the buy bot.");
+  if (args[0]!.toLowerCase() === "off") {
+    return text((await removeBuybot(ctx.db, src.chat.id)) ? "Buy alerts are off for this group." : "Buy alerts were not on in this group.");
+  }
+  const mint = args[0]!;
+  if (!isValidAddress(mint)) return text(`${code(mint.slice(0, 64))} is not a coin address.\nUsage: /buybot &lt;coin address&gt; [min SOL]`);
+  const c = await getCoin(ctx.db, mint);
+  if (!c) return text(`No Moatpad coin has the address ${code(mint)}. Only coins launched on Moatpad are supported.`);
+  let minSol = 0;
+  if (args[1] !== undefined) {
+    minSol = Number(args[1].replace(",", "."));
+    if (!Number.isFinite(minSol) || minSol < 0 || minSol > 1000) return text("The minimum must be a SOL amount, like 0.5.");
+  }
+  await setBuybot(ctx.db, { chatId: src.chat.id, mint: c.mint, minLamports: BigInt(Math.round(minSol * 1e9)), createdBy: src.from?.id ?? null, atMs: ctx.now() });
+  return {
+    html: [
+      `✅ <b>Buy bot on for $${tickerText(c)}</b>`,
+      minSol > 0 ? `Every buy of ${minSol} SOL or more will be posted here.` : "Every buy will be posted here.",
+      "Floor defences (vault buybacks) are posted too. Send /buybot off to stop.",
+    ].join("\n"),
+    buttons: [[{ text: `🪙 $${c.ticker} on Moatpad`, url: coinUrl(ctx.links, c.mint) }]],
+  };
+}
+
+/** /start with a deep-link payload: launch, coin_<mint>, follow_<mint>, watch_<wallet>, buybot[_<mint>]. */
+async function start(ctx: CommandContext, src: CommandSource, payload: string | undefined): Promise<BotReply> {
+  const [kind, value] = payload ? [payload.split("_")[0]!, payload.split("_").slice(1).join("_")] : ["", ""];
+  if (kind === "buybot") return buybot(ctx, src, value ? [value] : []);
+  if (src.chat.type !== "private") return { html: "Hi! I post buys, floor defences and payouts of Moatpad coins. Send /buybot to set me up here.", buttons: MENU };
+  if (kind === "launch" && ctx.launch && src.from) return ctx.launch.start(src.chat.id, src.from.id);
+  if (kind === "coin" && value) return coin(ctx, src.chat.id, { name: "coin", args: [value] });
+  if (kind === "follow" && value && isValidAddress(value)) return text(await follow(ctx, src.chat.id, value));
+  if (kind === "watch" && value && isValidAddress(value)) return text(await watch(ctx, src.chat.id, value));
+  return welcomeMessage(ctx.links);
+}
+
+/** Runs a parsed command; returns the reply, or null for an unknown command. */
+export async function runCommand(ctx: CommandContext, src: CommandSource, cmd: ParsedCommand): Promise<BotReply | null> {
+  const chatId = src.chat.id;
+  const isPrivate = src.chat.type === "private";
   switch (cmd.name) {
     case "start":
+      return start(ctx, src, cmd.args[0]);
     case "help":
-      return helpText();
-    case "watch":
-      return watch(ctx, chatId, cmd);
-    case "unwatch":
-      return unfollow(ctx, chatId, cmd, "wallet");
+      return helpMessage(ctx.links);
+    case "launch": {
+      if (!isPrivate || !ctx.launch || !src.from) {
+        const link = botLink(ctx.links.botUsername, "launch");
+        return { html: "Launching works in a private chat with me.", buttons: link ? [[{ text: "🚀 Launch in private chat", url: link }]] : undefined };
+      }
+      return ctx.launch.start(chatId, src.from.id);
+    }
+    case "cancel":
+      return ctx.launch ? ctx.launch.cancel(chatId) : text("Nothing to cancel.");
     case "coin":
-      return follow(ctx, chatId, cmd);
+      return coin(ctx, chatId, cmd);
+    case "trending":
+      return trending(ctx);
+    case "burns":
+    case "burn":
+      return burns(ctx);
+    case "buybot":
+      return buybot(ctx, src, cmd.args);
+    case "follow": {
+      const arg = addressArg(cmd, "coin");
+      return text("reply" in arg ? arg.reply : await follow(ctx, chatId, arg.address));
+    }
+    case "unfollow":
     case "uncoin":
-      return unfollow(ctx, chatId, cmd, "coin");
+      return text(await unfollow(ctx, chatId, cmd, "coin"));
+    case "watch": {
+      const arg = addressArg(cmd, "wallet");
+      return text("reply" in arg ? arg.reply : await watch(ctx, chatId, arg.address));
+    }
+    case "unwatch":
+      return text(await unfollow(ctx, chatId, cmd, "wallet"));
+    case "alerts":
     case "list":
-      return list(ctx, chatId);
+      return text(await alerts(ctx, chatId));
     case "stop":
-      return stop(ctx, chatId);
+      return text(await stop(ctx, chatId));
     default:
       return null;
   }
@@ -176,18 +310,18 @@ export async function runCommand(ctx: CommandContext, chatId: number, cmd: Parse
 export interface TextResult {
   /** Metric label: the command name, "unknown" or "text". */
   command: string;
-  reply: string;
+  reply: BotReply;
 }
 
 /**
- * One incoming message. Commands run; anything else gets a pointer to /help in a private chat and is
- * ignored in groups and channels (where the bot sees other people's commands too).
+ * One incoming text message that is not part of a launch. Commands run; anything else gets the menu in
+ * a private chat and is ignored in groups and channels (where the bot sees other people's messages too).
  */
-export async function handleText(ctx: CommandContext, chat: Pick<TgChat, "id" | "type">, text: string, botUsername?: string | null): Promise<TextResult | null> {
-  const cmd = parseCommand(text, botUsername);
-  const isPrivate = chat.type === "private";
-  if (!cmd) return isPrivate ? { command: "text", reply: "Send /help to see what this bot can do." } : null;
-  const reply = await runCommand(ctx, chat.id, cmd);
+export async function handleText(ctx: CommandContext, src: CommandSource, message: string, botUsername?: string | null): Promise<TextResult | null> {
+  const cmd = parseCommand(message, botUsername);
+  const isPrivate = src.chat.type === "private";
+  if (!cmd) return isPrivate ? { command: "text", reply: { html: "Hi! What do you want to do? Send /help to see every command.", buttons: MENU } } : null;
+  const reply = await runCommand(ctx, src, cmd);
   if (reply !== null) return { command: cmd.name, reply };
-  return isPrivate ? { command: "unknown", reply: `Unknown command /${escapeHtml(cmd.name)}. Send /help for the list.` } : null;
+  return isPrivate ? { command: "unknown", reply: { html: `Unknown command /${escapeHtml(cmd.name)}. Send /help for the list.` } } : null;
 }

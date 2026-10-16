@@ -12,10 +12,10 @@ interface Call {
 function fakeFetch(responses: { status: number; body: unknown }[]): { fetch: FetchLike; calls: Call[] } {
   const calls: Call[] = [];
   const fetch: FetchLike = async (url, init) => {
-    calls.push({ url, body: JSON.parse(init.body) as Record<string, unknown> });
+    calls.push({ url, body: init.body ? (JSON.parse(init.body) as Record<string, unknown>) : {} });
     const next = responses.shift();
     if (!next) throw new Error("no more responses");
-    return { status: next.status, json: async () => next.body };
+    return { status: next.status, json: async () => next.body, arrayBuffer: async () => new TextEncoder().encode(String(next.body)).buffer as ArrayBuffer };
   };
   return { fetch, calls };
 }
@@ -28,9 +28,33 @@ describe("TelegramClient", () => {
     expect(calls).toEqual([
       {
         url: `http://bot.local/bot${TOKEN}/sendMessage`,
-        body: { chat_id: -1001234567890, text: "<b>hi</b>", parse_mode: "HTML", disable_web_page_preview: true },
+        body: { chat_id: -1001234567890, text: "<b>hi</b>", parse_mode: "HTML", link_preview_options: { is_disabled: true } },
       },
     ]);
+  });
+
+  it("sends inline buttons, answers callbacks, sets the command menu and downloads files", async () => {
+    const { fetch, calls } = fakeFetch([
+      { status: 200, body: { ok: true, result: { message_id: 2 } } },
+      { status: 200, body: { ok: true, result: true } },
+      { status: 200, body: { ok: true, result: true } },
+      { status: 200, body: { ok: true, result: { status: "administrator" } } },
+      { status: 200, body: { ok: true, result: { file_path: "photos/file_1.jpg", file_size: 3 } } },
+      { status: 200, body: "abc" },
+    ]);
+    const tg = new TelegramClient(TOKEN, { fetch, apiUrl: "http://bot.local" });
+    await tg.sendMessage(5, "pick", { buttons: [[{ text: "A", callback_data: "a" }]], preview: true });
+    expect(calls[0]!.body).toEqual({ chat_id: 5, text: "pick", parse_mode: "HTML", link_preview_options: { is_disabled: false }, reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] } });
+    await tg.answerCallback("cb1");
+    expect(calls[1]!.body).toEqual({ callback_query_id: "cb1" });
+    await tg.setMyCommands([{ command: "launch", description: "Launch a new coin" }], "groups");
+    expect(calls[2]!.body).toEqual({ commands: [{ command: "launch", description: "Launch a new coin" }], scope: { type: "all_group_chats" } });
+    expect(await tg.getChatMemberStatus(-100, 7)).toBe("administrator");
+    const file = await tg.downloadFile("F1");
+    expect(calls[4]!.body).toEqual({ file_id: "F1" });
+    expect(calls[5]!.url).toBe(`http://bot.local/file/bot${TOKEN}/photos/file_1.jpg`);
+    expect(new TextDecoder().decode(file.bytes)).toBe("abc");
+    expect(file.path).toBe("photos/file_1.jpg");
   });
 
   it("long-polls getUpdates with the offset and timeout", async () => {
@@ -39,7 +63,7 @@ describe("TelegramClient", () => {
     const tg = new TelegramClient(TOKEN, { fetch });
     expect(await tg.getUpdates({ offset: 5, timeoutSec: 30 })).toEqual(updates);
     expect(calls[0]!.url).toBe(`https://api.telegram.org/bot${TOKEN}/getUpdates`);
-    expect(calls[0]!.body).toEqual({ offset: 5, timeout: 30, allowed_updates: ["message", "channel_post"] });
+    expect(calls[0]!.body).toEqual({ offset: 5, timeout: 30, allowed_updates: ["message", "channel_post", "callback_query", "my_chat_member"] });
   });
 
   it("waits out 429 retry_after, then succeeds", async () => {

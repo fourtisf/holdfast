@@ -2,7 +2,7 @@
   "name": "@holdfast/notifier",
   "version": "0.1.0",
   "private": true,
-  "description": "Telegram bot: payout, floor-defence, graduation and weight-milestone alerts for watched wallets and followed coins.",
+  "description": "Moatpad Telegram bot: /launch from Telegram, the group buy bot, coin cards, payout / floor-defence / graduation alerts and the $MOATPAD burn feed.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

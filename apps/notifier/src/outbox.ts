@@ -4,9 +4,9 @@
  * Telegram refuses releases the claim, so a later replay may deliver it; a chat that blocked the
  * bot loses its subscriptions.
  */
-import { markSent, removeChatSubscriptions, unmarkSent, type Queryable } from "@holdfast/db";
+import { markSent, removeBuybot, removeChatSubscriptions, unmarkSent, type Queryable } from "@holdfast/db";
 
-import { TelegramError, type TelegramApi } from "./telegram.js";
+import { TelegramError, type Keyboard, type TelegramApi } from "./telegram.js";
 
 export type DeliveryResult = "sent" | "duplicate" | "failed" | "unavailable";
 
@@ -31,20 +31,21 @@ export class Outbox {
     return markSent(this.db, chatId, eventKey);
   }
 
-  async deliver(chatId: number, eventKey: string, html: string, kind: string): Promise<DeliveryResult> {
-    const result = await this.attempt(chatId, eventKey, html);
+  async deliver(chatId: number, eventKey: string, html: string, kind: string, buttons?: Keyboard): Promise<DeliveryResult> {
+    const result = await this.attempt(chatId, eventKey, html, buttons);
     this.opts.metrics?.delivered(kind, result);
     return result;
   }
 
-  private async attempt(chatId: number, eventKey: string, html: string): Promise<DeliveryResult> {
+  private async attempt(chatId: number, eventKey: string, html: string, buttons?: Keyboard): Promise<DeliveryResult> {
     if (!(await markSent(this.db, chatId, eventKey))) return "duplicate";
     try {
-      await this.tg.sendMessage(chatId, html);
+      await this.tg.sendMessage(chatId, html, buttons ? { buttons } : undefined);
       return "sent";
     } catch (err) {
       if (err instanceof TelegramError && err.chatUnavailable) {
         const removed = await removeChatSubscriptions(this.db, chatId);
+        await removeBuybot(this.db, chatId);
         this.opts.log?.info({ chatId, removed, reason: err.description }, "chat unavailable; subscriptions removed");
         return "unavailable";
       }

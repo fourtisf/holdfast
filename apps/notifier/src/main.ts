@@ -2,8 +2,11 @@
 import { pino } from "pino";
 import { connectDb, countSubscriptionsByKind, migrate, pruneSent } from "@holdfast/db";
 
+import { HttpMoatpadApi } from "./api.js";
 import { Bot, SerialQueue } from "./bot.js";
+import { GROUP_COMMANDS, PRIVATE_COMMANDS } from "./commands.js";
 import { loadConfig } from "./config.js";
+import { LaunchFlow } from "./launch.js";
 import { listenForEvents, MAX_EVENT_AGE_MS, Notifier } from "./events.js";
 import { NotifierMonitor } from "./monitor.js";
 import { Outbox } from "./outbox.js";
@@ -31,10 +34,24 @@ if (!me) {
 
 const monitor = new NotifierMonitor(log, { maxPollAgeMs: (config.pollTimeoutSec + 60) * 1000 });
 const ops = await monitor.start(config.opsPort);
-const links = { webUrl: config.webUrl, cluster: config.cluster };
+const links = { webUrl: config.webUrl, cluster: config.cluster, botUsername: me.username ?? null, moatCa: config.moatCa };
+const api = new HttpMoatpadApi(config.apiUrl);
+const launch = new LaunchFlow({ db, api, tg, links, now: Date.now });
 const outbox = new Outbox(db, tg, { metrics: monitor, log });
-const notifier = new Notifier({ db, outbox, links, log, metrics: monitor });
-const bot = new Bot({ db, tg, commands: { db, links, now: Date.now }, botUsername: me.username ?? null, pollTimeoutSec: config.pollTimeoutSec, metrics: monitor, log });
+const notifier = new Notifier({ db, outbox, links, burnChatId: config.burnChatId, log, metrics: monitor });
+const bot = new Bot({
+  db,
+  tg,
+  commands: { db, links, now: Date.now, api, launch, tg },
+  botUsername: me.username ?? null,
+  pollTimeoutSec: config.pollTimeoutSec,
+  metrics: monitor,
+  log,
+});
+// The "/" menu Telegram shows next to the message box.
+await Promise.all([tg.setMyCommands(PRIVATE_COMMANDS, "default"), tg.setMyCommands(GROUP_COMMANDS, "groups")]).catch((err: unknown) =>
+  log.warn({ err: err instanceof Error ? err.message : String(err) }, "could not set the bot's command menu"),
+);
 
 // Events, catch-up and milestone sweeps run one at a time, in arrival order.
 const queue = new SerialQueue((err) => {
@@ -71,6 +88,8 @@ log.info(
   {
     bot: me.username ?? me.id,
     webUrl: config.webUrl,
+    apiUrl: config.apiUrl,
+    burnChat: config.burnChatId,
     cluster: config.cluster,
     opsPort: ops?.port ?? null,
     alerts: monitor.alerter.enabled,

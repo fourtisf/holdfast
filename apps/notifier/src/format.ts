@@ -71,3 +71,31 @@ export function solscanTxUrl(sig: string, cluster: Cluster): string {
   if (cluster === "localnet") return `${base}?cluster=custom&customUrl=${encodeURIComponent("http://127.0.0.1:8899")}`;
   return `${base}?cluster=${cluster}`;
 }
+
+export function solscanAccountUrl(address: string, cluster: Cluster): string {
+  const base = `https://solscan.io/account/${address}`;
+  if (cluster === "mainnet-beta") return base;
+  if (cluster === "localnet") return `${base}?cluster=custom&customUrl=${encodeURIComponent("http://127.0.0.1:8899")}`;
+  return `${base}?cluster=${cluster}`;
+}
+
+/** Deep links into the bot: `t.me/<bot>?start=<payload>` (private chat) or `?startgroup=<payload>` (add to a group). */
+export function botLink(botUsername: string | null, payload?: string, group = false): string | null {
+  if (!botUsername) return null;
+  const base = `https://t.me/${botUsername}`;
+  return payload === undefined ? (group ? `${base}?startgroup=true` : base) : `${base}?${group ? "startgroup" : "start"}=${encodeURIComponent(payload)}`;
+}
+
+/** A SOL amount from the API (a float), at most 4 significant decimals: 0.0153 → "0.0153", 52.31 → "52.31". */
+export function formatSolNumber(sol: number): string {
+  if (!Number.isFinite(sol) || sol <= 0) return "0";
+  if (sol >= 1000) return Math.round(sol).toLocaleString("en-US");
+  if (sol >= 1) return sol.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return sol.toLocaleString("en-US", { maximumSignificantDigits: 3 });
+}
+
+/** Big token amounts in short form: 3_500_000 → "3.5M", 12_300 → "12.3K". */
+export function formatCompact(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  return n.toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 1 });
+}

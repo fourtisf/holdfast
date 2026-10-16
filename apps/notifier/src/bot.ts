@@ -5,8 +5,9 @@
  */
 import { getTelegramOffset, markSent, setTelegramOffset, type Queryable } from "@holdfast/db";
 
-import { handleText, parseCommand, type CommandContext } from "./commands.js";
-import { sleep, TelegramError, type TelegramApi, type TgUpdate } from "./telegram.js";
+import { follow, handleText, parseCommand, runCommand, type CommandContext } from "./commands.js";
+import { MENU, type BotReply } from "./messages.js";
+import { sleep, TelegramError, type TelegramApi, type TgCallbackQuery, type TgChatMemberUpdated, type TgUpdate } from "./telegram.js";
 
 interface Logger {
   warn(obj: object, msg?: string): void;
@@ -53,17 +54,81 @@ export class Bot {
   }
 
   async handleUpdate(u: TgUpdate): Promise<void> {
+    if (u.callback_query) return this.handleCallback(u.update_id, u.callback_query);
+    if (u.my_chat_member) return this.handleMembership(u.update_id, u.my_chat_member);
     const msg = u.message ?? u.channel_post;
-    if (!msg?.text) return;
+    if (!msg) return;
     const { chat } = msg;
+    const isPrivate = chat.type === "private";
+    const body = msg.text ?? msg.caption ?? "";
+    const isCommand = body !== "" && parseCommand(body, this.deps.botUsername) !== null;
     // Group chats see other people's messages: only commands are worth a claim.
-    if (chat.type !== "private" && !parseCommand(msg.text, this.deps.botUsername)) return;
+    if (!isPrivate && !isCommand) return;
+    if (!msg.text && !isPrivate) return;
     if (!(await markSent(this.deps.db, chat.id, `update:${u.update_id}`))) return;
-    const result = await handleText(this.deps.commands, chat, msg.text, this.deps.botUsername);
+    const { launch } = this.deps.commands;
+    // In a private chat, anything that is not a command answers the launch question being asked.
+    if (isPrivate && !isCommand && launch && (await launch.active(chat.id))) {
+      const reply = await launch.onMessage(chat.id, msg);
+      if (reply) {
+        this.deps.metrics?.command("launch_step");
+        return this.reply(chat.id, reply);
+      }
+    }
+    if (!msg.text && !isCommand) {
+      if (isPrivate) await this.reply(chat.id, { html: "Hi! What do you want to do? Send /help to see every command.", buttons: MENU });
+      return;
+    }
+    const result = await handleText(this.deps.commands, { chat, from: msg.from }, body, this.deps.botUsername);
     if (!result) return;
     this.deps.metrics?.command(result.command);
+    await this.reply(chat.id, result.reply);
+  }
+
+  /** A pressed inline button: "l:..." launch steps, "m:..." menu items, "f:<mint>" alerts for a coin. */
+  private async handleCallback(updateId: number, q: TgCallbackQuery): Promise<void> {
+    const chat = q.message?.chat;
+    const data = q.data ?? "";
+    await this.deps.tg.answerCallback(q.id).catch(() => {});
+    if (!chat || !(await markSent(this.deps.db, chat.id, `update:${updateId}`))) return;
+    const ctx = this.deps.commands;
+    const src = { chat, from: q.from };
+    let reply: BotReply | null = null;
+    if (data.startsWith("l:")) {
+      if (chat.type !== "private" || !ctx.launch) return;
+      reply = await ctx.launch.onButton(chat.id, q.from.id, data);
+      this.deps.metrics?.command("launch_step");
+    } else if (data.startsWith("m:")) {
+      const name = data.slice(2);
+      reply = await runCommand(ctx, src, { name, args: [] });
+      this.deps.metrics?.command(name);
+    } else if (data.startsWith("f:")) {
+      reply = { html: await follow(ctx, chat.id, data.slice(2)) };
+      this.deps.metrics?.command("follow");
+    }
+    if (reply) await this.reply(chat.id, reply);
+  }
+
+  /** Added to a group: say what the bot does there. */
+  private async handleMembership(updateId: number, m: TgChatMemberUpdated): Promise<void> {
+    const joined = ["member", "administrator"].includes(m.new_chat_member.status) && ["left", "kicked"].includes(m.old_chat_member.status);
+    if (!joined || m.chat.type === "private" || m.chat.type === "channel") return;
+    if (!(await markSent(this.deps.db, m.chat.id, `update:${updateId}`))) return;
+    await this.reply(m.chat.id, {
+      html: [
+        "👋 <b>Thanks for adding Moatpad Bot!</b>",
+        "",
+        "To post every buy of your coin here, an admin sends:",
+        "<code>/buybot &lt;coin address&gt;</code>",
+        "",
+        "Send /help to see everything I can do.",
+      ].join("\n"),
+    });
+  }
+
+  private async reply(chatId: number, r: BotReply): Promise<void> {
     try {
-      await this.deps.tg.sendMessage(chat.id, result.reply);
+      await this.deps.tg.sendMessage(chatId, r.html, { buttons: r.buttons, preview: r.preview });
     } catch (err) {
       if (err instanceof TelegramError && err.chatUnavailable) return;
       throw err;

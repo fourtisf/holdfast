@@ -160,6 +160,11 @@ services:
     environment:
       <<: *backend-env
       NOTIFIER_OPS_PORT: "9104"
+      # /launch, /coin, /trending and /burns go through the API, like the website
+      API_INTERNAL_URL: http://api:4000
+    depends_on:
+      api:
+        condition: service_healthy
     stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9104/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
@@ -183,6 +188,7 @@ services:
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
         NEXT_PUBLIC_X_URL: ${NEXT_PUBLIC_X_URL:-}
         NEXT_PUBLIC_TELEGRAM_URL: ${NEXT_PUBLIC_TELEGRAM_URL:-}
+        NEXT_PUBLIC_TELEGRAM_BOT: ${NEXT_PUBLIC_TELEGRAM_BOT:-}
         NEXT_PUBLIC_MOAT_CA: ${NEXT_PUBLIC_MOAT_CA:-}
     image: holdfast-web:local
     environment:

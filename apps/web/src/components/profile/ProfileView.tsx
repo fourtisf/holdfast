@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState, ErrorNote } from "@/components/ui/States";
 import { CoinsIcon, ExternalIcon, SearchIcon, UserIcon } from "@/components/ui/icons";
 import { errorMessage } from "@/lib/api";
-import { SOLANA_CLUSTER } from "@/lib/config";
+import { botUrl, SOLANA_CLUSTER } from "@/lib/config";
 import { explorerAddressUrl, explorerTxUrl } from "@/lib/explorer";
 import { useMoney } from "@/lib/currency";
 import { formatAgo, formatCountdown, formatMultiplier, formatPct, formatShare, formatSignedSol, formatSol, formatTokens, shortAddress } from "@/lib/format";
@@ -126,6 +126,11 @@ function ProfileContent({ wallet, own }: { wallet: string; own: boolean }) {
               <ExternalIcon size={13} />
             </a>
           </div>
+          {botUrl(`watch_${wallet}`) ? (
+            <a href={botUrl(`watch_${wallet}`)!} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs font-semibold text-brand hover:underline">
+              🔔 Payout alerts on Telegram →
+            </a>
+          ) : null}
         </div>
       </div>
 

@@ -382,6 +382,22 @@ export interface LaunchStatus {
   refundSig: string | null;
   error: string | null;
   updatedAt: number;
+  /** From the launch form, so a payment page (e.g. one opened from the Telegram bot) can be rebuilt from the id. */
+  name?: string;
+  ticker?: string;
+  devBuySol?: number;
+  /** Deposits after this are refunded (unix ms). */
+  expiresAt?: number;
+}
+
+/** GET /burns: $MOATPAD bought and burned by the coin vaults (the 10% buy & burn share). */
+export interface BurnStats {
+  burns: number;
+  solSpent: number;
+  /** Whole $MOATPAD tokens (6 decimals, like every pump.fun token). */
+  tokensBurned: number;
+  lastAt: number | null;
+  recent: { sig: string; mint: string; ticker: string | null; solSpent: number; tokensBurned: number; ts: number }[];
 }
 
 /**

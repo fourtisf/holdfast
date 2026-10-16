@@ -220,3 +220,15 @@ describe("coins", () => {
     expect(await get("/nope", 404)).toEqual({ error: "Not found" });
   });
 });
+
+describe("burns", () => {
+  it("GET /burns totals the $MOATPAD bought and burned by the vaults", async () => {
+    const { insertHoldBurn } = await import("@holdfast/db");
+    await insertHoldBurn(db, { sig: "BurnSig1", mint: f.mint, solSpent: 100_000_000n, holdBurned: 2_500_000_000_000n, ts: NOW - 60_000 });
+    await insertHoldBurn(db, { sig: "BurnSig2", mint: f.mint, solSpent: 50_000_000n, holdBurned: 1_000_000_000_000n, ts: NOW - 30_000 });
+    const b = await get<{ burns: number; solSpent: number; tokensBurned: number; lastAt: number; recent: { sig: string; ticker: string }[] }>("/burns");
+    expect(b).toMatchObject({ burns: 2, solSpent: 0.15, tokensBurned: 3_500_000, lastAt: NOW - 30_000 });
+    expect(b.recent.map((r) => r.sig)).toEqual(["BurnSig2", "BurnSig1"]);
+    expect(b.recent[0]!.ticker).toBe("HOUND");
+  });
+});
